@@ -1,19 +1,21 @@
 defmodule Tortoise.Connection.ControllerTest do
-  use ExUnit.Case
+  use ExUnit.Case, async: true
   doctest Tortoise.Connection.Controller
 
-  alias Tortoise.Connection.{Controller, Transmitter}
   alias Tortoise.Package
+  alias Tortoise.Connection.{Controller, Transmitter}
 
   defmodule TestDriver do
-    # pass in the caller pid as the state so we can send messages back
-    # to the test process that we can use for assertions
     @behaviour Tortoise.Driver
 
-    defstruct pid: nil, publish_count: 0, received: []
+    defstruct pid: nil, client_id: nil, publish_count: 0, received: []
 
-    def init([caller]) when is_pid(caller) do
-      {:ok, %__MODULE__{pid: caller}}
+    def init([client_id, caller]) when is_pid(caller) do
+      # We pass in the caller `pid` and keep it in the state so we can
+      # send messages back to the test process, which will make it
+      # possible to make assertions on the changes in the driver
+      # callback module
+      {:ok, %__MODULE__{pid: caller, client_id: client_id}}
     end
 
     def on_publish(topic, message, %__MODULE__{} = state) do
@@ -32,157 +34,126 @@ defmodule Tortoise.Connection.ControllerTest do
     end
   end
 
-  test "life cycle" do
-    client_id = "hello"
-    opts = valid_opts(client_id)
-    assert {:ok, _} = Controller.start_link(opts)
-    assert :ok = Controller.stop(client_id)
+  # Setup ==============================================================
+  setup context do
+    {:ok, %{client_id: context.test}}
+  end
+
+  def setup_controller(context) do
+    driver = %Tortoise.Driver{
+      module: __MODULE__.TestDriver,
+      initial_args: [context.client_id, self()]
+    }
+
+    opts = [client_id: context.client_id, driver: driver]
+    {:ok, pid} = Controller.start_link(opts)
+    {:ok, %{controller_pid: pid}}
+  end
+
+  def setup_transmitter(context) do
+    opts = [client_id: context.client_id]
+    {:ok, _} = Transmitter.start_link(opts)
+    {:ok, client_socket, server_socket} = Tortoise.TestTCPTunnel.new()
+    Transmitter.handle_socket(context.test, client_socket)
+
+    {:ok, %{client: client_socket, server: server_socket}}
+  end
+
+  # tests --------------------------------------------------------------
+  test "life cycle", context do
+    driver = %Tortoise.Driver{
+      module: __MODULE__.TestDriver,
+      initial_args: [context.client_id, self()]
+    }
+
+    opts = [client_id: context.client_id, driver: driver]
+    assert {:ok, pid} = Controller.start_link(opts)
+    assert Process.alive?(pid)
+    assert :ok = Controller.stop(context.client_id)
+    refute Process.alive?(pid)
+  end
+
+  describe "Ping Control Packets" do
+    setup [:setup_controller, :setup_transmitter]
+
+    test "send a ping request", context do
+      # send a ping request to the server
+      assert :ok = Transmitter.ping(context.client_id)
+      # assert that the server receives a ping request package
+      {:ok, package} = :gen_tcp.recv(context.server, 0, 200)
+      assert %Package.Pingreq{} = Package.decode(package)
+      # the server will respond with an pingresp (ping response)
+      Controller.handle_incoming(context.client_id, %Package.Pingresp{})
+    end
+
+    test "receive a ping request", context do
+      # receiving a ping request to the server
+      Controller.handle_incoming(context.client_id, %Package.Pingreq{})
+
+      # assert that we send a ping response back to the server
+      {:ok, package} = :gen_tcp.recv(context.server, 0, 200)
+      assert %Package.Pingresp{} = Package.decode(package)
+    end
   end
 
   describe "publish" do
-    test "receive a publish" do
-      client_id = "receive a message"
-      opts = valid_opts(client_id)
-      assert {:ok, _} = Controller.start_link(opts)
+    setup [:setup_controller]
 
+    test "receive a publish", context do
       publish = %Package.Publish{
-        identifier: nil,
         topic: "foo/bar/baz",
         payload: "how do you do?",
         qos: 0
       }
 
-      assert :ok = Controller.handle_incoming(client_id, publish)
+      assert :ok = Controller.handle_incoming(context.client_id, publish)
+      topic_list = String.split(publish.topic, "/")
       payload = publish.payload
-      assert_receive(%TestDriver{received: [{["foo", "bar", "baz"], ^payload} | _]})
+      assert_receive(%TestDriver{received: [{^topic_list, ^payload} | _]})
     end
 
-    # need to be able to update state in callback module between publishes
-    test "updating state" do
-      client_id = "updating state"
-      opts = valid_opts(client_id)
-      {:ok, _} = Controller.start_link(opts)
-
-      publish = %Package.Publish{
-        identifier: nil,
-        topic: "foo/bar",
-        payload: "how do you do?",
-        qos: 0
-      }
-
-      :ok = Controller.handle_incoming(client_id, publish)
+    test "update callback module state between publishes", context do
+      publish = %Package.Publish{topic: "a", qos: 0}
+      # Our callback module will increment a counter when it receives
+      # a publish control packet
+      :ok = Controller.handle_incoming(context.client_id, publish)
       assert_receive %TestDriver{publish_count: 1}
-      :ok = Controller.handle_incoming(client_id, publish)
+      :ok = Controller.handle_incoming(context.client_id, publish)
       assert_receive %TestDriver{publish_count: 2}
     end
   end
 
-  describe "Ping Control Packets" do
-    test "send a ping request" do
-      client_id = "outgoing ping"
-      opts = valid_opts(client_id)
-      {:ok, _} = Controller.start_link(opts)
-      {:ok, _} = Transmitter.start_link(opts)
-      {:ok, client_socket, server_socket} = Tortoise.TestTCPTunnel.new()
-      Transmitter.handle_socket(client_id, client_socket)
-
-      # send a ping request to the server
-      assert :ok = Transmitter.ping(client_id)
-      # assert that the server receives a ping request package
-      {:ok, package} = :gen_tcp.recv(server_socket, 0, 200)
-      assert %Package.Pingreq{} = Package.decode(package)
-      # the server will respond with an pingresp (ping response)
-      Controller.handle_incoming(client_id, %Package.Pingresp{})
-      :timer.sleep(200)
-    end
-
-    test "receive a ping request" do
-      client_id = "incoming ping"
-      opts = valid_opts(client_id)
-      {:ok, _} = Controller.start_link(opts)
-      {:ok, _} = Transmitter.start_link(opts)
-      {:ok, client_socket, server_socket} = Tortoise.TestTCPTunnel.new()
-      Transmitter.handle_socket(client_id, client_socket)
-
-      # receiving a ping request to the server
-      Controller.handle_incoming(client_id, %Package.Pingreq{})
-
-      # assert that we send a ping response back to the server
-      {:ok, package} = :gen_tcp.recv(server_socket, 0, 200)
-      assert %Package.Pingresp{} = Package.decode(package)
-    end
-  end
-
   describe "Publish Control Packets with Quality of Service level 1" do
-    test "incoming publish with qos 1" do
-      client_id = "qos 1 publish"
-      opts = valid_opts(client_id)
-      {:ok, _} = Controller.start_link(opts)
-      {:ok, _} = Transmitter.start_link(opts)
-      {:ok, client_socket, server_socket} = Tortoise.TestTCPTunnel.new()
-      Transmitter.handle_socket(client_id, client_socket)
+    setup [:setup_controller, :setup_transmitter]
+
+    test "incoming publish with qos 1", context do
       # receive a publish message with a qos of 1
-      Controller.handle_incoming(client_id, %Package.Publish{
-        identifier: 12312,
-        topic: "a",
-        payload: "b",
-        qos: 1
-      })
+      publish = %Package.Publish{identifier: 1, topic: "a", qos: 1}
+      Controller.handle_incoming(context.client_id, publish)
 
       # a puback message should get transmitted
-      {:ok, package} = :gen_tcp.recv(server_socket, 0, 200)
-      assert %Package.Puback{identifier: 12312} = Package.decode(package)
+      {:ok, package} = :gen_tcp.recv(context.server, 0, 200)
+      assert %Package.Puback{identifier: 1} = Package.decode(package)
     end
 
-    test "outgoing publish with qos 1" do
-      client_id = "outgoing qos 1 publish"
-      opts = valid_opts(client_id)
-      {:ok, _} = Controller.start_link(opts)
-      # setup a transmitter and hand it a socket we can make
-      # assertions on
-      {:ok, _} = Transmitter.start_link(opts)
-
-      {:ok, client_socket, server_socket} = Tortoise.TestTCPTunnel.new()
-
-      Transmitter.handle_socket(client_id, client_socket)
-
-      # send a publish qos 1 to the server, we will get a reference
-      # (not the message id).
-      publish =
-        %{identifier: id} = %Package.Publish{
-          identifier: Enum.random(0x0001..0xFFFF),
-          topic: "a",
-          qos: 1
-        }
-
+    test "outgoing publish with qos 1", context do
+      client_id = context.client_id
+      publish = %Package.Publish{identifier: 1, topic: "a", qos: 1}
+      # we will get a reference (not the message id).
       assert {:ok, ref} = Transmitter.publish(client_id, publish)
 
       # assert that the server receives a publish package
-      {:ok, package} = :gen_tcp.recv(server_socket, 0, 200)
+      {:ok, package} = :gen_tcp.recv(context.server, 0, 200)
       assert ^publish = Package.decode(package)
       # the server will send back an ack message
-      Controller.handle_incoming(client_id, %Package.Puback{identifier: id})
+      Controller.handle_incoming(client_id, %Package.Puback{identifier: 1})
       # the caller should get a message in its mailbox
       assert_receive {Tortoise, {{^client_id, ^ref}, :ok}}
     end
 
-    test "outgoing publish with qos 1 sync call" do
-      client_id = "sync outgoing qos 1"
-      opts = valid_opts(client_id)
-      {:ok, _} = Controller.start_link(opts)
-      # setup a transmitter and hand it a socket we can make
-      # assertions on
-      {:ok, _} = Transmitter.start_link(opts)
-      {:ok, client_socket, server_socket} = Tortoise.TestTCPTunnel.new()
-      :ok = Transmitter.handle_socket(client_id, client_socket)
-
-      # send a publish qos 1 to the server, we will get a reference
-      # (not the message id).
-      publish = %Package.Publish{
-        identifier: 1,
-        topic: "a",
-        qos: 1
-      }
+    test "outgoing publish with qos 1 sync call", context do
+      client_id = context.client_id
+      publish = %Package.Publish{identifier: 1, topic: "a", qos: 1}
 
       # setup a blocking call
       {caller, test_ref} = {self(), make_ref()}
@@ -193,7 +164,7 @@ defmodule Tortoise.Connection.ControllerTest do
       end)
 
       # assert that the server receives a publish package
-      {:ok, package} = :gen_tcp.recv(server_socket, 0, 200)
+      {:ok, package} = :gen_tcp.recv(context.server, 0, 200)
       assert ^publish = Package.decode(package)
       # the server will send back an ack message
       Controller.handle_incoming(client_id, %Package.Puback{identifier: 1})
@@ -203,81 +174,42 @@ defmodule Tortoise.Connection.ControllerTest do
   end
 
   describe "Publish Quality of Service level 2" do
-    test "incoming publish with qos 2" do
-      client_id = "qos 2 publish"
-      opts = valid_opts(client_id)
-      {:ok, _} = Controller.start_link(opts)
-      # setup a transmitter and hand it a socket we can make
-      # assertions on
-      {:ok, _} = Transmitter.start_link(opts)
-      {:ok, client_socket, server_socket} = Tortoise.TestTCPTunnel.new()
-      :ok = Transmitter.handle_socket(client_id, client_socket)
+    setup [:setup_controller, :setup_transmitter]
 
-      # send in an publish message with a qos of 2
-      Controller.handle_incoming(client_id, %Package.Publish{
-        identifier: 12312,
-        topic: "a",
-        payload: "b",
-        qos: 2
-      })
+    test "incoming publish with qos 2", context do
+      client_id = context.client_id
+      # send in an publish message with a QoS of 2
+      publish = %Package.Publish{identifier: 1, topic: "a", qos: 2}
+      Controller.handle_incoming(client_id, publish)
 
       # assert that the sender receives a pubrec package
-      {:ok, pubrec} = :gen_tcp.recv(server_socket, 0, 200)
-      assert %Package.Pubrec{identifier: 12312} = Package.decode(pubrec)
-
+      {:ok, pubrec} = :gen_tcp.recv(context.server, 0, 200)
+      assert %Package.Pubrec{identifier: 1} = Package.decode(pubrec)
       # the MQTT server will then respond with pubrel
-      Controller.handle_incoming(client_id, %Package.Pubrel{identifier: 12312})
+      Controller.handle_incoming(client_id, %Package.Pubrel{identifier: 1})
       # a pubcomp message should get transmitted
-      {:ok, pubcomp} = :gen_tcp.recv(server_socket, 0, 200)
-      assert %Package.Pubcomp{identifier: 12312} = Package.decode(pubcomp)
+      {:ok, pubcomp} = :gen_tcp.recv(context.server, 0, 200)
+      assert %Package.Pubcomp{identifier: 1} = Package.decode(pubcomp)
     end
 
-    test "outgoing publish with qos 2" do
-      client_id = "outgoing qos 2 publish"
-      opts = valid_opts(client_id)
-      {:ok, _} = Controller.start_link(opts)
-      # setup a transmitter and hand it a socket we can make
-      # assertions on
-      {:ok, _} = Transmitter.start_link(opts)
-
-      {:ok, client_socket, server_socket} = Tortoise.TestTCPTunnel.new()
-
-      Transmitter.handle_socket(client_id, client_socket)
-
-      # send a publish qos 2 to the server, we will get a reference
-      # (not the message id).
-      id = 0x0001
-
-      publish = %Package.Publish{
-        identifier: id,
-        topic: "foo",
-        qos: 2
-      }
+    test "outgoing publish with qos 2", context do
+      client_id = context.client_id
+      publish = %Package.Publish{identifier: 1, topic: "a", qos: 2}
 
       assert {:ok, ref} = Transmitter.publish(client_id, publish)
 
       # assert that the server receives a publish package
-      {:ok, package} = :gen_tcp.recv(server_socket, 0, 200)
+      {:ok, package} = :gen_tcp.recv(context.server, 0, 200)
       assert ^publish = Package.decode(package)
       # the server will send back a publish received message
-      Controller.handle_incoming(client_id, %Package.Pubrec{identifier: id})
-      # send publish release (pubrel) to the server
-      {:ok, package} = :gen_tcp.recv(server_socket, 0, 200)
-      assert %Package.Pubrel{identifier: ^id} = Package.decode(package)
+      Controller.handle_incoming(client_id, %Package.Pubrec{identifier: 1})
+      # we should send a publish release (pubrel) to the server
+      {:ok, package} = :gen_tcp.recv(context.server, 0, 200)
+      assert %Package.Pubrel{identifier: 1} = Package.decode(package)
       # receive pubcomp
-      Controller.handle_incoming(client_id, %Package.Pubcomp{identifier: id})
+      Controller.handle_incoming(client_id, %Package.Pubcomp{identifier: 1})
       # the caller should get a message in its mailbox
       assert_receive {Tortoise, {{^client_id, ^ref}, :ok}}
     end
-  end
-
-  # helpers
-  defp valid_opts(client_id) do
-    driver = %Tortoise.Driver{
-      module: __MODULE__.TestDriver,
-      initial_args: [self()]
-    }
-
-    [client_id: client_id, driver: driver]
   end
 end
