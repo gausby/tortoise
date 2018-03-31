@@ -87,7 +87,7 @@ defmodule Tortoise.Connection.ControllerTest do
     end
 
     test "receive a ping request", context do
-      # receiving a ping request to the server
+      # receiving a ping request from the server
       Controller.handle_incoming(context.client_id, %Package.Pingreq{})
 
       # assert that we send a ping response back to the server
