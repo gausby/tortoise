@@ -1,4 +1,4 @@
-defmodule Tortoise.Connection.Transmitter.Inflight do
+defmodule Tortoise.Connection.Inflight.Track do
   @moduledoc """
   A data structure implementing state machines tracking the state of a
   message in flight.
@@ -71,8 +71,8 @@ defmodule Tortoise.Connection.Transmitter.Inflight do
   Set up a data structure that will track the status of a control
   packet
   """
-  @spec track(polarity(), Package.Publish.t()) :: __MODULE__.t()
-  def track(:positive, %Package.Publish{qos: 1, identifier: id}) do
+  @spec create(polarity(), Package.Publish.t()) :: __MODULE__.t()
+  def create(:positive, %Package.Publish{qos: 1, identifier: id}) do
     %State{
       identifier: id,
       status: [{:received, Package.Publish}],
@@ -80,7 +80,7 @@ defmodule Tortoise.Connection.Transmitter.Inflight do
     }
   end
 
-  def track({:negative, {pid, ref}}, %Package.Publish{qos: 1, identifier: id} = publish)
+  def create({:negative, {pid, ref}}, %Package.Publish{qos: 1, identifier: id} = publish)
       when is_pid(pid) and is_reference(ref) do
     %State{
       identifier: id,
@@ -92,7 +92,7 @@ defmodule Tortoise.Connection.Transmitter.Inflight do
     }
   end
 
-  def track(:positive, %Package.Publish{identifier: id, qos: 2}) do
+  def create(:positive, %Package.Publish{identifier: id, qos: 2}) do
     %State{
       identifier: id,
       status: [{:received, Package.Publish}],
@@ -104,7 +104,7 @@ defmodule Tortoise.Connection.Transmitter.Inflight do
     }
   end
 
-  def track({:negative, {pid, ref}}, %Package.Publish{identifier: id, qos: 2} = publish)
+  def create({:negative, {pid, ref}}, %Package.Publish{identifier: id, qos: 2} = publish)
       when is_pid(pid) and is_reference(ref) do
     %State{
       identifier: id,

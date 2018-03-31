@@ -2,6 +2,7 @@ defmodule Tortoise.Connection.Controller do
   @moduledoc false
 
   alias Tortoise.Package
+  alias Tortoise.Connection.Inflight
 
   alias Tortoise.Package.{
     Connect,
@@ -89,7 +90,7 @@ defmodule Tortoise.Connection.Controller do
   # QoS LEVEL 1 ========================================================
   # commands -----------------------------------------------------------
   defp handle_package(%Publish{qos: 1} = publish, state) do
-    :ok = Transmitter.track(state.client_id, {:positive, publish})
+    :ok = Inflight.track(state.client_id, {:incoming, publish})
     # dispatch message
     case run_publish_callback(publish, state) do
       {:ok, state} ->
@@ -99,15 +100,17 @@ defmodule Tortoise.Connection.Controller do
 
   # response -----------------------------------------------------------
   defp handle_package(%Puback{} = puback, state) do
-    :ok = Transmitter.update(state.client_id, puback)
+    :ok = Inflight.update(state.client_id, {:received, puback})
     {:noreply, state}
   end
 
   # QoS LEVEL 2 ========================================================
   # commands -----------------------------------------------------------
   defp handle_package(%Publish{qos: 2} = publish, state) do
-    :ok = Transmitter.track(state.client_id, {:positive, publish})
-    # todo, handle onward delivery better should not dispatch if already seen
+    :ok = Inflight.track(state.client_id, {:incoming, publish})
+    # todo, handle onward delivery better should not dispatch if
+    # already seen--perhaps this will be solved because sending again
+    # would be a protocol violation? perhaps dup: 0 will solve this?
     case run_publish_callback(publish, state) do
       {:ok, state} ->
         {:noreply, state}
@@ -117,18 +120,18 @@ defmodule Tortoise.Connection.Controller do
   end
 
   defp handle_package(%Pubrel{} = pubrel, state) do
-    :ok = Transmitter.update(state.client_id, pubrel)
+    :ok = Inflight.update(state.client_id, {:received, pubrel})
     {:noreply, state}
   end
 
   # response -----------------------------------------------------------
   defp handle_package(%Pubrec{} = pubrec, state) do
-    :ok = Transmitter.update(state.client_id, pubrec)
+    :ok = Inflight.update(state.client_id, {:received, pubrec})
     {:noreply, state}
   end
 
   defp handle_package(%Pubcomp{} = pubcomp, state) do
-    :ok = Transmitter.update(state.client_id, pubcomp)
+    :ok = Inflight.update(state.client_id, {:received, pubcomp})
     {:noreply, state}
   end
 

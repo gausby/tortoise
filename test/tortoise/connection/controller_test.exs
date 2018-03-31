@@ -3,7 +3,7 @@ defmodule Tortoise.Connection.ControllerTest do
   doctest Tortoise.Connection.Controller
 
   alias Tortoise.Package
-  alias Tortoise.Connection.{Controller, Transmitter}
+  alias Tortoise.Connection.{Controller, Inflight, Transmitter}
 
   defmodule TestDriver do
     @behaviour Tortoise.Driver
@@ -48,6 +48,12 @@ defmodule Tortoise.Connection.ControllerTest do
     opts = [client_id: context.client_id, driver: driver]
     {:ok, pid} = Controller.start_link(opts)
     {:ok, %{controller_pid: pid}}
+  end
+
+  def setup_inflight(context) do
+    opts = [client_id: context.client_id]
+    {:ok, pid} = Inflight.start_link(opts)
+    {:ok, %{inflight_pid: pid}}
   end
 
   def setup_transmitter(context) do
@@ -124,7 +130,7 @@ defmodule Tortoise.Connection.ControllerTest do
   end
 
   describe "Publish Control Packets with Quality of Service level 1" do
-    setup [:setup_controller, :setup_transmitter]
+    setup [:setup_controller, :setup_inflight, :setup_transmitter]
 
     test "incoming publish with qos 1", context do
       # receive a publish message with a qos of 1
@@ -140,7 +146,7 @@ defmodule Tortoise.Connection.ControllerTest do
       client_id = context.client_id
       publish = %Package.Publish{identifier: 1, topic: "a", qos: 1}
       # we will get a reference (not the message id).
-      assert {:ok, ref} = Transmitter.publish(client_id, publish)
+      assert {:ok, ref} = Inflight.track(client_id, {:outgoing, publish})
 
       # assert that the server receives a publish package
       {:ok, package} = :gen_tcp.recv(context.server, 0, 200)
@@ -159,7 +165,7 @@ defmodule Tortoise.Connection.ControllerTest do
       {caller, test_ref} = {self(), make_ref()}
 
       spawn_link(fn ->
-        test_result = Transmitter.publish_sync(client_id, publish)
+        test_result = Inflight.track_sync(client_id, {:outgoing, publish})
         send(caller, {:sync_call_result, test_ref, test_result})
       end)
 
@@ -174,7 +180,7 @@ defmodule Tortoise.Connection.ControllerTest do
   end
 
   describe "Publish Quality of Service level 2" do
-    setup [:setup_controller, :setup_transmitter]
+    setup [:setup_controller, :setup_inflight, :setup_transmitter]
 
     test "incoming publish with qos 2", context do
       client_id = context.client_id
@@ -196,7 +202,7 @@ defmodule Tortoise.Connection.ControllerTest do
       client_id = context.client_id
       publish = %Package.Publish{identifier: 1, topic: "a", qos: 2}
 
-      assert {:ok, ref} = Transmitter.publish(client_id, publish)
+      assert {:ok, ref} = Inflight.track(client_id, {:outgoing, publish})
 
       # assert that the server receives a publish package
       {:ok, package} = :gen_tcp.recv(context.server, 0, 200)
