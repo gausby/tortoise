@@ -170,7 +170,9 @@ defmodule Tortoise.Connection.Controller do
 
   # response -----------------------------------------------------------
   defp handle_package(%Pingreq{}, state) do
-    :ok = Transmitter.ping_resp(state.client_id)
+    pingresp = %Package.Pingresp{}
+    :ok = Transmitter.cast(state.client_id, pingresp)
+
     {:noreply, state}
   end
 

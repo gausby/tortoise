@@ -33,12 +33,7 @@ defmodule Tortoise.Connection.Transmitter do
     GenStateMachine.cast(via_name(client_id), {:transmit, pingreq})
   end
 
-  def ping_resp(client_id) do
-    pingresp = Package.encode(%Package.Pingresp{})
-    GenStateMachine.cast(via_name(client_id), {:transmit, pingresp})
-  end
-
-  def cast(client_id, %{__struct__: _, identifier: _} = package) do
+  def cast(client_id, %{__struct__: _} = package) do
     data = Package.encode(package)
     GenStateMachine.cast(via_name(client_id), {:transmit, data})
   end
