@@ -9,7 +9,7 @@ defmodule Tortoise.Connection.Inflight do
 
   use GenServer
 
-  defstruct [pending: %{}, client_id: nil]
+  defstruct pending: %{}, client_id: nil
 
   # Client API
   def start_link(opts) do
@@ -42,7 +42,6 @@ defmodule Tortoise.Connection.Inflight do
     :ok = GenServer.cast(via_name(client_id), {:track, track})
   end
 
-
   def track(client_id, {:outgoing, %Package.Publish{qos: 1} = publish}) do
     ref = make_ref()
     track = Track.create({:negative, {self(), ref}}, publish)
@@ -59,6 +58,7 @@ defmodule Tortoise.Connection.Inflight do
 
   def track_sync(client_id, {:outgoing, _} = command) do
     {:ok, ref} = track(client_id, command)
+
     receive do
       {Tortoise, {{^client_id, ^ref}, :ok}} -> :ok
     end
@@ -75,7 +75,8 @@ defmodule Tortoise.Connection.Inflight do
 
   def handle_cast({:track, track}, %{pending: pending} = state) do
     updated_pending = Map.put_new(pending, track.identifier, track)
-    case execute(track, %__MODULE__{state|pending: updated_pending}) do
+
+    case execute(track, %__MODULE__{state | pending: updated_pending}) do
       {:ok, state} ->
         {:noreply, state}
     end
@@ -83,6 +84,7 @@ defmodule Tortoise.Connection.Inflight do
 
   def handle_cast({:update, update}, state) do
     {:ok, next_action, state} = progress_track_state(update, state)
+
     case execute(next_action, state) do
       {:ok, state} ->
         {:noreply, state}
@@ -96,18 +98,21 @@ defmodule Tortoise.Connection.Inflight do
         updated_track = Track.update(track, input)
         {updated_track, updated_track}
       end)
-    {:ok, next_action, %__MODULE__{state|pending: updated_pending}}
+
+    {:ok, next_action, %__MODULE__{state | pending: updated_pending}}
   end
 
   defp execute(%Track{caller: caller, pending: []} = track, state) do
     :ok = respond_caller(caller, state)
     pending = Map.delete(state.pending, track.identifier)
-    {:ok, %__MODULE__{state|pending: pending}}
+    {:ok, %__MODULE__{state | pending: pending}}
   end
+
   defp execute(%Track{pending: [{:expect, _} | _]}, state) do
     # await
     {:ok, state}
   end
+
   defp execute(%Track{pending: [{:dispatch, package} | _]}, state) do
     :ok = Transmitter.cast(state.client_id, package)
     update = {:dispatched, package}
@@ -116,8 +121,9 @@ defmodule Tortoise.Connection.Inflight do
   end
 
   defp respond_caller(nil, _), do: :ok
+
   defp respond_caller({pid, ref}, state) when is_pid(pid) do
-    send pid, {Tortoise, {{state.client_id, ref}, :ok}}
+    send(pid, {Tortoise, {{state.client_id, ref}, :ok}})
     :ok
   end
 end
