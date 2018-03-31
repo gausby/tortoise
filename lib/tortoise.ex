@@ -29,7 +29,7 @@ defmodule Tortoise do
   Publish a message to the MQTT broker
   """
   def publish(client_id, topic, payload) do
-    Transmitter.publish(client_id, %Tortoise.Package.Publish{
+    Transmitter.cast(client_id, %Tortoise.Package.Publish{
       identifier: nil,
       topic: topic,
       payload: payload,
