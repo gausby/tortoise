@@ -106,11 +106,9 @@ defmodule Tortoise.Connection.Controller do
 
   # QoS LEVEL 2 ========================================================
   # commands -----------------------------------------------------------
-  defp handle_package(%Publish{qos: 2} = publish, state) do
+  defp handle_package(%Publish{qos: 2, dup: false} = publish, state) do
     :ok = Inflight.track(state.client_id, {:incoming, publish})
-    # todo, handle onward delivery better should not dispatch if
-    # already seen--perhaps this will be solved because sending again
-    # would be a protocol violation? perhaps dup: 0 will solve this?
+
     case run_publish_callback(publish, state) do
       {:ok, state} ->
         {:noreply, state}
