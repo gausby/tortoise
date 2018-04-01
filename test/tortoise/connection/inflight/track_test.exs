@@ -69,4 +69,28 @@ defmodule Tortoise.Connection.Inflight.TrackTest do
     state = Track.update(state, {:received, %Package.Pubcomp{identifier: id}})
     assert %Track{identifier: ^id, pending: [], caller: ^caller} = state
   end
+
+  describe "rollback/1" do
+    # todo, this could be described as a property
+    test "roll back to dispatch state" do
+      publish = %Package.Publish{qos: 2, identifier: 1}
+      initial_state = Track.create(:positive, publish)
+      command = {:dispatched, %Package.Pubrec{identifier: 1}}
+      state = Track.update(initial_state, command)
+
+      assert ^initial_state = Track.rollback(state)
+    end
+
+    test "roll back to expect state" do
+      publish = %Package.Publish{qos: 2, identifier: 1}
+      caller = {self(), make_ref()}
+      state = Track.create({:negative, caller}, publish)
+      command = {:dispatched, publish}
+      target_state = state = Track.update(state, command)
+      command = {:received, %Package.Pubrec{identifier: 1}}
+      state = Track.update(state, command)
+
+      assert ^target_state = Track.rollback(state)
+    end
+  end
 end

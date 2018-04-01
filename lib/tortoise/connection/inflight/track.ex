@@ -68,6 +68,22 @@ defmodule Tortoise.Connection.Inflight.Track do
   end
 
   @doc """
+  Roll the state back to the previous state
+  """
+  @spec rollback(__MODULE__.t()) :: __MODULE__.t()
+  def rollback(%State{status: [previous | status], pending: pending} = state) do
+    %State{state | status: status, pending: [do_rollback(previous) | pending]}
+  end
+
+  defp do_rollback({:dispatched, package}) do
+    {:dispatch, package}
+  end
+
+  defp do_rollback({:received, package}) do
+    {:expect, package}
+  end
+
+  @doc """
   Set up a data structure that will track the status of a control
   packet
   """
