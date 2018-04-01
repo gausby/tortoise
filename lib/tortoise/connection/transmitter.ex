@@ -24,6 +24,10 @@ defmodule Tortoise.Connection.Transmitter do
     {Registry.Tortoise, {__MODULE__, client_id}}
   end
 
+  def stop(client_id) do
+    GenStateMachine.stop(via_name(client_id))
+  end
+
   def handle_socket(client_id, socket) do
     GenStateMachine.call(via_name(client_id), {:handle_socket, socket})
   end
