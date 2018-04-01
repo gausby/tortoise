@@ -32,24 +32,14 @@ defmodule Tortoise.Connection.Inflight do
     GenServer.stop(via_name(client_id))
   end
 
-  def track(client_id, {:incoming, %Package.Publish{qos: 1} = publish}) do
+  def track(client_id, {:incoming, %Package.Publish{qos: qos, dup: false} = publish})
+      when qos in 1..2 do
     track = Track.create(:positive, publish)
     :ok = GenServer.cast(via_name(client_id), {:track, track})
   end
 
-  def track(client_id, {:incoming, %Package.Publish{qos: 2} = publish}) do
-    track = Track.create(:positive, publish)
-    :ok = GenServer.cast(via_name(client_id), {:track, track})
-  end
-
-  def track(client_id, {:outgoing, %Package.Publish{qos: 1} = publish}) do
-    ref = make_ref()
-    track = Track.create({:negative, {self(), ref}}, publish)
-    :ok = GenServer.cast(via_name(client_id), {:track, track})
-    {:ok, ref}
-  end
-
-  def track(client_id, {:outgoing, %Package.Publish{qos: 2} = publish}) do
+  def track(client_id, {:outgoing, %Package.Publish{qos: qos} = publish})
+      when qos in 1..2 do
     ref = make_ref()
     track = Track.create({:negative, {self(), ref}}, publish)
     :ok = GenServer.cast(via_name(client_id), {:track, track})
