@@ -92,5 +92,24 @@ defmodule Tortoise.Connection.Inflight.TrackTest do
 
       assert ^target_state = Track.rollback(state)
     end
+
+    test "rolling back to a publish dispatch should set the duplication flag" do
+      # setup tracking of an outgoing publish qos 2
+      publish = %Package.Publish{qos: 2, identifier: 1, dup: false}
+      caller = {self(), make_ref()}
+      # record data in initial state for later assertions
+      initial_state = Track.create({:negative, caller}, publish)
+      %{pending: [{:dispatch, ^publish} | pending]} = initial_state
+      # progress the state
+      command = {:dispatched, publish}
+      state = Track.update(initial_state, command)
+      # When we roll back the "dup" flag should get set on the publish
+      dupped_publish = %Package.Publish{publish | dup: true}
+
+      assert Track.rollback(state) == %Track{
+               initial_state
+               | pending: [{:dispatch, dupped_publish} | pending]
+             }
+    end
   end
 end

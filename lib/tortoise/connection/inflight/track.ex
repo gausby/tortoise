@@ -71,8 +71,14 @@ defmodule Tortoise.Connection.Inflight.Track do
   Roll the state back to the previous state
   """
   @spec rollback(__MODULE__.t()) :: __MODULE__.t()
+  def rollback(%State{status: []} = state), do: state
+
   def rollback(%State{status: [previous | status], pending: pending} = state) do
     %State{state | status: status, pending: [do_rollback(previous) | pending]}
+  end
+
+  defp do_rollback({:dispatched, %Package.Publish{} = package}) do
+    {:dispatch, %Package.Publish{package | dup: true}}
   end
 
   defp do_rollback({:dispatched, package}) do
