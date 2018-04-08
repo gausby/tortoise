@@ -14,6 +14,7 @@ defmodule Tortoise.Package.Connect do
             client_id: binary(),
             will: Package.Publish.t()
           }
+  @enforce_keys [:client_id]
   defstruct __META__: %Package.Meta{opcode: @opcode},
             protocol: "MQTT",
             protocol_version: 0b00000100,
@@ -86,6 +87,11 @@ defmodule Tortoise.Package.Connect do
           payload(t)
         ])
       ]
+    end
+
+    def encode(%Package.Connect{client_id: client_id} = t)
+        when is_atom(client_id) do
+      encode(%Package.Connect{t | client_id: Atom.to_string(client_id)})
     end
 
     defp protocol_header(%{protocol: protocol, protocol_version: version}) do

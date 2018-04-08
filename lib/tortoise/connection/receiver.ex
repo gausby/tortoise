@@ -6,7 +6,7 @@ defmodule Tortoise.Connection.Receiver do
   alias Tortoise.Package
   alias Tortoise.Connection.{Transmitter, Controller}
 
-  defstruct connection: %Package.Connect{},
+  defstruct connection: %Package.Connect{client_id: "tortoise"},
             host: 'localhost',
             port: 1883,
             socket: nil,
@@ -25,7 +25,8 @@ defmodule Tortoise.Connection.Receiver do
         will: Keyword.get(opts, :will, %Package.Publish{})
       },
       host: host,
-      port: port
+      port: port,
+      socket: Keyword.get(opts, :socket, nil)
     }
 
     GenStateMachine.start_link(__MODULE__, data, name: via_name(client_id))

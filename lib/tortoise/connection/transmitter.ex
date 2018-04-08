@@ -4,6 +4,7 @@ defmodule Tortoise.Connection.Transmitter do
   use GenStateMachine
 
   alias Tortoise.Package
+  alias Tortoise.Connection.Transmitter.Pipe
 
   defstruct client_id: nil, subscribers: %{}
 
@@ -49,6 +50,11 @@ defmodule Tortoise.Connection.Transmitter do
     GenStateMachine.call(via_name(client_id), :get_subscribers)
   end
 
+  def publish(%Pipe{socket: socket, module: :gen_tcp}, data) do
+    # :gen_tcp.send(socket, data)
+    IO.inspect({socket, data})
+  end
+
   def ping(client_id) do
     pingreq = Package.encode(%Package.Pingreq{})
     GenStateMachine.cast(via_name(client_id), {:transmit, pingreq})
@@ -76,8 +82,10 @@ defmodule Tortoise.Connection.Transmitter do
   end
 
   def handle_event(:internal, :broadcast_connection_to_subscribers, {:connected, socket}, data) do
+    pipe = %Pipe{socket: socket, client_id: data.client_id}
+
     for {subscriber, _} <- data.subscribers do
-      send_transmitter_to_subscriber(socket, subscriber)
+      send_transmitter_to_subscriber(subscriber, pipe)
     end
 
     :keep_state_and_data
@@ -103,8 +111,9 @@ defmodule Tortoise.Connection.Transmitter do
     {:keep_state, updated_data, next_actions}
   end
 
-  def handle_event(:internal, {:send_socket, subscriber}, {:connected, socket}, _data) do
-    send_transmitter_to_subscriber(socket, subscriber)
+  def handle_event(:internal, {:send_socket, subscriber}, {:connected, socket}, data) do
+    pipe = %Pipe{socket: socket, client_id: data.client_id}
+    send_transmitter_to_subscriber(subscriber, pipe)
     :keep_state_and_data
   end
 
@@ -132,8 +141,7 @@ defmodule Tortoise.Connection.Transmitter do
     {:keep_state, updated_data}
   end
 
-  defp send_transmitter_to_subscriber(socket, subscriber_pid) do
-    transmitter = socket
+  defp send_transmitter_to_subscriber(subscriber_pid, transmitter) do
     send(subscriber_pid, {Tortoise, {:transmitter, transmitter}})
   end
 end

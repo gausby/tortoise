@@ -2,6 +2,7 @@ defmodule Tortoise.Connection.TransmitterTest do
   use ExUnit.Case, async: true
   doctest Tortoise.Connection.Transmitter
 
+  alias Tortoise.Package
   alias Tortoise.Connection.Transmitter
 
   setup context do
@@ -48,7 +49,7 @@ defmodule Tortoise.Connection.TransmitterTest do
       assert Transmitter.subscribers(client_id) == [self()]
       # when we get a connection the subscribers should get a socket
       _context = run_setup(context, :setup_connection)
-      assert_receive {Tortoise, {:transmitter, socket}}
+      assert_receive {Tortoise, {:transmitter, %Transmitter.Pipe{socket: socket}}}
       assert is_port(socket)
     end
 
@@ -58,7 +59,7 @@ defmodule Tortoise.Connection.TransmitterTest do
       assert :ok = Transmitter.subscribe(client_id)
       assert Transmitter.subscribers(client_id) == [self()]
       # The Transmitter should send the socket to the subscriber
-      assert_receive {Tortoise, {:transmitter, socket}}
+      assert_receive {Tortoise, {:transmitter, %Transmitter.Pipe{socket: socket}}}
       assert is_port(socket)
     end
 
@@ -71,6 +72,7 @@ defmodule Tortoise.Connection.TransmitterTest do
       # subscription; so we will use receive/1 and send/2 in this test
       # for that purpose.
       parent = self()
+
       subscriber =
         spawn_link(fn ->
           :ok = Transmitter.subscribe(client_id)
@@ -114,5 +116,19 @@ defmodule Tortoise.Connection.TransmitterTest do
       _context = run_setup(context, :setup_connection)
       refute_receive {Tortoise, {:transmitter, _socket}}
     end
+  end
+
+  describe "publish/3" do
+    setup [:setup_transmitter, :setup_connection]
+
+    # test "pipe", context do
+    #   # is this actually smart? or am i abusing "into" here?
+    #   [
+    #     %Package.Publish{topic: "hello", payload: "foo"},
+    #     %Package.Publish{topic: "hello2", payload: "bar"},
+    #     %Package.Publish{topic: "hello3", payload: "baz"}
+    #   ]
+    #   |> Enum.into(%Transmitter.Pipe{client_id: context.client_id, socket: context.client})
+    # end
   end
 end
