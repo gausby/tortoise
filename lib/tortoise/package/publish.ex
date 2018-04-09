@@ -10,7 +10,7 @@ defmodule Tortoise.Package.Publish do
             __META__: Package.Meta.t(),
             topic: binary() | nil,
             qos: qos(),
-            payload: binary(),
+            payload: binary() | nil,
             identifier: package_identifier() | nil,
             dup: boolean(),
             retain: boolean()
@@ -18,7 +18,7 @@ defmodule Tortoise.Package.Publish do
   defstruct __META__: %Package.Meta{opcode: @opcode, flags: 0},
             identifier: nil,
             topic: nil,
-            payload: "",
+            payload: nil,
             qos: 0,
             dup: false,
             retain: false
@@ -65,13 +65,16 @@ defmodule Tortoise.Package.Publish do
 
   defp decode_message(<<topic_length::big-integer-size(16), msg::binary>>) do
     <<topic::binary-size(topic_length), payload::binary>> = msg
-    {topic, payload}
+    {topic, nullify(payload)}
   end
 
   defp decode_message_with_id(<<topic_length::big-integer-size(16), msg::binary>>) do
     <<topic::binary-size(topic_length), identifier::big-integer-size(16), payload::binary>> = msg
-    {topic, identifier, payload}
+    {topic, identifier, nullify(payload)}
   end
+
+  defp nullify(""), do: nil
+  defp nullify(payload), do: payload
 
   # Protocols ----------------------------------------------------------
   defimpl Tortoise.Encodable do
@@ -81,7 +84,7 @@ defmodule Tortoise.Package.Publish do
         Package.Meta.encode(%{t.__META__ | flags: encode_flags(t)}),
         Package.variable_length_encode([
           Package.length_encode(t.topic),
-          t.payload
+          encode_payload(t)
         ])
       ]
     end
@@ -93,7 +96,7 @@ defmodule Tortoise.Package.Publish do
         Package.variable_length_encode([
           Package.length_encode(t.topic),
           <<identifier::big-integer-size(16)>>,
-          t.payload
+          encode_payload(t)
         ])
       ]
     end
@@ -102,6 +105,10 @@ defmodule Tortoise.Package.Publish do
       <<flags::4>> = <<flag(dup)::1, qos::integer-size(2), flag(retain)::1>>
       flags
     end
+
+    defp encode_payload(%{payload: nil}), do: ""
+
+    defp encode_payload(%{payload: payload}), do: payload
 
     defp flag(f) when f in [0, nil, false], do: 0
     defp flag(_), do: 1

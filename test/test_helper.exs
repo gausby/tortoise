@@ -94,17 +94,16 @@ defmodule Tortoise.TestGenerators do
   def gen_connect() do
     let last_will <-
           oneof([
-            %Package.Publish{topic: nil, payload: nil, qos: 0, retain: false},
+            nil,
             %Package.Publish{
               topic: gen_topic(),
-              payload: binary(),
+              payload: oneof([non_empty(binary()), nil]),
               qos: gen_qos(),
               retain: bool()
             }
           ]) do
+      # zero byte client id is allowed, but clean session should be set to true
       let connect <- %Package.Connect{
-            # todo, there is a limit to how long a client id can be
-
             # The Server MUST allow ClientIds which are between 1 and 23
             # UTF-8 encoded bytes in length, and that contain only the
             # characters
@@ -115,8 +114,8 @@ defmodule Tortoise.TestGenerators do
             # encoded bytes. The Server MAY allow ClientId’s that contain
             # characters not included in the list given above.
             client_id: binary(),
-            user_name: oneof([nil, binary()]),
-            password: oneof([nil, binary()]),
+            user_name: oneof([nil, utf8()]),
+            password: oneof([nil, utf8()]),
             clean_session: bool(),
             keep_alive: choose(0, 65535),
             will: last_will
@@ -156,7 +155,12 @@ defmodule Tortoise.TestGenerators do
   """
   def gen_publish() do
     let qos <- gen_qos() do
-      %{do_gen_publish(qos) | topic: gen_topic(), payload: utf8(), retain: bool()}
+      %{
+        do_gen_publish(qos)
+        | topic: gen_topic(),
+          payload: oneof([non_empty(binary()), nil]),
+          retain: bool()
+      }
     end
   end
 

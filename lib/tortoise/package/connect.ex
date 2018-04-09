@@ -12,7 +12,7 @@ defmodule Tortoise.Package.Connect do
             clean_session: boolean(),
             keep_alive: non_neg_integer(),
             client_id: binary(),
-            will: Package.Publish.t()
+            will: Package.Publish.t() | nil
           }
   @enforce_keys [:client_id]
   defstruct __META__: %Package.Meta{opcode: @opcode},
@@ -23,7 +23,7 @@ defmodule Tortoise.Package.Connect do
             clean_session: true,
             keep_alive: 60,
             client_id: nil,
-            will: %Package.Publish{payload: nil}
+            will: nil
 
   def decode(<<@opcode::4, 0::4, variable::binary>>) do
     <<4::big-integer-size(16), "MQTT", 4::8, user_name::1, password::1, will_retain::1,
@@ -46,17 +46,22 @@ defmodule Tortoise.Package.Connect do
       client_id: options[:client_id],
       user_name: options[:user_name],
       password: options[:password],
-      will: %Package.Publish{
-        topic: options[:will_topic],
-        payload: options[:will_payload],
-        qos: will_qos,
-        identifier: nil,
-        retain: will_retain == 1
-      },
+      will:
+        if will == 1 do
+          %Package.Publish{
+            topic: options[:will_topic],
+            payload: nullify(options[:will_payload]),
+            qos: will_qos,
+            retain: will_retain == 1
+          }
+        end,
       clean_session: clean_session == 1,
       keep_alive: keep_alive
     }
   end
+
+  defp nullify(""), do: nil
+  defp nullify(payload), do: payload
 
   defp drop_length(payload) do
     case payload do
@@ -98,7 +103,23 @@ defmodule Tortoise.Package.Connect do
       [Package.length_encode(protocol), version]
     end
 
-    defp connection_flags(f) do
+    defp connection_flags(%{will: nil} = f) do
+      <<
+        flag(f.user_name)::integer-size(1),
+        flag(f.password)::integer-size(1),
+        # will retain
+        flag(0)::integer-size(1),
+        # will qos
+        0::integer-size(2),
+        # will flag
+        flag(0)::integer-size(1),
+        flag(f.clean_session)::integer-size(1),
+        # reserved bit
+        0::1
+      >>
+    end
+
+    defp connection_flags(%{will: %Package.Publish{} = will} = f) do
       <<
         flag(f.user_name)::integer-size(1),
         flag(f.password)::integer-size(1),
@@ -115,14 +136,21 @@ defmodule Tortoise.Package.Connect do
       <<f.keep_alive::big-integer-size(16)>>
     end
 
-    defp payload(f) do
-      # hack! it should really support a topic with a nil payload
-      payload = if f.will.topic == nil, do: nil, else: f.will.payload
-
-      [f.client_id, f.will.topic, payload, f.user_name, f.password]
+    defp payload(%{will: nil} = f) do
+      [f.client_id, f.user_name, f.password]
       |> Enum.filter(&is_binary/1)
       |> Enum.map(&Package.length_encode/1)
     end
+
+    defp payload(f) do
+      will_payload = encode_payload(f.will.payload)
+      [f.client_id, f.will.topic, will_payload, f.user_name, f.password]
+      |> Enum.filter(&is_binary/1)
+      |> Enum.map(&Package.length_encode/1)
+    end
+
+    defp encode_payload(nil), do: ""
+    defp encode_payload(payload), do: payload
 
     defp flag(f) when f in [0, nil, false], do: 0
     defp flag(_), do: 1
