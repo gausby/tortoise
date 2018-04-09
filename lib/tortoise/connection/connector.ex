@@ -3,12 +3,6 @@ defmodule Tortoise.Connection.Connector do
 
   alias Tortoise.Package
 
-  # Client API
-  def start(data) do
-    default = data
-    GenServer.start(__MODULE__, default)
-  end
-
   # Server callbacks
   def init({:gen_tcp, host, port}, %Package.Connect{} = connect) do
     tcp_opts = [:binary, packet: :raw, active: false]
