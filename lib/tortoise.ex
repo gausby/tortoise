@@ -14,8 +14,8 @@ defmodule Tortoise do
     import Supervisor.Spec, warn: false
 
     children = [
-      supervisor(Registry, [[keys: :unique, name: Registry.Tortoise]]),
-      worker(Tortoise.InFlightRegistry, [[name: Tortoise.InFlightRegistry]])
+      supervisor(Registry, [[keys: :unique, name: Registry.Tortoise]])
+      # worker(Tortoise.InFlightRegistry, [[name: Tortoise.InFlightRegistry]])
     ]
 
     # read configuration and start connections
