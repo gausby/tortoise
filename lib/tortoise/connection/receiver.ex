@@ -44,7 +44,7 @@ defmodule Tortoise.Connection.Receiver do
 
   # dropped connection, should we try to reconnect ?
   def handle_event(:info, {:tcp_closed, socket}, _state, %{socket: socket} = data) do
-    :ok = Tortoise.Connection.reconnect(data.clint_id)
+    :ok = Tortoise.Connection.reconnect(data.client_id)
     # should we empty the buffer?
     {:next_state, :disconnected, %{data | socket: nil}}
   end
