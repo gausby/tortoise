@@ -185,7 +185,7 @@ defmodule Tortoise.TestGenerators do
   def gen_subscribe() do
     let subscribe <- %Package.Subscribe{
           identifier: gen_identifier(),
-          topics: list({gen_topic_filter(), gen_qos()})
+          topics: non_empty(list({gen_topic_filter(), gen_qos()}))
         } do
       subscribe
     end
@@ -194,7 +194,7 @@ defmodule Tortoise.TestGenerators do
   def gen_suback() do
     let suback <- %Package.Suback{
           identifier: choose(0x0001, 0xFFFF),
-          acks: list(oneof([{:ok, gen_qos()}, {:error, :access_denied}]))
+          acks: non_empty(list(oneof([{:ok, gen_qos()}, {:error, :access_denied}])))
         } do
       suback
     end

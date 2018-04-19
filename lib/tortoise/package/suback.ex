@@ -20,9 +20,15 @@ defmodule Tortoise.Package.Suback do
   @spec decode(binary()) :: t
   def decode(<<@opcode::4, 0::4, payload::binary>>) do
     with payload <- drop_length(payload),
-         <<identifier::big-integer-size(16), acks::binary>> <- payload,
-         acks <- return_codes_to_list(acks),
-         do: %__MODULE__{identifier: identifier, acks: acks}
+         <<identifier::big-integer-size(16), acks::binary>> <- payload do
+      case return_codes_to_list(acks) do
+        [] ->
+          {:error, {:protocol_violation, :empty_subscription_ack}}
+
+        sub_acks ->
+          %__MODULE__{identifier: identifier, acks: sub_acks}
+      end
+    end
   end
 
   defp drop_length(payload) do
