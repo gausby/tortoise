@@ -2,7 +2,6 @@ defmodule Tortoise.Connection.TransmitterTest do
   use ExUnit.Case, async: true
   doctest Tortoise.Connection.Transmitter
 
-  alias Tortoise.Package
   alias Tortoise.Connection.Transmitter
 
   setup context do

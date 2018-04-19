@@ -31,7 +31,7 @@ defmodule Tortoise.Connection.Controller do
   # Client API
   def start_link(opts) do
     client_id = Keyword.fetch!(opts, :client_id)
-    driver = Keyword.fetch!(opts, :driver)
+    driver = Driver.new(Keyword.fetch!(opts, :driver))
 
     init_state = %__MODULE__{
       client_id: client_id,

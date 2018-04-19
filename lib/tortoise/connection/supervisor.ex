@@ -3,19 +3,20 @@ defmodule Tortoise.Connection.Supervisor do
 
   use Supervisor
 
-  alias Tortoise.Connection.{Transmitter, Receiver, Controller}
+  alias Tortoise.Connection.{Transmitter, Receiver, Controller, Inflight}
 
-  def start_link({_protocol, _host, _port} = server, opts) do
-    Supervisor.start_link(__MODULE__, {server, opts})
+  def start_link(opts) do
+    Supervisor.start_link(__MODULE__, opts)
   end
 
-  def init({{_protocol, _host, _port} = server, opts}) do
+  def init(opts) do
     children = [
-      worker(Transmitter, [Keyword.take(opts, [:client_id])]),
-      worker(Receiver, [server, Keyword.take(opts, [:client_id])]),
-      worker(Controller, [Keyword.take(opts, [:client_id, :driver])])
+      {Inflight, Keyword.take(opts, [:client_id])},
+      {Transmitter, Keyword.take(opts, [:client_id])},
+      {Receiver, Keyword.take(opts, [:client_id])},
+      {Controller, Keyword.take(opts, [:client_id, :driver])}
     ]
 
-    supervise(children, strategy: :one_for_one)
+    Supervisor.init(children, strategy: :rest_for_one)
   end
 end

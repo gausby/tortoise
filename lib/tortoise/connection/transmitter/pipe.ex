@@ -20,7 +20,7 @@ defmodule Tortoise.Connection.Transmitter.Pipe do
   alias Tortoise.Connection.Transmitter
 
   @enforce_keys [:client_id, :socket]
-  defstruct [:client_id, :socket, module: :gen_tcp]
+  defstruct [:client_id, :socket, module: :tcp]
 
   defimpl Collectable do
     def into(pipe) do

@@ -3,31 +3,15 @@ defmodule Tortoise.Connection.Receiver do
 
   use GenStateMachine
 
-  alias Tortoise.Package
   alias Tortoise.Connection.{Transmitter, Controller}
 
-  defstruct connection: %Package.Connect{client_id: "tortoise"},
-            host: 'localhost',
-            port: 1883,
-            socket: nil,
-            buffer: <<>>
+  defstruct client_id: nil, socket: nil, buffer: <<>>
+  alias __MODULE__, as: State
 
-  def start_link({_protocol, host, port} = _server, opts) do
+  def start_link(opts) do
     client_id = Keyword.fetch!(opts, :client_id)
 
-    data = %__MODULE__{
-      connection: %Package.Connect{
-        user_name: opts[:user_name],
-        password: opts[:password],
-        clean_session: Keyword.get(opts, :clean_session, true),
-        keep_alive: Keyword.get(opts, :keep_session, 60),
-        client_id: client_id,
-        will: Keyword.get(opts, :will, %Package.Publish{})
-      },
-      host: host,
-      port: port,
-      socket: Keyword.get(opts, :socket, nil)
-    }
+    data = %State{client_id: client_id}
 
     GenStateMachine.start_link(__MODULE__, data, name: via_name(client_id))
   end
@@ -39,21 +23,30 @@ defmodule Tortoise.Connection.Receiver do
     {:via, Registry, {Registry.Tortoise, key}}
   end
 
-  def init(%__MODULE__{} = data) do
-    next_actions = [{:next_event, :internal, :connect}]
-    {:ok, :disconnected, data, next_actions}
+  def child_spec(opts) do
+    %{
+      id: __MODULE__,
+      start: {__MODULE__, :start_link, [opts]},
+      type: :worker,
+      restart: :permanent,
+      shutdown: 500
+    }
+  end
+
+  def handle_socket(client_id, {:tcp, socket}) do
+    {:ok, pid} = GenStateMachine.call(via_name(client_id), {:handle_socket, socket})
+    :ok = :gen_tcp.controlling_process(socket, pid)
+  end
+
+  def init(%State{} = data) do
+    {:ok, :disconnected, data}
   end
 
   # dropped connection, should we try to reconnect ?
-  def handle_event(:info, {:tcp_closed, socket}, state, %{socket: socket} = data) do
-    case state do
-      {:connected, :awaiting_connack} ->
-        {:stop, :failed_to_receive_connack}
-
-      otherwise ->
-        IO.inspect("lost connection, reason: #{inspect(otherwise)}")
-        {:next_state, :disconnected, %{data | socket: nil}}
-    end
+  def handle_event(:info, {:tcp_closed, socket}, _state, %{socket: socket} = data) do
+    :ok = Tortoise.Connection.reconnect(data.clint_id)
+    # should we empty the buffer?
+    {:next_state, :disconnected, %{data | socket: nil}}
   end
 
   # receiving data on the tcp connection
@@ -67,27 +60,10 @@ defmodule Tortoise.Connection.Receiver do
     {:keep_state, new_data, next_actions}
   end
 
-  def handle_event(:internal, :pass_socket_to_transmitter, {:connected, _}, data) do
-    :ok = Transmitter.handle_socket(data.connection.client_id, data.socket)
-    :keep_state_and_data
-  end
-
   # activate network socket for incoming traffic
   def handle_event(:internal, :activate_socket, _state_name, data) do
     :ok = :inet.setopts(data.socket, active: :once)
     :keep_state_and_data
-  end
-
-  def handle_event(:internal, :connect, :disconnected, data) do
-    case :gen_tcp.connect(data.host, data.port, [:binary, packet: :raw]) do
-      {:ok, socket} ->
-        :ok = :gen_tcp.send(socket, Package.encode(data.connection))
-        new_data = %{data | socket: socket}
-        {:next_state, {:connected, :awaiting_connack}, new_data}
-
-      {:error, :econnrefused} ->
-        {:stop, :econnrefused}
-    end
   end
 
   # consume buffer
@@ -95,41 +71,12 @@ defmodule Tortoise.Connection.Receiver do
     :keep_state_and_data
   end
 
-  def handle_event(
-        :internal,
-        :consume_buffer,
-        {:connected, :awaiting_connack},
-        %{buffer: buffer} = data
-      )
-      when byte_size(buffer) >= 4 do
-    <<package::binary-size(4), rest::binary>> = data.buffer
-
-    case Package.decode(package) do
-      %Package.Connack{status: :accepted, session_present: false} ->
-        next_state = {:connected, :receiving_fixed_header}
-
-        next_actions = [
-          {:next_event, :internal, :pass_socket_to_transmitter},
-          {:next_event, :internal, :consume_buffer}
-        ]
-
-        new_data = %{data | buffer: rest}
-        {:next_state, next_state, new_data, next_actions}
-
-      %Package.Connack{status: :accepted, session_present: true} ->
-        raise "todo, implement handling of existing sessions"
-
-      %Package.Connack{status: {:refused, reason}} ->
-        {:stop, reason}
-    end
-  end
-
   # consuming message
   def handle_event(
         :internal,
         :consume_buffer,
         {:connected, {:receiving_variable, length}},
-        %__MODULE__{buffer: buffer} = data
+        %State{buffer: buffer} = data
       )
       when byte_size(buffer) >= length do
     <<package::binary-size(length), rest::binary>> = buffer
@@ -167,13 +114,32 @@ defmodule Tortoise.Connection.Receiver do
       :cont ->
         :keep_state_and_data
 
-      {:error, reason} ->
-        {:stop, reason}
+      {:error, :invalid_header_length} ->
+        {:stop, {:protocol_violation, :invalid_header_length}}
     end
   end
 
   def handle_event(:internal, {:emit, package}, _, data) do
-    :ok = Controller.handle_incoming(data.connection.client_id, package)
+    :ok = Controller.handle_incoming(data.client_id, package)
+    :keep_state_and_data
+  end
+
+  def handle_event({:call, from}, {:handle_socket, socket}, :disconnected, data) do
+    new_state = {:connected, :receiving_fixed_header}
+
+    next_actions = [
+      {:reply, from, {:ok, self()}},
+      {:next_event, :internal, :pass_socket_to_transmitter},
+      {:next_event, :internal, :activate_socket},
+      {:next_event, :internal, :consume_buffer}
+    ]
+
+    # better reset the buffer
+    {:next_state, new_state, %State{data | socket: socket, buffer: <<>>}, next_actions}
+  end
+
+  def handle_event(:internal, :pass_socket_to_transmitter, {:connected, _}, data) do
+    :ok = Transmitter.handle_socket(data.client_id, data.socket)
     :keep_state_and_data
   end
 

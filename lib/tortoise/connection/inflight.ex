@@ -46,11 +46,14 @@ defmodule Tortoise.Connection.Inflight do
     {:ok, ref}
   end
 
-  def track_sync(client_id, {:outgoing, _} = command) do
+  def track_sync(client_id, {:outgoing, _} = command, timeout \\ :infinity) do
     {:ok, ref} = track(client_id, command)
 
     receive do
-      {Tortoise, {{^client_id, ^ref}, :ok}} -> :ok
+      {Tortoise, {{^client_id, ^ref}, :ok}} ->
+        :ok
+    after
+      timeout -> {:error, :timeout}
     end
   end
 

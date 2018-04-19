@@ -144,6 +144,7 @@ defmodule Tortoise.Package.Connect do
 
     defp payload(f) do
       will_payload = encode_payload(f.will.payload)
+
       [f.client_id, f.will.topic, will_payload, f.user_name, f.password]
       |> Enum.filter(&is_binary/1)
       |> Enum.map(&Package.length_encode/1)

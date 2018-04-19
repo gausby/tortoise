@@ -27,6 +27,16 @@ defmodule Tortoise.Connection.Transmitter do
     {Registry.Tortoise, {__MODULE__, client_id}}
   end
 
+  def child_spec(opts) do
+    %{
+      id: __MODULE__,
+      start: {__MODULE__, :start_link, [opts]},
+      type: :worker,
+      restart: :permanent,
+      shutdown: 500
+    }
+  end
+
   def stop(client_id) do
     GenStateMachine.stop(via_name(client_id))
   end
@@ -37,6 +47,18 @@ defmodule Tortoise.Connection.Transmitter do
 
   def subscribe(client_id) do
     GenStateMachine.call(via_name(client_id), :subscribe)
+  end
+
+  def subscribe_await(client_id, timeout \\ :infinity) do
+    :ok = subscribe(client_id)
+
+    receive do
+      {Tortoise, {:transmitter, pipe}} ->
+        {:ok, pipe}
+    after
+      timeout ->
+        {:error, :timeout}
+    end
   end
 
   def unsubscribe(client_id) do
@@ -50,9 +72,13 @@ defmodule Tortoise.Connection.Transmitter do
     GenStateMachine.call(via_name(client_id), :get_subscribers)
   end
 
-  def publish(%Pipe{socket: socket, module: :gen_tcp}, data) do
-    # :gen_tcp.send(socket, data)
-    IO.inspect({socket, data})
+  def publish(%Pipe{socket: socket, module: :tcp} = pipe, %Package.Publish{} = data) do
+    publish = Tortoise.Package.encode(data)
+
+    case :gen_tcp.send(socket, publish) do
+      :ok ->
+        {:ok, pipe}
+    end
   end
 
   def ping(client_id) do
@@ -91,10 +117,15 @@ defmodule Tortoise.Connection.Transmitter do
     :keep_state_and_data
   end
 
-  def handle_event(:cast, {:transmit, package}, {:connected, socket}, _data) do
+  def handle_event(:cast, {:transmit, package}, {:connected, socket}, data) do
     case :gen_tcp.send(socket, package) do
       :ok ->
         :keep_state_and_data
+
+      {:error, :closed} ->
+        new_state = :disconnected
+        # todo, does postpone work like this?
+        {:next_state, new_state, data, :postpone}
     end
   end
 
