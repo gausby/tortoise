@@ -85,11 +85,11 @@ defmodule Tortoise.Connection do
          :ok = Receiver.handle_socket(connect.client_id, {:tcp, socket}) do
       case %Connack{status: :accepted} = connack do
         %Connack{session_present: true} ->
-          {:noreply, %State{state|connect: connect}}
+          {:noreply, %State{state | connect: connect}}
 
         %Connack{session_present: false} ->
           # delete inflight state ?
-          {:noreply, %State{state|connect: connect}}
+          {:noreply, %State{state | connect: connect}}
       end
     else
       {:error, %Connack{status: {:refused, reason}}} ->
