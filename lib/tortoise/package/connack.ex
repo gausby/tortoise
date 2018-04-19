@@ -16,6 +16,7 @@ defmodule Tortoise.Package.Connack do
             session_present: boolean(),
             status: status() | nil
           }
+  @enforce_keys [:status]
   defstruct __META__: %Package.Meta{opcode: @opcode, flags: 0},
             session_present: false,
             status: nil

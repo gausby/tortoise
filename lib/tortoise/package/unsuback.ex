@@ -9,6 +9,7 @@ defmodule Tortoise.Package.Unsuback do
             __META__: Package.Meta.t(),
             identifier: package_identifier() | nil
           }
+  @enforce_keys [:identifier]
   defstruct __META__: %Package.Meta{opcode: @opcode, flags: 0b0000},
             identifier: nil
 

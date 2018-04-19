@@ -9,6 +9,7 @@ defmodule Tortoise.Package.Pubrel do
             __META__: Package.Meta.t(),
             identifier: package_identifier() | nil
           }
+  @enforce_keys [:identifier]
   defstruct __META__: %Package.Meta{opcode: @opcode, flags: 0b0010},
             identifier: nil
 

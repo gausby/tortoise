@@ -119,7 +119,7 @@ defmodule Tortoise.Package.Connect do
       >>
     end
 
-    defp connection_flags(%{will: %Package.Publish{} = will} = f) do
+    defp connection_flags(%{will: %Package.Publish{}} = f) do
       <<
         flag(f.user_name)::integer-size(1),
         flag(f.password)::integer-size(1),

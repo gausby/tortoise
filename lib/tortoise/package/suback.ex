@@ -12,6 +12,7 @@ defmodule Tortoise.Package.Suback do
             identifier: package_identifier() | nil,
             acks: [ack_result]
           }
+  @enforce_keys [:identifier]
   defstruct __META__: %Package.Meta{opcode: @opcode, flags: 0},
             identifier: nil,
             acks: []
