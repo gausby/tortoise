@@ -33,6 +33,8 @@ defmodule Tortoise.Connection.Inflight.Track do
           | Package.Pubrec
           | Package.Pubrel
           | Package.Pubcomp
+          | Package.Subscribe
+          | Package.Suback
 
   @type caller :: {pid(), reference()}
   @type polarity :: :positive | {:negative, caller()}
@@ -40,12 +42,23 @@ defmodule Tortoise.Connection.Inflight.Track do
   @type status_update :: {:received, package()} | {:dispatched, package()}
 
   @opaque t :: %__MODULE__{
+            polarity: :positive | :negative,
+            type: package,
             identifier: package_identifier() | nil,
             status: [status_update()],
             pending: [next_action()],
-            caller: nil | {pid(), reference()}
+            caller: nil | {pid(), reference()},
+            # todo
+            result: term()
           }
-  defstruct status: [], pending: [], identifier: nil, caller: nil
+  @enforce_keys [:type, :identifier, :polarity, :pending]
+  defstruct type: nil,
+            polarity: nil,
+            identifier: nil,
+            status: [],
+            pending: [],
+            caller: nil,
+            result: nil
 
   alias __MODULE__, as: State
   alias Tortoise.Package
@@ -53,18 +66,24 @@ defmodule Tortoise.Connection.Inflight.Track do
   @spec update(__MODULE__.t(), package()) :: {next_action() | nil, __MODULE__.t()}
   # ":dispatch, ..." should be answered with ":dispatched, ..."
   def update(
-        %State{identifier: identifier, pending: [{:dispatch, package} | rest]} = state,
-        {:dispatched, %{identifier: identifier} = package} = status_update
+        %State{identifier: id, pending: [{:dispatch, package} | rest]} = state,
+        {:dispatched, %{identifier: id} = package} = status_update
       ) do
     %{state | status: [status_update | state.status], pending: rest}
   end
 
   # ":expect, ..." should be answered with ":received, ..."
   def update(
-        %State{identifier: identifier, pending: [{:expect, package} | rest]} = state,
-        {:received, %{identifier: identifier} = package} = status_update
+        %State{identifier: id, pending: [{:expect, %{__struct__: t}} | rest]} = state,
+        {:received, %{__struct__: t, identifier: id}} = status_update
       ) do
-    %{state | status: [status_update | state.status], pending: rest}
+    case rest do
+      [] ->
+        finalize(%{state | status: [status_update | state.status], pending: []})
+
+      rest ->
+        %{state | status: [status_update | state.status], pending: rest}
+    end
   end
 
   @doc """
@@ -96,6 +115,8 @@ defmodule Tortoise.Connection.Inflight.Track do
   @spec create(polarity(), Package.Publish.t()) :: __MODULE__.t()
   def create(:positive, %Package.Publish{qos: 1, identifier: id}) do
     %State{
+      type: Package.Publish,
+      polarity: :positive,
       identifier: id,
       status: [{:received, Package.Publish}],
       pending: [{:dispatch, %Package.Puback{identifier: id}}]
@@ -105,6 +126,8 @@ defmodule Tortoise.Connection.Inflight.Track do
   def create({:negative, {pid, ref}}, %Package.Publish{qos: 1, identifier: id} = publish)
       when is_pid(pid) and is_reference(ref) do
     %State{
+      type: Package.Publish,
+      polarity: :negative,
       identifier: id,
       caller: {pid, ref},
       pending: [
@@ -116,6 +139,8 @@ defmodule Tortoise.Connection.Inflight.Track do
 
   def create(:positive, %Package.Publish{identifier: id, qos: 2}) do
     %State{
+      type: Package.Publish,
+      polarity: :positive,
       identifier: id,
       status: [{:received, Package.Publish}],
       pending: [
@@ -129,6 +154,8 @@ defmodule Tortoise.Connection.Inflight.Track do
   def create({:negative, {pid, ref}}, %Package.Publish{identifier: id, qos: 2} = publish)
       when is_pid(pid) and is_reference(ref) do
     %State{
+      type: Package.Publish,
+      polarity: :negative,
       identifier: id,
       caller: {pid, ref},
       pending: [
@@ -138,5 +165,71 @@ defmodule Tortoise.Connection.Inflight.Track do
         {:expect, %Package.Pubcomp{identifier: id}}
       ]
     }
+  end
+
+  # subscription
+  def create({:negative, {pid, ref}}, %Package.Subscribe{identifier: id} = subscribe)
+      when is_pid(pid) and is_reference(ref) do
+    %State{
+      type: Package.Subscribe,
+      polarity: :negative,
+      identifier: id,
+      caller: {pid, ref},
+      pending: [
+        {:dispatch, subscribe},
+        {:expect, %Package.Suback{identifier: id}}
+      ]
+    }
+  end
+
+  def create({:negative, {pid, ref}}, %Package.Unsubscribe{identifier: id} = unsubscribe)
+      when is_pid(pid) and is_reference(ref) do
+    %State{
+      type: Package.Unsubscribe,
+      polarity: :negative,
+      identifier: id,
+      caller: {pid, ref},
+      pending: [
+        {:dispatch, unsubscribe},
+        {:expect, %Package.Unsuback{identifier: id}}
+      ]
+    }
+  end
+
+  # Calculate a result if needed
+  defp finalize(%State{type: Package.Publish} = track) do
+    %State{track | result: :ok}
+  end
+
+  defp finalize(
+         %State{
+           type: Package.Unsubscribe,
+           status: [
+             {:received, _},
+             {:dispatched, %Package.Unsubscribe{topics: topics}}
+           ]
+         } = track
+       ) do
+    %State{track | result: {:unsubscribed, topics}}
+  end
+
+  defp finalize(
+         %State{
+           type: Package.Subscribe,
+           status: [
+             {:received, %Package.Suback{acks: acks}},
+             {:dispatched, %Package.Subscribe{topics: topics}}
+           ]
+         } = track
+       ) do
+    result =
+      for {request, result} <- List.zip([topics, acks]) do
+        case {request, result} do
+          {{topic, level}, {:ok, level}} ->
+            {:ok, topic}
+        end
+      end
+
+    %State{track | result: result}
   end
 end

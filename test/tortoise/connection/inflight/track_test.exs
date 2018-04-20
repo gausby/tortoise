@@ -40,7 +40,7 @@ defmodule Tortoise.Connection.Inflight.TrackTest do
     caller = {self(), make_ref()}
 
     state = Track.create({:negative, caller}, publish)
-    assert %Track{pending: [{:dispatch, publish} | _]} = state
+    assert %Track{pending: [{:dispatch, ^publish} | _]} = state
 
     state = Track.update(state, {:dispatched, publish})
     assert %Track{pending: [{:expect, %Package.Puback{}} | _]} = state
@@ -68,6 +68,38 @@ defmodule Tortoise.Connection.Inflight.TrackTest do
 
     state = Track.update(state, {:received, %Package.Pubcomp{identifier: id}})
     assert %Track{identifier: ^id, pending: [], caller: ^caller} = state
+  end
+
+  test "progress a subscribe" do
+    id = 0x0001
+    subscribe = %Package.Subscribe{identifier: id, topics: [{"foo/bar", 0}]}
+    suback = %Package.Suback{identifier: id, acks: [ok: 0]}
+    caller = {self(), make_ref()}
+
+    state = Track.create({:negative, caller}, subscribe)
+    assert %Track{pending: [{:dispatch, ^subscribe} | _]} = state
+
+    state = Track.update(state, {:dispatched, subscribe})
+    assert %Track{pending: [{:expect, %{__struct__: Package.Suback}} | _]} = state
+
+    state = Track.update(state, {:received, suback})
+    assert %Track{identifier: ^id, pending: []} = state
+  end
+
+  test "progress an unsubscribe" do
+    id = 0x0001
+    unsubscribe = %Package.Unsubscribe{identifier: id, topics: ["foo/bar"]}
+    unsuback = %Package.Unsuback{identifier: id}
+    caller = {self(), make_ref()}
+
+    state = Track.create({:negative, caller}, unsubscribe)
+    assert %Track{pending: [{:dispatch, ^unsubscribe} | _]} = state
+
+    state = Track.update(state, {:dispatched, unsubscribe})
+    assert %Track{pending: [{:expect, %{__struct__: Package.Unsuback}} | _]} = state
+
+    state = Track.update(state, {:received, unsuback})
+    assert %Track{identifier: ^id, pending: []} = state
   end
 
   describe "rollback/1" do

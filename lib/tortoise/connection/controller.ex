@@ -141,8 +141,8 @@ defmodule Tortoise.Connection.Controller do
   end
 
   # response -----------------------------------------------------------
-  defp handle_package(%Suback{} = _suback, state) do
-    # :ok = Subscription.acknowledge(state.client_id, suback)
+  defp handle_package(%Suback{} = suback, state) do
+    :ok = Inflight.update(state.client_id, {:received, suback})
     {:noreply, state}
   end
 
@@ -154,8 +154,8 @@ defmodule Tortoise.Connection.Controller do
   end
 
   # response -----------------------------------------------------------
-  defp handle_package(%Unsuback{} = _unsuback, state) do
-    # :ok = Subscription.acknowledge(state.client_id, unsuback)
+  defp handle_package(%Unsuback{} = unsuback, state) do
+    :ok = Inflight.update(state.client_id, {:received, unsuback})
     {:noreply, state}
   end
 
