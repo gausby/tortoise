@@ -54,13 +54,13 @@ defmodule Tortoise.Connection do
   def init({{:tcp, _, _} = server, %Connect{} = connect, opts}) do
     expected_connack = %Connack{status: :accepted, session_present: false}
 
-    with {:ok, socket, ^expected_connack} <- do_connect(server, connect),
+    with {^expected_connack, socket} <- do_connect(server, connect),
          {:ok, pid} = Connection.Supervisor.start_link(opts),
          :ok = Receiver.handle_socket(connect.client_id, {:tcp, socket}) do
       monitor_ref = {socket, Port.monitor(socket)}
       {:ok, %State{session: pid, server: server, connect: connect, monitor_ref: monitor_ref}}
     else
-      {:error, %Connack{status: {:refused, reason}}} ->
+      %Connack{status: {:refused, reason}} ->
         {:stop, {:connection_failed, reason}}
 
       {:error, {:protocol_violation, violation}} ->
@@ -72,11 +72,11 @@ defmodule Tortoise.Connection do
   def handle_info({:DOWN, ref, :port, port, :normal}, %State{monitor_ref: {port, ref}} = state) do
     connect = %Connect{state.connect | clean_session: false}
 
-    with {:ok, socket, connack} <- do_connect(state.server, connect),
+    with {%Connack{status: :accepted} = connack, socket} <- do_connect(state.server, connect),
          :ok = Receiver.handle_socket(connect.client_id, {:tcp, socket}) do
       monitor_ref = {socket, Port.monitor(socket)}
 
-      case %Connack{status: :accepted} = connack do
+      case connack do
         %Connack{session_present: true} ->
           {:noreply, %State{state | connect: connect, monitor_ref: monitor_ref}}
 
@@ -85,7 +85,7 @@ defmodule Tortoise.Connection do
           {:noreply, %State{state | connect: connect, monitor_ref: monitor_ref}}
       end
     else
-      {:error, %Connack{status: {:refused, reason}}} ->
+      %Connack{status: {:refused, reason}} ->
         {:stop, {:connection_failed, reason}}
 
       {:error, {:protocol_violation, violation}} ->
@@ -104,10 +104,10 @@ defmodule Tortoise.Connection do
          {:ok, packet} <- :gen_tcp.recv(socket, 4, 5000) do
       case Package.decode(packet) do
         %Connack{status: :accepted} = connack ->
-          {:ok, socket, connack}
+          {connack, socket}
 
         %Connack{status: {:refused, _reason}} = connack ->
-          {:error, connack}
+          connack
 
         other ->
           violation = %{expected: Connect, got: other}
