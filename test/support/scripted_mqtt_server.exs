@@ -38,6 +38,10 @@ defmodule Tortoise.Integration.ScriptedMqttServer do
     next_action(%State{state | client_pid: pid, script: script, client: client})
   end
 
+  def handle_info({:tcp_closed, client}, %State{script: [], client: client} = state) do
+    {:stop, :normal, state}
+  end
+
   def handle_info({:tcp, _, tcp_data}, %State{script: [{:receive, expected} | script]} = state) do
     case Package.decode(tcp_data) do
       ^expected ->
