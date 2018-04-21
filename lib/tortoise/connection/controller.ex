@@ -183,7 +183,7 @@ defmodule Tortoise.Connection.Controller do
 
   # response -----------------------------------------------------------
   defp handle_package(%Connack{} = connack, state) do
-    IO.inspect(connack)
+    # receiving a connack at this point would be a protocol violation
     {:noreply, state}
   end
 
