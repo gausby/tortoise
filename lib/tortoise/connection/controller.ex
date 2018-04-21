@@ -26,7 +26,8 @@ defmodule Tortoise.Connection.Controller do
 
   use GenServer
 
-  defstruct client_id: nil, driver: %Driver{}
+  defstruct client_id: nil, ping: nil, driver: %Driver{}
+  alias __MODULE__, as: State
 
   # Client API
   def start_link(opts) do
@@ -42,6 +43,7 @@ defmodule Tortoise.Connection.Controller do
   end
 
   defp via_name(pid) when is_pid(pid), do: pid
+
   defp via_name(client_id) do
     {:via, Registry, reg_name(client_id)}
   end
@@ -52,6 +54,10 @@ defmodule Tortoise.Connection.Controller do
 
   def stop(client_id) do
     GenServer.stop(via_name(client_id))
+  end
+
+  def ping(client_id) do
+    GenServer.cast(via_name(client_id), :ping)
   end
 
   def handle_incoming(client_id, package) do
@@ -77,6 +83,12 @@ defmodule Tortoise.Connection.Controller do
   # binaries
   def handle_cast({:incoming, %{:__META__ => _} = package}, state) do
     handle_package(package, state)
+  end
+
+  def handle_cast(:ping, state) do
+    time = System.monotonic_time(:microsecond)
+    :ok = Transmitter.cast(state.client_id, %Package.Pingreq{})
+    {:noreply, %State{state | ping: time}}
   end
 
   # QoS LEVEL 0 ========================================================
@@ -117,8 +129,6 @@ defmodule Tortoise.Connection.Controller do
       {:ok, state} ->
         {:noreply, state}
     end
-
-    {:noreply, state}
   end
 
   defp handle_package(%Pubrel{} = pubrel, state) do
@@ -165,9 +175,15 @@ defmodule Tortoise.Connection.Controller do
 
   # PING MESSAGES ======================================================
   # command ------------------------------------------------------------
-  defp handle_package(%Pingresp{}, state) do
-    IO.inspect("Pong")
+  defp handle_package(%Pingresp{}, %State{ping: nil} = state) do
     {:noreply, state}
+  end
+
+  defp handle_package(%Pingresp{}, %State{ping: time} = state) do
+    case run_ping_response_callback(time, state) do
+      {:ok, %State{ping: nil} = state} ->
+        {:noreply, state}
+    end
   end
 
   # response -----------------------------------------------------------
@@ -218,6 +234,17 @@ defmodule Tortoise.Connection.Controller do
       {:ok, updated_driver_state} ->
         updated_driver = %{state.driver | state: updated_driver_state}
         {:ok, %__MODULE__{state | driver: updated_driver}}
+    end
+  end
+
+  def run_ping_response_callback(start, state) do
+    round_trip_time = System.monotonic_time(:microsecond) - start
+    args = [round_trip_time, state.driver.state]
+
+    case apply(state.driver.module, :ping_response, args) do
+      {:ok, updated_driver_state} ->
+        updated_driver = %{state.driver | state: updated_driver_state}
+        {:ok, %State{state | ping: nil, driver: updated_driver}}
     end
   end
 end

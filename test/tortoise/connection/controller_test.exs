@@ -29,6 +29,10 @@ defmodule Tortoise.Connection.ControllerTest do
       {:ok, new_state}
     end
 
+    def ping_response(_round_trip_time, state) do
+      {:ok, state}
+    end
+
     def disconnect(_state) do
       :ok
     end

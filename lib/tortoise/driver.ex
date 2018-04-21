@@ -21,5 +21,7 @@ defmodule Tortoise.Driver do
   # todo, topic should be a list of binary
   @callback on_publish(binary(), binary(), term()) :: {:ok, term()}
 
+  @callback ping_response(integer(), term()) :: {:ok, term()}
+
   @callback disconnect(term()) :: :ok
 end
