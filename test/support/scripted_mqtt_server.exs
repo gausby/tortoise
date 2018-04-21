@@ -41,8 +41,11 @@ defmodule Tortoise.Integration.ScriptedMqttServer do
   def handle_info({:tcp, _, tcp_data}, %State{script: [{:receive, expected} | script]} = state) do
     case Package.decode(tcp_data) do
       ^expected ->
-        send(state.client_pid, {:server_received, expected})
+        send(state.client_pid, {__MODULE__, {:received, expected}})
         next_action(%State{state | script: script})
+
+      otherwise ->
+        throw({:unexpected_package, otherwise})
     end
   end
 
@@ -59,7 +62,15 @@ defmodule Tortoise.Integration.ScriptedMqttServer do
     {:noreply, state}
   end
 
+  defp next_action(%State{script: [:disconnect | remaining]} = state) do
+    :ok = :gen_tcp.close(state.client)
+    {:ok, client} = :gen_tcp.accept(state.server_socket, 200)
+    :ok = :inet.setopts(client, active: :once)
+    next_action(%State{state | script: remaining, client: client})
+  end
+
   defp next_action(%State{script: []} = state) do
-    {:stop, :normal, state}
+    send(state.client_pid, {__MODULE__, :completed})
+    {:noreply, state}
   end
 end

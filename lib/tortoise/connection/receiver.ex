@@ -19,8 +19,11 @@ defmodule Tortoise.Connection.Receiver do
   defp via_name(pid) when is_pid(pid), do: pid
 
   defp via_name(client_id) do
-    key = {__MODULE__, client_id}
-    {:via, Registry, {Registry.Tortoise, key}}
+    {:via, Registry, reg_name(client_id)}
+  end
+
+  def reg_name(client_id) do
+    {Registry.Tortoise, {__MODULE__, client_id}}
   end
 
   def child_spec(opts) do
@@ -42,9 +45,10 @@ defmodule Tortoise.Connection.Receiver do
     {:ok, :disconnected, data}
   end
 
-  # dropped connection, should we try to reconnect ?
+  # Dropped connection: the connection process will monitor the
+  # socket, so it should be busy trying to reestablish a connection at
+  # this point
   def handle_event(:info, {:tcp_closed, socket}, _state, %{socket: socket} = data) do
-    :ok = Tortoise.Connection.reconnect(data.client_id)
     # should we empty the buffer?
     {:next_state, :disconnected, %{data | socket: nil}}
   end

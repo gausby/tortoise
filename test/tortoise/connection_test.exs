@@ -38,23 +38,43 @@ defmodule Tortoise.ConnectionTest do
 
       {:ok, {ip, port}} = ScriptedMqttServer.enact(context.scripted_mqtt_server, script)
 
-      assert {:ok, socket, ^expected_connack} = Connection.connect({:tcp, ip, port}, connect)
-      assert is_port(socket)
-      assert_receive {:server_received, ^connect}
+      opts = [
+        client_id: client_id,
+        server: {:tcp, ip, port},
+        driver: {Tortoise.Driver.Logger, []}
+      ]
+
+      assert {:ok, _pid} = Connection.start_link(opts)
+      assert_receive {ScriptedMqttServer, {:received, ^connect}}
+      assert_receive {ScriptedMqttServer, :completed}
     end
 
-    test "with present state", context do
+    test "reconnect with present state", context do
       client_id = context.client_id
 
-      connect = %Package.Connect{client_id: client_id, clean_session: false}
-      expected_connack = %Package.Connack{status: :accepted, session_present: true}
+      connect = %Package.Connect{client_id: client_id, clean_session: true}
+      reconnect = %Package.Connect{connect | clean_session: false}
 
-      script = [{:receive, connect}, {:send, expected_connack}]
+      script = [
+        {:receive, connect},
+        {:send, %Package.Connack{status: :accepted, session_present: false}},
+        :disconnect,
+        {:receive, reconnect},
+        {:send, %Package.Connack{status: :accepted, session_present: true}}
+      ]
+
       {:ok, {ip, port}} = ScriptedMqttServer.enact(context.scripted_mqtt_server, script)
 
-      assert {:ok, socket, ^expected_connack} = Connection.connect({:tcp, ip, port}, connect)
-      assert is_port(socket)
-      assert_receive {:server_received, ^connect}
+      opts = [
+        client_id: client_id,
+        server: {:tcp, ip, port},
+        driver: {Tortoise.Driver.Logger, []}
+      ]
+
+      assert {:ok, _pid} = Connection.start_link(opts)
+      assert_receive {ScriptedMqttServer, {:received, ^connect}}
+      assert_receive {ScriptedMqttServer, {:received, ^reconnect}}
+      assert_receive {ScriptedMqttServer, :completed}
     end
   end
 
@@ -62,19 +82,34 @@ defmodule Tortoise.ConnectionTest do
     setup [:setup_scripted_mqtt_server]
 
     test "unacceptable protocol version", context do
+      Process.flag(:trap_exit, true)
       client_id = context.client_id
 
       connect = %Package.Connect{client_id: client_id}
-      expected_connack = %Package.Connack{status: {:refused, :unacceptable_protocol_version}}
 
-      script = [{:receive, connect}, {:send, expected_connack}]
+      script = [
+        {:receive, connect},
+        {:send, %Package.Connack{status: {:refused, :unacceptable_protocol_version}}}
+      ]
+
+      true = Process.unlink(context.scripted_mqtt_server)
       {:ok, {ip, port}} = ScriptedMqttServer.enact(context.scripted_mqtt_server, script)
 
-      assert {:error, ^expected_connack} = Connection.connect({:tcp, ip, port}, connect)
-      assert_receive {:server_received, ^connect}
+      opts = [
+        client_id: client_id,
+        server: {:tcp, ip, port},
+        driver: {Tortoise.Driver.Logger, []}
+      ]
+
+      assert {:error, {:connection_failed, :unacceptable_protocol_version}} ==
+               Connection.start_link(opts)
+
+      assert_receive {ScriptedMqttServer, {:received, ^connect}}
+      assert_receive {ScriptedMqttServer, :completed}
     end
 
     test "identifier rejected", context do
+      Process.flag(:trap_exit, true)
       client_id = context.client_id
 
       connect = %Package.Connect{client_id: client_id}
@@ -83,11 +118,19 @@ defmodule Tortoise.ConnectionTest do
       script = [{:receive, connect}, {:send, expected_connack}]
       {:ok, {ip, port}} = ScriptedMqttServer.enact(context.scripted_mqtt_server, script)
 
-      assert {:error, ^expected_connack} = Connection.connect({:tcp, ip, port}, connect)
-      assert_receive {:server_received, ^connect}
+      opts = [
+        client_id: client_id,
+        server: {:tcp, ip, port},
+        driver: {Tortoise.Driver.Logger, []}
+      ]
+
+      assert {:error, {:connection_failed, :identifier_rejected}} == Connection.start_link(opts)
+      assert_receive {ScriptedMqttServer, {:received, ^connect}}
+      assert_receive {ScriptedMqttServer, :completed}
     end
 
     test "server unavailable", context do
+      Process.flag(:trap_exit, true)
       client_id = context.client_id
 
       connect = %Package.Connect{client_id: client_id}
@@ -96,11 +139,19 @@ defmodule Tortoise.ConnectionTest do
       script = [{:receive, connect}, {:send, expected_connack}]
       {:ok, {ip, port}} = ScriptedMqttServer.enact(context.scripted_mqtt_server, script)
 
-      assert {:error, ^expected_connack} = Connection.connect({:tcp, ip, port}, connect)
-      assert_receive {:server_received, ^connect}
+      opts = [
+        client_id: client_id,
+        server: {:tcp, ip, port},
+        driver: {Tortoise.Driver.Logger, []}
+      ]
+
+      assert {:error, {:connection_failed, :server_unavailable}} == Connection.start_link(opts)
+      assert_receive {ScriptedMqttServer, {:received, ^connect}}
+      assert_receive {ScriptedMqttServer, :completed}
     end
 
     test "bad user name or password", context do
+      Process.flag(:trap_exit, true)
       client_id = context.client_id
 
       connect = %Package.Connect{client_id: client_id}
@@ -109,11 +160,21 @@ defmodule Tortoise.ConnectionTest do
       script = [{:receive, connect}, {:send, expected_connack}]
       {:ok, {ip, port}} = ScriptedMqttServer.enact(context.scripted_mqtt_server, script)
 
-      assert {:error, ^expected_connack} = Connection.connect({:tcp, ip, port}, connect)
-      assert_receive {:server_received, ^connect}
+      opts = [
+        client_id: client_id,
+        server: {:tcp, ip, port},
+        driver: {Tortoise.Driver.Logger, []}
+      ]
+
+      assert {:error, {:connection_failed, :bad_user_name_or_password}} ==
+               Connection.start_link(opts)
+
+      assert_receive {ScriptedMqttServer, {:received, ^connect}}
+      assert_receive {ScriptedMqttServer, :completed}
     end
 
     test "not authorized", context do
+      Process.flag(:trap_exit, true)
       client_id = context.client_id
 
       connect = %Package.Connect{client_id: client_id}
@@ -122,8 +183,15 @@ defmodule Tortoise.ConnectionTest do
       script = [{:receive, connect}, {:send, expected_connack}]
       {:ok, {ip, port}} = ScriptedMqttServer.enact(context.scripted_mqtt_server, script)
 
-      assert {:error, ^expected_connack} = Connection.connect({:tcp, ip, port}, connect)
-      assert_receive {:server_received, ^connect}
+      opts = [
+        client_id: client_id,
+        server: {:tcp, ip, port},
+        driver: {Tortoise.Driver.Logger, []}
+      ]
+
+      assert {:error, {:connection_failed, :not_authorized}} == Connection.start_link(opts)
+      assert_receive {ScriptedMqttServer, {:received, ^connect}}
+      assert_receive {ScriptedMqttServer, :completed}
     end
   end
 end
