@@ -41,9 +41,13 @@ defmodule Tortoise.Connection.Controller do
     GenServer.start_link(__MODULE__, init_state, name: via_name(client_id))
   end
 
-  def via_name(client_id) do
-    key = {__MODULE__, client_id}
-    {:via, Registry, {Registry.Tortoise, key}}
+  defp via_name(pid) when is_pid(pid), do: pid
+  defp via_name(client_id) do
+    {:via, Registry, reg_name(client_id)}
+  end
+
+  def reg_name(client_id) do
+    {Registry.Tortoise, {__MODULE__, client_id}}
   end
 
   def stop(client_id) do
@@ -182,7 +186,7 @@ defmodule Tortoise.Connection.Controller do
   end
 
   # response -----------------------------------------------------------
-  defp handle_package(%Connack{} = connack, state) do
+  defp handle_package(%Connack{} = _connack, state) do
     # receiving a connack at this point would be a protocol violation
     {:noreply, state}
   end
