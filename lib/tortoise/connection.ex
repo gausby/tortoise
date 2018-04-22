@@ -63,7 +63,7 @@ defmodule Tortoise.Connection do
          :ok = Receiver.handle_socket(connect.client_id, {:tcp, socket}) do
       monitor_ref = {socket, Port.monitor(socket)}
 
-      send(self(), :subscribe)
+      if not Enum.empty?(subscriptions), do: send(self(), :subscribe)
 
       result = %State{
         session: pid,
@@ -97,8 +97,8 @@ defmodule Tortoise.Connection do
 
         %Connack{session_present: false} ->
           # delete inflight state ?
-          send(self(), :subscribe)
           {:noreply, %State{state | connect: connect, monitor_ref: monitor_ref}}
+          if not Enum.empty?(state.subscriptions), do: send(self(), :subscribe)
       end
     else
       %Connack{status: {:refused, reason}} ->
