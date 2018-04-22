@@ -4,11 +4,11 @@ defmodule Tortoise.Connection do
 
   require Logger
 
-  defstruct [:socket, :monitor_ref, :connect, :server, :session, :subscriptions]
+  defstruct [:socket, :monitor_ref, :connect, :server, :session, :subscriptions, :keep_alive]
   alias __MODULE__, as: State
 
   alias Tortoise.Connection
-  alias Tortoise.Connection.{Inflight, Receiver}
+  alias Tortoise.Connection.{Inflight, Controller, Receiver}
   alias Tortoise.Package
   alias Tortoise.Package.{Connect, Connack}
 
@@ -31,7 +31,7 @@ defmodule Tortoise.Connection do
       |> Enum.into(%Tortoise.Package.Subscribe{})
 
     # @todo, validate that the driver is valid
-    opts = Keyword.take(opts, [:client_id, :keep_alive, :driver])
+    opts = Keyword.take(opts, [:client_id, :driver])
     initial = {server, connect, subscriptions, opts}
     GenServer.start_link(__MODULE__, initial, name: via_name(client_id))
   end
@@ -73,7 +73,7 @@ defmodule Tortoise.Connection do
         subscriptions: subscriptions
       }
 
-      {:ok, result}
+      {:ok, reset_keep_alive(result)}
     else
       %Connack{status: {:refused, reason}} ->
         {:stop, {:connection_failed, reason}}
@@ -93,12 +93,14 @@ defmodule Tortoise.Connection do
 
       case connack do
         %Connack{session_present: true} ->
-          {:noreply, %State{state | connect: connect, monitor_ref: monitor_ref}}
+          result = %State{state | connect: connect, monitor_ref: monitor_ref}
+          {:noreply, reset_keep_alive(result)}
 
         %Connack{session_present: false} ->
           # delete inflight state ?
-          {:noreply, %State{state | connect: connect, monitor_ref: monitor_ref}}
           if not Enum.empty?(state.subscriptions), do: send(self(), :subscribe)
+          result = %State{state | connect: connect, monitor_ref: monitor_ref}
+          {:noreply, reset_keep_alive(result)}
       end
     else
       %Connack{status: {:refused, reason}} ->
@@ -134,7 +136,31 @@ defmodule Tortoise.Connection do
     end
   end
 
+  def handle_info(:ping, %State{} = state) do
+    {:ok, ref} = Controller.ping(state.connect.client_id)
+
+    receive do
+      {Tortoise, {:ping_response, ^ref}} ->
+        state = reset_keep_alive(state)
+        {:noreply, state}
+    after
+      5000 ->
+        {:stop, :ping_timeout, state}
+    end
+  end
+
   # Helpers
+  defp reset_keep_alive(%State{keep_alive: nil} = state) do
+    ref = Process.send_after(self(), :ping, state.connect.keep_alive * 1000)
+    %State{state | keep_alive: ref}
+  end
+
+  defp reset_keep_alive(%State{keep_alive: previous_ref} = state) do
+    # Cancel the previous timer, just in case one was already set
+    _ = Process.cancel_timer(previous_ref)
+    ref = Process.send_after(self(), :ping, state.connect.keep_alive * 1000)
+    %State{state | keep_alive: ref}
+  end
 
   defp do_connect({:tcp, host, port}, %Connect{} = connect) do
     tcp_opts = [:binary, packet: :raw, active: false]
