@@ -62,8 +62,7 @@ defmodule Tortoise.Connection.Transmitter do
   end
 
   def unsubscribe(client_id) do
-    pid = self()
-    GenStateMachine.cast(via_name(client_id), {:unsubscribe, pid})
+    GenStateMachine.cast(via_name(client_id), {:unsubscribe, self()})
   end
 
   @doc false
@@ -80,11 +79,6 @@ defmodule Tortoise.Connection.Transmitter do
         {:ok, pipe}
     end
   end
-
-  # def ping(client_id) do
-  #   pingreq = Package.encode(%Package.Pingreq{})
-  #   GenStateMachine.cast(via_name(client_id), {:transmit, pingreq})
-  # end
 
   def cast(client_id, %{__struct__: _} = package) do
     data = Package.encode(package)

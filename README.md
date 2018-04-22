@@ -4,6 +4,48 @@ A MQTT Client application that keep connections to one or more MQTT
 brokers, handles subscriptions, and expose a publisher for publishing
 messages to the broker.
 
+This is work in progress. I need to write documentation before it us
+usable, but as such the client should support:
+
+  - Keeping a connection to a MQTT server (version 3.1.1 for now)
+  - Publishing and subscribing to topics of QoS 0, 1, and 2
+  - Connecting via TCP
+  - The fundamentals are there, but some of the API's might change in
+    the near future
+
+Most of the public facing interface should be in the `Tortoise`
+module. See the GitHub issues for work in progress "known issues in
+the design", "what needs to be done", and so forth list of todo's.
+
+I would love to get some feedback and help building this thing.
+
+
+## Example
+
+Just to get people started:
+
+``` elixir
+# make sure the application is started
+Tortoise.start(:normal, [])
+
+# connect to the server and subscribe to foo/bar
+Tortoise.Supervisor.start_child(
+    client_id: "my_client_id",
+    driver: {Tortoise.Driver.Logger, []},
+    server: {:tcp, 'localhost', 1883},
+    subscriptions: [{"foo/bar", 0}])
+
+# open a pipe we can post stuff into
+{:ok, pipe} = Tortoise.Connection.Transmitter.subscribe_await("hello");
+
+# publish a message on the broker
+Tortoise.publish(pipe, "foo/bar", "Hello from the World of Tomorrow !", qos: 0)
+```
+
+The "pipe" concept should get a better description, it is basically a
+struct that holds a socket we can put MQTT Publish messages into, and
+they will get shot directly on the server.
+
 
 ## Installation
 

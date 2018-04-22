@@ -6,8 +6,6 @@ defmodule Tortoise.Connection.ReceiverTest do
   # alias Tortoise.Package
   alias Tortoise.Connection.Receiver
 
-  # import Tortoise.TestGenerators, only: [gen_connect: 0]
-
   setup context do
     {:ok, %{client_id: context.test}}
   end

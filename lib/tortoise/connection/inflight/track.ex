@@ -8,10 +8,11 @@ defmodule Tortoise.Connection.Inflight.Track do
   coming from the server to the client (us), a negative polarity is
   messages send from the client (us) to the server.
 
-  For now we care about tracking the state of two kinds of messages:
-  the publish control package with a quality of service above 0. We do
-  not track the in-flight state of a QoS 0 control packet because
-  there is no state to track.
+  For now we care about tracking the state of a handful of message
+  kinds: the publish control packages with a quality of service above
+  0 and subscribe and unsubscribe control packages. We do not track
+  the in-flight state of a QoS 0 control packet because there is no
+  state to track.
 
   For negative polarity we need to track the caller, which is the
   process that instantiated the publish control package. This process
@@ -20,10 +21,6 @@ defmodule Tortoise.Connection.Inflight.Track do
   with a positive polarity will get passed to the callback module
   attached to the Controller module, so in that case there will be no
   caller.
-
-  ## Publish control package with QoS 1
-
-  ## Publish control package with QoS 2
   """
 
   @type package_identifier :: 0x0001..0xFFFF
@@ -35,6 +32,8 @@ defmodule Tortoise.Connection.Inflight.Track do
           | Package.Pubcomp
           | Package.Subscribe
           | Package.Suback
+          | Package.Unsubscribe
+          | Package.Unsuback
 
   @type caller :: {pid(), reference()}
   @type polarity :: :positive | {:negative, caller()}

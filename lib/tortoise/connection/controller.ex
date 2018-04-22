@@ -2,7 +2,8 @@ defmodule Tortoise.Connection.Controller do
   @moduledoc false
 
   alias Tortoise.Package
-  alias Tortoise.Connection.Inflight
+  alias Tortoise.Connection.{Transmitter, Inflight}
+  alias Tortoise.Driver
 
   alias Tortoise.Package.{
     Connect,
@@ -20,9 +21,6 @@ defmodule Tortoise.Connection.Controller do
     Pingreq,
     Pingresp
   }
-
-  alias Tortoise.Driver
-  alias Tortoise.Connection.Transmitter
 
   use GenServer
 
