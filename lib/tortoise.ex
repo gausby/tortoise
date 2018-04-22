@@ -28,6 +28,7 @@ defmodule Tortoise do
   """
   def publish(%{client_id: client_id} = pipe, topic, payload, opts \\ []) do
     qos = Keyword.get(opts, :qos, 0)
+
     publish = %Tortoise.Package.Publish{
       topic: topic,
       qos: qos,
