@@ -34,29 +34,25 @@ defmodule Tortoise.Connection.Inflight do
 
   def track(client_id, {:incoming, %Package.Publish{qos: qos, dup: false} = publish})
       when qos in 1..2 do
-    track = Track.create(:positive, publish)
-    :ok = GenServer.cast(via_name(client_id), {:track, track})
+    :ok = GenServer.cast(via_name(client_id), {:incoming, publish})
   end
 
   def track(client_id, {:outgoing, %Package.Publish{qos: qos} = publish})
       when qos in 1..2 do
-    ref = make_ref()
-    track = Track.create({:negative, {self(), ref}}, publish)
-    :ok = GenServer.cast(via_name(client_id), {:track, track})
+    caller = {_, ref} = {self(), make_ref()}
+    :ok = GenServer.cast(via_name(client_id), {:outgoing, caller, publish})
     {:ok, ref}
   end
 
   def track(client_id, {:outgoing, %Package.Subscribe{} = subscribe}) do
-    ref = make_ref()
-    track = Track.create({:negative, {self(), ref}}, subscribe)
-    :ok = GenServer.cast(via_name(client_id), {:track, track})
+    caller = {_, ref} = {self(), make_ref()}
+    :ok = GenServer.cast(via_name(client_id), {:outgoing, caller, subscribe})
     {:ok, ref}
   end
 
   def track(client_id, {:outgoing, %Package.Unsubscribe{} = unsubscribe}) do
-    ref = make_ref()
-    track = Track.create({:negative, {self(), ref}}, unsubscribe)
-    :ok = GenServer.cast(via_name(client_id), {:track, track})
+    caller = {_, ref} = {self(), make_ref()}
+    :ok = GenServer.cast(via_name(client_id), {:outgoing, caller, unsubscribe})
     {:ok, ref}
   end
 
@@ -80,7 +76,18 @@ defmodule Tortoise.Connection.Inflight do
     {:ok, state}
   end
 
-  def handle_cast({:track, track}, %{pending: pending} = state) do
+  def handle_cast({:incoming, package}, %{pending: pending} = state) do
+    track = Track.create(:positive, package)
+    updated_pending = Map.put_new(pending, track.identifier, track)
+
+    case execute(track, %__MODULE__{state | pending: updated_pending}) do
+      {:ok, state} ->
+        {:noreply, state}
+    end
+  end
+
+  def handle_cast({:outgoing, caller, package}, %{pending: pending} = state) do
+    track = Track.create({:negative, caller}, package)
     updated_pending = Map.put_new(pending, track.identifier, track)
 
     case execute(track, %__MODULE__{state | pending: updated_pending}) do
