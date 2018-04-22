@@ -226,7 +226,13 @@ defmodule Tortoise.Connection.Inflight.Track do
       for {request, result} <- List.zip([topics, acks]) do
         case {request, result} do
           {{topic, level}, {:ok, level}} ->
-            {:ok, topic}
+            {:ok, {topic, level}}
+
+          {{topic, _requested_level}, {:ok, actual_level}} ->
+            {:warn, {topic, actual_level}}
+
+          {{topic, level}, {:error, :access_denied}} ->
+            {:error, {:access_denied, {topic, level}}}
         end
       end
 

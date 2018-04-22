@@ -4,11 +4,11 @@ defmodule Tortoise.Connection do
 
   require Logger
 
-  defstruct [:socket, :monitor_ref, :connect, :server, :session]
+  defstruct [:socket, :monitor_ref, :connect, :server, :session, :subscriptions]
   alias __MODULE__, as: State
 
   alias Tortoise.Connection
-  alias Tortoise.Connection.Receiver
+  alias Tortoise.Connection.{Inflight, Receiver}
   alias Tortoise.Package
   alias Tortoise.Package.{Connect, Connack}
 
@@ -26,10 +26,14 @@ defmodule Tortoise.Connection do
       clean_session: true
     }
 
+    subscriptions =
+      Keyword.get(opts, :subscriptions, [])
+      |> Enum.into(%Tortoise.Package.Subscribe{})
+
     # @todo, validate that the driver is valid
     opts = Keyword.take(opts, [:client_id, :keep_alive, :driver])
-
-    GenServer.start_link(__MODULE__, {server, connect, opts}, name: via_name(client_id))
+    initial = {server, connect, subscriptions, opts}
+    GenServer.start_link(__MODULE__, initial, name: via_name(client_id))
   end
 
   def via_name(pid) when is_pid(pid), do: pid
@@ -51,14 +55,25 @@ defmodule Tortoise.Connection do
   end
 
   # Callbacks
-  def init({{:tcp, _, _} = server, %Connect{} = connect, opts}) do
+  def init({{:tcp, _, _} = server, %Connect{} = connect, subscriptions, opts}) do
     expected_connack = %Connack{status: :accepted, session_present: false}
 
     with {^expected_connack, socket} <- do_connect(server, connect),
          {:ok, pid} = Connection.Supervisor.start_link(opts),
          :ok = Receiver.handle_socket(connect.client_id, {:tcp, socket}) do
       monitor_ref = {socket, Port.monitor(socket)}
-      {:ok, %State{session: pid, server: server, connect: connect, monitor_ref: monitor_ref}}
+
+      send(self(), :subscribe)
+
+      result = %State{
+        session: pid,
+        server: server,
+        connect: connect,
+        monitor_ref: monitor_ref,
+        subscriptions: subscriptions
+      }
+
+      {:ok, result}
     else
       %Connack{status: {:refused, reason}} ->
         {:stop, {:connection_failed, reason}}
@@ -82,6 +97,7 @@ defmodule Tortoise.Connection do
 
         %Connack{session_present: false} ->
           # delete inflight state ?
+          send(self(), :subscribe)
           {:noreply, %State{state | connect: connect, monitor_ref: monitor_ref}}
       end
     else
@@ -91,6 +107,30 @@ defmodule Tortoise.Connection do
       {:error, {:protocol_violation, violation}} ->
         Logger.error("Protocol violation: #{inspect(violation)}")
         {:stop, :protocol_violation}
+    end
+  end
+
+  def handle_info(:subscribe, %State{subscriptions: subscriptions} = state) do
+    client_id = state.connect.client_id
+
+    case Enum.empty?(subscriptions) do
+      true ->
+        # nothing to subscribe to, just continue
+        {:noreply, state}
+
+      false ->
+        # subscribe to the predefined topics
+        {:ok, ref} = Inflight.track(client_id, {:outgoing, subscriptions})
+
+        receive do
+          {Tortoise, {{^client_id, ^ref}, _result}} ->
+            # todo, handle topics that had errors like "access denied"
+            # todo, handle topics that got a lower qos than expected
+            {:noreply, state}
+        after
+          5000 ->
+            {:stop, :subscription_timeout, state}
+        end
     end
   end
 
