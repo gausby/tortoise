@@ -26,15 +26,16 @@ defmodule Tortoise do
   @doc """
   Publish a message to the MQTT broker
   """
-  def publish(%{client_id: client_id} = pipe, topic, payload, opts \\ [qos: 0]) do
+  def publish(%{client_id: client_id} = pipe, topic, payload, opts \\ []) do
+    qos = Keyword.get(opts, :qos, 0)
     publish = %Tortoise.Package.Publish{
       topic: topic,
-      qos: opts.qos,
+      qos: qos,
       payload: payload,
       retain: Keyword.get(opts, :retain, false)
     }
 
-    if opts.qos in [1, 2] do
+    if qos in [1, 2] do
       Inflight.track_sync(client_id, {:outgoing, publish})
     else
       Transmitter.publish(pipe, publish)
