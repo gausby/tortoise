@@ -38,6 +38,7 @@ defmodule Tortoise.Connection.Receiver do
 
   def handle_socket(client_id, {:tcp, socket}) do
     {:ok, pid} = GenStateMachine.call(via_name(client_id), {:handle_socket, socket})
+
     case :gen_tcp.controlling_process(socket, pid) do
       :ok ->
         :ok

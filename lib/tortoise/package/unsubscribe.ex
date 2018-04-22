@@ -11,7 +11,6 @@ defmodule Tortoise.Package.Unsubscribe do
             identifier: package_identifier() | nil,
             topics: [topic]
           }
-  @enforce_keys [:identifier]
   defstruct __META__: %Package.Meta{opcode: @opcode, flags: 2},
             topics: [],
             identifier: nil

@@ -87,6 +87,7 @@ defmodule Tortoise.Connection.Inflight do
   end
 
   def handle_cast({:outgoing, caller, package}, %{pending: pending} = state) do
+    {:ok, package} = assign_identifier(package, pending)
     track = Track.create({:negative, caller}, package)
     updated_pending = Map.put_new(pending, track.identifier, track)
 
@@ -142,5 +143,34 @@ defmodule Tortoise.Connection.Inflight do
        when is_pid(pid) do
     send(pid, {Tortoise, {{state.client_id, ref}, result}})
     :ok
+  end
+
+  # Assign a random identifier to the tracked package; this will make
+  # sure we pick a random number that is not in use
+  defp assign_identifier(%{identifier: nil} = package, pending) do
+    case :crypto.strong_rand_bytes(2) do
+      <<0, 0>> ->
+        # an identifier cannot be zero
+        assign_identifier(package, pending)
+
+      <<identifier::integer-size(16)>> ->
+        unless Map.has_key?(pending, identifier) do
+          {:ok, %{package | identifier: identifier}}
+        else
+          assign_identifier(package, pending)
+        end
+    end
+  end
+
+  # ...as such we should let the in-flight process assign identifiers,
+  # but the possibility to pass one in has been kept so we can make
+  # deterministic unit tests
+  defp assign_identifier(%{identifier: identifier} = package, pending)
+       when identifier in 0x0001..0xFFFF do
+    unless Map.has_key?(pending, identifier) do
+      {:ok, package}
+    else
+      {:error, {:identifier_already_in_use, identifier}}
+    end
   end
 end

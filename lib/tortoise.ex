@@ -27,35 +27,22 @@ defmodule Tortoise do
   Publish a message to the MQTT broker
   """
   def publish(%{client_id: client_id} = pipe, topic, payload, opts \\ [qos: 0]) do
-    case opts[:qos] do
-      0 ->
-        publish = %Tortoise.Package.Publish{
-          topic: topic,
-          payload: payload,
-          retain: Keyword.get(opts, :retain, false)
-        }
+    publish = %Tortoise.Package.Publish{
+      topic: topic,
+      qos: opts.qos,
+      payload: payload,
+      retain: Keyword.get(opts, :retain, false)
+    }
 
-        Transmitter.publish(pipe, publish)
-
-      qos when qos in [1, 2] ->
-        # @todo the inflight process should be in charge of identifiers
-        <<identifier::integer-size(16)>> = :crypto.strong_rand_bytes(2)
-
-        publish = %Tortoise.Package.Publish{
-          identifier: identifier,
-          topic: topic,
-          payload: payload,
-          qos: qos,
-          retain: Keyword.get(opts, :retain, false)
-        }
-
-        Inflight.track_sync(client_id, {:outgoing, publish})
+    if opts.qos in [1, 2] do
+      Inflight.track_sync(client_id, {:outgoing, publish})
+    else
+      Transmitter.publish(pipe, publish)
     end
   end
 
   def subscribe(client_id, [{_, n} | _] = topics) when is_number(n) do
-    <<identifier::integer-size(16)>> = :crypto.strong_rand_bytes(2)
-    subscribe = Enum.into(topics, %Tortoise.Package.Subscribe{identifier: identifier})
+    subscribe = Enum.into(topics, %Tortoise.Package.Subscribe{})
     Inflight.track_sync(client_id, {:outgoing, subscribe}, 5000)
   end
 
@@ -64,8 +51,7 @@ defmodule Tortoise do
   end
 
   def unsubscribe(client_id, topics) when is_list(topics) do
-    <<identifier::integer-size(16)>> = :crypto.strong_rand_bytes(2)
-    unsubscribe = %Tortoise.Package.Unsubscribe{identifier: identifier, topics: topics}
+    unsubscribe = %Tortoise.Package.Unsubscribe{topics: topics}
     Inflight.track_sync(client_id, {:outgoing, unsubscribe}, 5000)
   end
 
