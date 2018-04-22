@@ -42,7 +42,7 @@ Tortoise.Supervisor.start_child(
 # process will get a new pipe when the connection is reestablished, for
 # what ever reason. The pipe will be in the mailbox of the subscribing
 # process.
-{:ok, pipe} = Tortoise.Connection.Transmitter.subscribe_await("hello");
+{:ok, pipe} = Tortoise.Connection.Transmitter.subscribe_await("my_client_id");
 
 # publish a message on the broker
 Tortoise.publish(pipe, "foo/bar", "Hello from the World of Tomorrow !", qos: 0)
