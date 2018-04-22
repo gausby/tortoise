@@ -237,7 +237,7 @@ defmodule Tortoise.Connection.Controller do
     end
   end
 
-  def run_ping_response_callback(start, state) do
+  defp run_ping_response_callback(start, state) do
     round_trip_time = System.monotonic_time(:microsecond) - start
     args = [round_trip_time, state.driver.state]
 
