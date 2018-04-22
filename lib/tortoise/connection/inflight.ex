@@ -98,6 +98,26 @@ defmodule Tortoise.Connection.Inflight do
     end
   end
 
+  # helpers
+
+  defp execute(%Track{pending: [{:dispatch, package} | _]}, state) do
+    :ok = Transmitter.cast(state.client_id, package)
+    update = {:dispatched, package}
+    {:ok, next_action, state} = progress_track_state(update, state)
+    execute(next_action, state)
+  end
+
+  defp execute(%Track{pending: [{:expect, _} | _]}, state) do
+    # await
+    {:ok, state}
+  end
+
+  defp execute(%Track{pending: []} = track, state) do
+    :ok = respond_caller(track, state)
+    pending = Map.delete(state.pending, track.identifier)
+    {:ok, %__MODULE__{state | pending: pending}}
+  end
+
   defp progress_track_state({_, package} = input, %__MODULE__{} = state) do
     # todo, handle possible error
     {next_action, updated_pending} =
@@ -109,30 +129,7 @@ defmodule Tortoise.Connection.Inflight do
     {:ok, next_action, %__MODULE__{state | pending: updated_pending}}
   end
 
-  defp execute(%Track{pending: []} = track, state) do
-    :ok = respond_caller(track, state)
-    pending = Map.delete(state.pending, track.identifier)
-    {:ok, %__MODULE__{state | pending: pending}}
-  end
-
-  defp execute(%Track{pending: [{:expect, _} | _]}, state) do
-    # await
-    {:ok, state}
-  end
-
-  defp execute(%Track{pending: [{:dispatch, package} | _]}, state) do
-    :ok = Transmitter.cast(state.client_id, package)
-    update = {:dispatched, package}
-    {:ok, next_action, state} = progress_track_state(update, state)
-    execute(next_action, state)
-  end
-
   defp respond_caller(%Track{caller: nil}, _), do: :ok
-
-  defp respond_caller(%Track{caller: {pid, ref}, type: Package.Publish}, state) do
-    send(pid, {Tortoise, {{state.client_id, ref}, :ok}})
-    :ok
-  end
 
   defp respond_caller(%Track{caller: {pid, ref}, result: result}, state)
        when is_pid(pid) do
