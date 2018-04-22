@@ -35,7 +35,13 @@ Tortoise.Supervisor.start_child(
     server: {:tcp, 'localhost', 1883},
     subscriptions: [{"foo/bar", 0}])
 
-# open a pipe we can post stuff into
+# Open a pipe we can post stuff into...
+
+# ...while the word subscribe might be confusing it is meant to mean
+# "subscribe to a connection on the transmitter"; the subscribing
+# process will get a new pipe when the connection is reestablished, for
+# what ever reason. The pipe will be in the mailbox of the subscribing
+# process.
 {:ok, pipe} = Tortoise.Connection.Transmitter.subscribe_await("hello");
 
 # publish a message on the broker
