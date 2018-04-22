@@ -88,12 +88,13 @@ defmodule Tortoise.Connection.ControllerTest do
 
     test "send a ping request", context do
       # send a ping request to the server
-      assert :ok = Transmitter.ping(context.client_id)
+      assert {:ok, ping_ref} = Controller.ping(context.client_id)
       # assert that the server receives a ping request package
       {:ok, package} = :gen_tcp.recv(context.server, 0, 200)
       assert %Package.Pingreq{} = Package.decode(package)
       # the server will respond with an pingresp (ping response)
       Controller.handle_incoming(context.client_id, %Package.Pingresp{})
+      assert_receive {Tortoise, {:ping_response, ^ping_ref}}
     end
 
     test "receive a ping request", context do

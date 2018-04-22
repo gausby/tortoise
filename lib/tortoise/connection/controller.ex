@@ -26,7 +26,7 @@ defmodule Tortoise.Connection.Controller do
 
   use GenServer
 
-  defstruct client_id: nil, ping: nil, driver: %Driver{}
+  defstruct client_id: nil, ping: [], driver: %Driver{}
   alias __MODULE__, as: State
 
   # Client API
@@ -57,7 +57,9 @@ defmodule Tortoise.Connection.Controller do
   end
 
   def ping(client_id) do
-    GenServer.cast(via_name(client_id), :ping)
+    ref = make_ref()
+    :ok = GenServer.cast(via_name(client_id), {:ping, {self(), ref}})
+    {:ok, ref}
   end
 
   def handle_incoming(client_id, package) do
@@ -85,10 +87,10 @@ defmodule Tortoise.Connection.Controller do
     handle_package(package, state)
   end
 
-  def handle_cast(:ping, state) do
+  def handle_cast({:ping, caller}, state) do
     time = System.monotonic_time(:microsecond)
     :ok = Transmitter.cast(state.client_id, %Package.Pingreq{})
-    {:noreply, %State{state | ping: time}}
+    {:noreply, %State{state | ping: [{caller, time} | state.ping]}}
   end
 
   # QoS LEVEL 0 ========================================================
@@ -179,9 +181,13 @@ defmodule Tortoise.Connection.Controller do
     {:noreply, state}
   end
 
-  defp handle_package(%Pingresp{}, %State{ping: time} = state) do
+  defp handle_package(%Pingresp{}, %State{ping: [ping | pings]} = state) do
+    {{caller, ref}, time} = ping
+    send(caller, {Tortoise, {:ping_response, ref}})
+    state = %State{state | ping: pings}
+
     case run_ping_response_callback(time, state) do
-      {:ok, %State{ping: nil} = state} ->
+      {:ok, %State{} = state} ->
         {:noreply, state}
     end
   end
