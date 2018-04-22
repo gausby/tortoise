@@ -115,8 +115,8 @@ defmodule Tortoise.Connection.Inflight do
     execute(next_action, state)
   end
 
-  defp execute(%Track{pending: [{:expect, _} | _]}, state) do
-    # await
+  defp execute(%Track{pending: [{:expect, _package} | _]}, state) do
+    # await the package in a later update
     {:ok, state}
   end
 
