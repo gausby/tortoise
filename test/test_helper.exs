@@ -302,7 +302,7 @@ defmodule Tortoise.TestTCPTunnel do
   end
 end
 
-{:ok, _} = Tortoise.start(:normal, [])
+{:ok, _} = Tortoise.start(:temporary, [])
 
 {:ok, _acceptor_pid} = Tortoise.TestTCPTunnel.start_link()
 

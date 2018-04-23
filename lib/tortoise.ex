@@ -10,7 +10,7 @@ defmodule Tortoise do
   @doc """
   Start the application supervisor
   """
-  def start(:normal, _args) do
+  def start(_type, _args) do
     # read configuration and start connections
     # start with client_id, and driver from config
 

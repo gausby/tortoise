@@ -3,6 +3,6 @@ defmodule TortoiseTest do
   doctest Tortoise
 
   test "greets the world" do
-    assert {:error, {:already_started, _pid}} = Tortoise.start(:normal, [])
+    assert {:error, {:already_started, _pid}} = Tortoise.start(:temporary, [])
   end
 end
