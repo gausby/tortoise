@@ -48,7 +48,7 @@ defmodule Tortoise do
     Inflight.track_sync(client_id, {:outgoing, subscribe}, 5000)
   end
 
-  def subscribe(client_id, topic) do
+  def subscribe(client_id, {_, n} = topic) when is_number(n) do
     subscribe(client_id, [topic])
   end
 
