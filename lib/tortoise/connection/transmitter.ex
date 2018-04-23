@@ -71,12 +71,21 @@ defmodule Tortoise.Connection.Transmitter do
     GenStateMachine.call(via_name(client_id), :get_subscribers)
   end
 
-  def publish(%Pipe{socket: socket, module: :tcp} = pipe, %Package.Publish{} = data) do
+  def publish(%Pipe{module: :tcp} = pipe, %Package.Publish{} = data) do
     publish = Tortoise.Package.encode(data)
 
-    case :gen_tcp.send(socket, publish) do
+    case :gen_tcp.send(pipe.socket, publish) do
       :ok ->
         {:ok, pipe}
+
+      {:error, :closed} ->
+        receive do
+          {Tortoise, {:transmitter, pipe}} ->
+            publish(pipe, data)
+        after
+          5000 ->
+            {:error, :closed}
+        end
     end
   end
 

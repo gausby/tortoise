@@ -3,6 +3,8 @@ defmodule Tortoise.Connection.TransmitterTest do
   doctest Tortoise.Connection.Transmitter
 
   alias Tortoise.Connection.Transmitter
+  alias Tortoise.Package
+  alias Tortoise.Package.Publish
 
   setup context do
     {:ok, %{client_id: context.test}}
@@ -119,6 +121,54 @@ defmodule Tortoise.Connection.TransmitterTest do
 
   describe "publish/3" do
     setup [:setup_transmitter, :setup_connection]
+
+    test "publishing on a pipe", context do
+      client_id = context.client_id
+      assert :ok = Transmitter.subscribe(client_id)
+      assert_receive {Tortoise, {:transmitter, pipe}}
+      publish = %Publish{topic: "foo"}
+
+      Transmitter.publish(pipe, publish)
+      {:ok, package} = :gen_tcp.recv(context.server, 0)
+
+      assert Package.decode(package) == publish
+    end
+
+    test "receiving a new pipe during a publish if the socket is closed", context do
+      client_id = context.client_id
+      parent = self()
+      publish = %Publish{topic: "foo"}
+
+      subscriber =
+        spawn_link(fn ->
+          {:ok, pipe} = Transmitter.subscribe_await(client_id)
+          send(parent, {:subscriber_pipe, pipe})
+          {:ok, pipe} = Transmitter.publish(pipe, publish)
+          # Now the parent will close the socket belonging to the pipe
+          # and start a new one. The next publish will get the newly
+          # created socket when it attempt to publish.
+          receive do
+            :retry_publish ->
+              # this publish should receive the new pipe
+              {:ok, pipe} = Transmitter.publish(pipe, publish)
+              send(parent, {:subscriber_pipe, pipe})
+          end
+        end)
+
+      assert_receive {:subscriber_pipe, %Transmitter.Pipe{socket: original_socket}}
+      {:ok, package} = :gen_tcp.recv(context.server, 0)
+      assert Package.decode(package) == publish
+      :ok = :gen_tcp.close(context.client)
+
+      send(subscriber, :retry_publish)
+      context = run_setup(context, :setup_connection)
+
+      {:ok, package} = :gen_tcp.recv(context.server, 0)
+      assert Package.decode(package) == publish
+      assert_receive {:subscriber_pipe, %Transmitter.Pipe{socket: new_socket}}
+      # the new socket should be different than the original socket
+      refute new_socket == original_socket
+    end
 
     # test "pipe", context do
     #   # is this actually smart? or am i abusing "into" here?
