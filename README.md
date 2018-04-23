@@ -1,5 +1,7 @@
 # Tortoise
 
+[![Build Status](https://travis-ci.org/gausby/tortoise.svg)](https://travis-ci.org/gausby/tortoise)
+
 A MQTT Client application that keep connections to one or more MQTT
 brokers, handles subscriptions, and expose a publisher for publishing
 messages to the broker.
