@@ -26,7 +26,7 @@ Just to get people started:
 
 ``` elixir
 # make sure the application is started
-Tortoise.start(:normal, [])
+Tortoise.start(:temporary, [])
 
 # connect to the server and subscribe to foo/bar
 Tortoise.Supervisor.start_child(
