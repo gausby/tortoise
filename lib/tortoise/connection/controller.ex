@@ -182,14 +182,10 @@ defmodule Tortoise.Connection.Controller do
   end
 
   defp handle_package(%Pingresp{}, %State{ping: ping} = state) do
-    {{:value, {{caller, ref}, time}}, ping} = :queue.out(ping)
-    send(caller, {Tortoise, {:ping_response, ref}})
-    state = %State{state | ping: ping}
-
-    case run_ping_response_callback(time, state) do
-      {:ok, %State{} = state} ->
-        {:noreply, state}
-    end
+    {{:value, {{caller, ref}, start_time}}, ping} = :queue.out(ping)
+    round_trip_time = System.monotonic_time(:microsecond) - start_time
+    send(caller, {Tortoise, {:ping_response, ref, round_trip_time}})
+    {:noreply, %State{state | ping: ping}}
   end
 
   # response -----------------------------------------------------------
@@ -240,17 +236,6 @@ defmodule Tortoise.Connection.Controller do
       {:ok, updated_driver_state} ->
         updated_driver = %{state.driver | state: updated_driver_state}
         {:ok, %__MODULE__{state | driver: updated_driver}}
-    end
-  end
-
-  defp run_ping_response_callback(start, state) do
-    round_trip_time = System.monotonic_time(:microsecond) - start
-    args = [round_trip_time, state.driver.state]
-
-    case apply(state.driver.module, :ping_response, args) do
-      {:ok, updated_driver_state} ->
-        updated_driver = %{state.driver | state: updated_driver_state}
-        {:ok, %State{state | driver: updated_driver}}
     end
   end
 end

@@ -20,7 +20,5 @@ defmodule Tortoise.Driver do
 
   @callback on_publish(topic(), binary(), term()) :: {:ok, term()}
 
-  @callback ping_response(integer(), term()) :: {:ok, term()}
-
   @callback disconnect(term()) :: :ok
 end

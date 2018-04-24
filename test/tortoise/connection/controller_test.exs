@@ -29,10 +29,6 @@ defmodule Tortoise.Connection.ControllerTest do
       {:ok, new_state}
     end
 
-    def ping_response(_round_trip_time, state) do
-      {:ok, state}
-    end
-
     def disconnect(_state) do
       :ok
     end
@@ -94,7 +90,7 @@ defmodule Tortoise.Connection.ControllerTest do
       assert %Package.Pingreq{} = Package.decode(package)
       # the server will respond with an pingresp (ping response)
       Controller.handle_incoming(context.client_id, %Package.Pingresp{})
-      assert_receive {Tortoise, {:ping_response, ^ping_ref}}
+      assert_receive {Tortoise, {:ping_response, ^ping_ref, _ping_time}}
     end
 
     test "receive a ping request", context do
@@ -113,9 +109,9 @@ defmodule Tortoise.Connection.ControllerTest do
 
       # the controller should respond to ping requests in FIFO order
       Controller.handle_incoming(context.client_id, %Package.Pingresp{})
-      assert_receive {Tortoise, {:ping_response, ^first_ping_ref}}
+      assert_receive {Tortoise, {:ping_response, ^first_ping_ref, _}}
       Controller.handle_incoming(context.client_id, %Package.Pingresp{})
-      assert_receive {Tortoise, {:ping_response, ^second_ping_ref}}
+      assert_receive {Tortoise, {:ping_response, ^second_ping_ref, _}}
     end
   end
 

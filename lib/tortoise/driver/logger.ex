@@ -14,11 +14,6 @@ defmodule Tortoise.Driver.Logger do
     {:ok, state}
   end
 
-  def ping_response(round_trip_time, state) do
-    Logger.info("Ping completed in #{round_trip_time}μs")
-    {:ok, state}
-  end
-
   def disconnect(_state) do
     Logger.info("Disconnected")
     :ok

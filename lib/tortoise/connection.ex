@@ -140,7 +140,8 @@ defmodule Tortoise.Connection do
     {:ok, ref} = Controller.ping(state.connect.client_id)
 
     receive do
-      {Tortoise, {:ping_response, ^ref}} ->
+      {Tortoise, {:ping_response, ^ref, _round_trip_time}} ->
+        # Logger.info "Ping: #{round_trip_time} μs"
         state = reset_keep_alive(state)
         {:noreply, state}
     after
