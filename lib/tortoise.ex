@@ -2,6 +2,8 @@ defmodule Tortoise do
   use Application
 
   alias Tortoise.Connection.{Transmitter, Inflight}
+  alias Tortoise.Connection.Transmitter.Pipe
+  alias Tortoise.Package
 
   @moduledoc """
   Documentation for Tortoise.
@@ -26,10 +28,10 @@ defmodule Tortoise do
   @doc """
   Publish a message to the MQTT broker
   """
-  def publish(%{client_id: client_id} = pipe, topic, payload, opts \\ []) do
+  def publish(%Pipe{client_id: client_id} = pipe, topic, payload, opts \\ []) do
     qos = Keyword.get(opts, :qos, 0)
 
-    publish = %Tortoise.Package.Publish{
+    publish = %Package.Publish{
       topic: topic,
       qos: qos,
       payload: payload,
