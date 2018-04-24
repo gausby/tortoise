@@ -9,7 +9,7 @@ defmodule Tortoise.Driver.Logger do
     {:ok, []}
   end
 
-  def on_publish(topic, publish, state) do
+  def handle_message(topic, publish, state) do
     Logger.info("#{Enum.join(topic, "/")} #{inspect(publish)}")
     {:ok, state}
   end

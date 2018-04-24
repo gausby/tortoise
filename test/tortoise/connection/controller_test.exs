@@ -18,7 +18,7 @@ defmodule Tortoise.Connection.ControllerTest do
       {:ok, %__MODULE__{pid: caller, client_id: client_id}}
     end
 
-    def on_publish(topic, message, %__MODULE__{} = state) do
+    def handle_message(topic, message, %__MODULE__{} = state) do
       new_state = %__MODULE__{
         state
         | publish_count: state.publish_count + 1,

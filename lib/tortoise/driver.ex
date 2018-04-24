@@ -18,7 +18,7 @@ defmodule Tortoise.Driver do
 
   @callback init(term()) :: {:ok, term()}
 
-  @callback on_publish(topic(), binary(), term()) :: {:ok, term()}
+  @callback handle_message(topic(), binary(), term()) :: {:ok, term()}
 
   @callback disconnect(term()) :: :ok
 end

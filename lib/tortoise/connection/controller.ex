@@ -232,7 +232,7 @@ defmodule Tortoise.Connection.Controller do
     topic_list = String.split(publish.topic, "/")
     args = [topic_list, publish.payload, state.driver.state]
 
-    case apply(state.driver.module, :on_publish, args) do
+    case apply(state.driver.module, :handle_message, args) do
       {:ok, updated_driver_state} ->
         updated_driver = %{state.driver | state: updated_driver_state}
         {:ok, %__MODULE__{state | driver: updated_driver}}
