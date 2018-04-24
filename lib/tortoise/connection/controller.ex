@@ -24,7 +24,7 @@ defmodule Tortoise.Connection.Controller do
 
   use GenServer
 
-  defstruct client_id: nil, ping: [], driver: %Driver{}
+  defstruct client_id: nil, ping: :queue.new(), driver: %Driver{}
   alias __MODULE__, as: State
 
   # Client API
@@ -88,7 +88,8 @@ defmodule Tortoise.Connection.Controller do
   def handle_cast({:ping, caller}, state) do
     time = System.monotonic_time(:microsecond)
     :ok = Transmitter.cast(state.client_id, %Package.Pingreq{})
-    {:noreply, %State{state | ping: [{caller, time} | state.ping]}}
+    ping = :queue.in({caller, time}, state.ping)
+    {:noreply, %State{state | ping: ping}}
   end
 
   # QoS LEVEL 0 ========================================================
@@ -175,14 +176,15 @@ defmodule Tortoise.Connection.Controller do
 
   # PING MESSAGES ======================================================
   # command ------------------------------------------------------------
-  defp handle_package(%Pingresp{}, %State{ping: nil} = state) do
+  defp handle_package(%Pingresp{}, %State{ping: ping} = state)
+       when is_nil(ping) or ping == {[], []} do
     {:noreply, state}
   end
 
-  defp handle_package(%Pingresp{}, %State{ping: [ping | pings]} = state) do
-    {{caller, ref}, time} = ping
+  defp handle_package(%Pingresp{}, %State{ping: ping} = state) do
+    {{:value, {{caller, ref}, time}}, ping} = :queue.out(ping)
     send(caller, {Tortoise, {:ping_response, ref}})
-    state = %State{state | ping: pings}
+    state = %State{state | ping: ping}
 
     case run_ping_response_callback(time, state) do
       {:ok, %State{} = state} ->
@@ -248,7 +250,7 @@ defmodule Tortoise.Connection.Controller do
     case apply(state.driver.module, :ping_response, args) do
       {:ok, updated_driver_state} ->
         updated_driver = %{state.driver | state: updated_driver_state}
-        {:ok, %State{state | ping: nil, driver: updated_driver}}
+        {:ok, %State{state | driver: updated_driver}}
     end
   end
 end
