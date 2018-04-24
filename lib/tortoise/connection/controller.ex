@@ -64,6 +64,10 @@ defmodule Tortoise.Connection.Controller do
     GenServer.cast(via_name(client_id), {:incoming, package})
   end
 
+  def handle_result(client_id, %Inflight.Track{} = track) do
+    GenServer.cast(via_name(client_id), {:result, track})
+  end
+
   # Server callbacks
   def init(%__MODULE__{} = opts) do
     case run_init_callback(opts) do
@@ -90,6 +94,26 @@ defmodule Tortoise.Connection.Controller do
     :ok = Transmitter.cast(state.client_id, %Package.Pingreq{})
     ping = :queue.in({caller, time}, state.ping)
     {:noreply, %State{state | ping: ping}}
+  end
+
+  def handle_cast(
+        {:result, %Inflight.Track{type: Package.Subscribe} = track},
+        state
+      ) do
+    case run_subscription_callback(track, state) do
+      {:ok, state} ->
+        {:noreply, state}
+    end
+  end
+
+  def handle_cast(
+        {:result, %Inflight.Track{type: Package.Unsubscribe} = track},
+        state
+      ) do
+    case run_subscription_callback(track, state) do
+      {:ok, state} ->
+        {:noreply, state}
+    end
   end
 
   # QoS LEVEL 0 ========================================================
@@ -237,5 +261,42 @@ defmodule Tortoise.Connection.Controller do
         updated_driver = %{state.driver | state: updated_driver_state}
         {:ok, %__MODULE__{state | driver: updated_driver}}
     end
+  end
+
+  defp run_subscription_callback(
+         %Inflight.Track{type: Package.Subscribe, result: subacks},
+         state
+       ) do
+    # @todo, figure out what to do when a qos is return than the one requested
+    updated_driver_state =
+      Enum.reduce(subacks, state.driver.state, fn {:ok, topic_filter}, acc ->
+        args = [:up, topic_filter, acc]
+
+        case apply(state.driver.module, :subscription, args) do
+          {:ok, state} ->
+            state
+        end
+      end)
+
+    updated_driver = %{state.driver | state: updated_driver_state}
+    {:ok, %__MODULE__{state | driver: updated_driver}}
+  end
+
+  defp run_subscription_callback(
+         %Inflight.Track{type: Package.Unsubscribe, result: unsubacks},
+         state
+       ) do
+    updated_driver_state =
+      Enum.reduce(unsubacks, state.driver.state, fn topic_filter, acc ->
+        args = [:down, topic_filter, acc]
+
+        case apply(state.driver.module, :subscription, args) do
+          {:ok, state} ->
+            state
+        end
+      end)
+
+    updated_driver = %{state.driver | state: updated_driver_state}
+    {:ok, %__MODULE__{state | driver: updated_driver}}
   end
 end

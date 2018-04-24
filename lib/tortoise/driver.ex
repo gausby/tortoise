@@ -15,8 +15,11 @@ defmodule Tortoise.Driver do
   def new(%__MODULE__{} = driver), do: driver
 
   @type topic() :: [binary()]
+  @type status() :: :up | :down
 
   @callback init(term()) :: {:ok, term()}
+
+  @callback subscription(status(), binary(), term()) :: {:ok, term()}
 
   @callback handle_message(topic(), binary(), term()) :: {:ok, term()}
 

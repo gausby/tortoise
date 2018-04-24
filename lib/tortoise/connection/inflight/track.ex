@@ -209,7 +209,7 @@ defmodule Tortoise.Connection.Inflight.Track do
            ]
          } = track
        ) do
-    %State{track | result: {:unsubscribed, topics}}
+    %State{track | result: topics}
   end
 
   defp finalize(

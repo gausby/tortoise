@@ -8,7 +8,7 @@ defmodule Tortoise.Connection.ControllerTest do
   defmodule TestDriver do
     @behaviour Tortoise.Driver
 
-    defstruct pid: nil, client_id: nil, publish_count: 0, received: []
+    defstruct pid: nil, client_id: nil, publish_count: 0, received: [], subscriptions: []
 
     def init([client_id, caller]) when is_pid(caller) do
       # We pass in the caller `pid` and keep it in the state so we can
@@ -16,6 +16,26 @@ defmodule Tortoise.Connection.ControllerTest do
       # possible to make assertions on the changes in the driver
       # callback module
       {:ok, %__MODULE__{pid: caller, client_id: client_id}}
+    end
+
+    def subscription(:up, {topic_filter, _qos}, state) do
+      new_state = %__MODULE__{
+        state
+        | subscriptions: [topic_filter | state.subscriptions]
+      }
+
+      send(state.pid, new_state)
+      {:ok, new_state}
+    end
+
+    def subscription(:down, topic_filter, state) do
+      new_state = %__MODULE__{
+        state
+        | subscriptions: state.subscriptions -- [topic_filter]
+      }
+
+      send(state.pid, new_state)
+      {:ok, new_state}
     end
 
     def handle_message(topic, message, %__MODULE__{} = state) do
@@ -229,6 +249,48 @@ defmodule Tortoise.Connection.ControllerTest do
       Controller.handle_incoming(client_id, %Package.Pubcomp{identifier: 1})
       # the caller should get a message in its mailbox
       assert_receive {Tortoise, {{^client_id, ^ref}, :ok}}
+    end
+  end
+
+  describe "Subscription" do
+    setup [:setup_controller, :setup_inflight, :setup_transmitter]
+
+    test "Subscribe to multiple topics", context do
+      client_id = context.client_id
+
+      subscribe = %Package.Subscribe{
+        identifier: 1,
+        topics: [{"foo", 0}, {"bar", 1}, {"baz", 2}]
+      }
+
+      suback = %Package.Suback{identifier: 1, acks: [{:ok, 0}, {:ok, 1}, {:ok, 2}]}
+
+      assert {:ok, ref} = Inflight.track(client_id, {:outgoing, subscribe})
+
+      # assert that the server receives a subscribe package
+      {:ok, package} = :gen_tcp.recv(context.server, 0, 200)
+      assert ^subscribe = Package.decode(package)
+      # the server will send back a subscription acknowledgement message
+      :ok = Controller.handle_incoming(client_id, suback)
+
+      assert_receive {Tortoise, {{^client_id, ^ref}, _}}
+      # the client callback module should get the subscribe notifications in order
+      assert_receive %TestDriver{subscriptions: ["foo"]}
+      assert_receive %TestDriver{subscriptions: ["bar" | _]}
+      assert_receive %TestDriver{subscriptions: ["baz" | _]}
+
+      # unsubscribe from a topic
+      unsubscribe = %Package.Unsubscribe{identifier: 2, topics: ["foo", "baz"]}
+      unsuback = %Package.Unsuback{identifier: 2}
+      assert {:ok, ref} = Inflight.track(client_id, {:outgoing, unsubscribe})
+      {:ok, package} = :gen_tcp.recv(context.server, 0, 200)
+      assert ^unsubscribe = Package.decode(package)
+      :ok = Controller.handle_incoming(client_id, unsuback)
+      assert_receive {Tortoise, {{^client_id, ^ref}, _}}
+
+      # the client callback module should remove the subscriptions in order
+      assert_receive %TestDriver{subscriptions: ["baz", "bar"]}
+      assert_receive %TestDriver{subscriptions: ["bar"]}
     end
   end
 end

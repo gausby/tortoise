@@ -4,7 +4,7 @@ defmodule Tortoise.Connection.Inflight do
   """
 
   alias Tortoise.Package
-  alias Tortoise.Connection.Transmitter
+  alias Tortoise.Connection.{Controller, Transmitter}
   alias Tortoise.Connection.Inflight.Track
 
   use GenServer
@@ -139,9 +139,16 @@ defmodule Tortoise.Connection.Inflight do
 
   defp respond_caller(%Track{caller: nil}, _), do: :ok
 
-  defp respond_caller(%Track{caller: {pid, ref}, result: result}, state)
+  defp respond_caller(%Track{caller: {pid, ref}, result: :ok}, state)
+       when is_pid(pid) do
+    send(pid, {Tortoise, {{state.client_id, ref}, :ok}})
+    :ok
+  end
+
+  defp respond_caller(%Track{caller: {pid, ref}, result: result} = track, state)
        when is_pid(pid) do
     send(pid, {Tortoise, {{state.client_id, ref}, result}})
+    :ok = Controller.handle_result(state.client_id, track)
     :ok
   end
 
