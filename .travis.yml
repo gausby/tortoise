@@ -1,0 +1,11 @@
+language: elixir
+
+matrix:
+    include:
+        - elixir: 1.6.4
+          otp_release: 20.2
+
+script:
+    - mix eqc.install --mini
+    - mix test
+    - mix format --check-formatted
