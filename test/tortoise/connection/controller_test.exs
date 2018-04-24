@@ -105,6 +105,18 @@ defmodule Tortoise.Connection.ControllerTest do
       {:ok, package} = :gen_tcp.recv(context.server, 0, 200)
       assert %Package.Pingresp{} = Package.decode(package)
     end
+
+    test "ping request reports are sent in the correct order", context do
+      # send two ping requests to the server
+      assert {:ok, first_ping_ref} = Controller.ping(context.client_id)
+      assert {:ok, second_ping_ref} = Controller.ping(context.client_id)
+
+      # the controller should respond to ping requests in FIFO order
+      Controller.handle_incoming(context.client_id, %Package.Pingresp{})
+      assert_receive {Tortoise, {:ping_response, ^first_ping_ref}}
+      Controller.handle_incoming(context.client_id, %Package.Pingresp{})
+      assert_receive {Tortoise, {:ping_response, ^second_ping_ref}}
+    end
   end
 
   describe "publish" do
