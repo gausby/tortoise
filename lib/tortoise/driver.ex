@@ -1,6 +1,7 @@
 defmodule Tortoise.Driver do
   @moduledoc false
 
+  @enforce_keys [:module, :initial_args]
   defstruct module: nil, state: nil, initial_args: []
 
   @doc """

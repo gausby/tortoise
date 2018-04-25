@@ -24,7 +24,11 @@ defmodule Tortoise.Connection.Controller do
 
   use GenServer
 
-  defstruct client_id: nil, ping: :queue.new(), driver: %Driver{}
+  @enforce_keys [:client_id, :driver]
+  defstruct client_id: nil,
+            ping: :queue.new(),
+            driver: %Driver{module: Tortoise.Driver.Logger, initial_args: []}
+
   alias __MODULE__, as: State
 
   # Client API
