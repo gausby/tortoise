@@ -314,7 +314,8 @@ defmodule Tortoise.Connection.Controller do
        ) do
     # @todo, figure out what to do when a qos is return than the one requested
     updated_driver_state =
-      Enum.reduce(subacks, state.driver.state, fn {:ok, topic_filter}, acc ->
+      Enum.reduce(subacks, state.driver.state, fn {:ok, {topic_filter, _qos}}, acc ->
+        # notice, we ignore the reported qos here for now
         args = [:up, topic_filter, acc]
 
         case apply(state.driver.module, :subscription, args) do

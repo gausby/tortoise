@@ -29,7 +29,7 @@ defmodule Tortoise.Connection.ControllerTest do
       {:ok, new_state}
     end
 
-    def subscription(:up, {topic_filter, _qos}, state) do
+    def subscription(:up, topic_filter, state) do
       new_state = %__MODULE__{
         state
         | subscriptions: [topic_filter | state.subscriptions]
