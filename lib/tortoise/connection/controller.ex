@@ -99,6 +99,11 @@ defmodule Tortoise.Connection.Controller do
     end
   end
 
+  def terminate(reason, state) do
+    _ignored = run_terminate_callback(reason, state)
+    :ok
+  end
+
   def handle_cast({:incoming, <<package::binary>>}, state) do
     package
     |> Package.decode()
@@ -284,6 +289,12 @@ defmodule Tortoise.Connection.Controller do
         updated_driver = %{state.driver | state: initial_state}
         {:ok, %__MODULE__{state | driver: updated_driver}}
     end
+  end
+
+  defp run_terminate_callback(reason, state) do
+    args = [reason, state.driver.state]
+
+    apply(state.driver.module, :terminate, args)
   end
 
   defp run_publish_callback(%Publish{} = publish, state) do

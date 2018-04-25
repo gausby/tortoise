@@ -36,4 +36,9 @@ defmodule Tortoise.Driver.Logger do
     Logger.info("#{Enum.join(topic, "/")} #{inspect(publish)}")
     {:ok, state}
   end
+
+  def terminate(reason, _state) do
+    Logger.warn("Client has been terminated with reason: #{inspect reason}")
+    :ok
+  end
 end

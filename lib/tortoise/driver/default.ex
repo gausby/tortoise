@@ -21,4 +21,8 @@ defmodule Tortoise.Driver.Default do
   def handle_message(_topic, _publish, state) do
     {:ok, state}
   end
+
+  def terminate(_reason, _state) do
+    :ok
+  end
 end

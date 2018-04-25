@@ -59,6 +59,11 @@ defmodule Tortoise.Connection.ControllerTest do
       send(state.pid, new_state)
       {:ok, new_state}
     end
+
+    def terminate(reason, state) do
+      send(state.pid, {:terminating, reason})
+      :ok
+    end
   end
 
   # Setup ==============================================================
@@ -104,6 +109,7 @@ defmodule Tortoise.Connection.ControllerTest do
     assert Process.alive?(pid)
     assert :ok = Controller.stop(context.client_id)
     refute Process.alive?(pid)
+    assert_receive {:terminating, :normal}
   end
 
   describe "Connection callback" do

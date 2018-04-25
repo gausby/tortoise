@@ -25,4 +25,7 @@ defmodule Tortoise.Driver do
   @callback subscription(status(), binary(), term()) :: {:ok, term()}
 
   @callback handle_message(topic(), binary(), term()) :: {:ok, term()}
+
+  @callback terminate(reason, state :: term) :: term
+            when reason: :normal | :shutdown | {:shutdown, term}
 end
