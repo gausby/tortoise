@@ -18,13 +18,17 @@ defmodule Tortoise.Driver do
   @type topic() :: [binary()]
   @type status() :: :up | :down
 
-  @callback init(term()) :: {:ok, term()}
+  @callback init(args :: term) :: {:ok, state}
+            when state: any
 
-  @callback connection(status(), term()) :: {:ok, term()}
+  @callback connection(status(), state :: term) :: {:ok, new_state}
+            when new_state: term
 
-  @callback subscription(status(), binary(), term()) :: {:ok, term()}
+  @callback subscription(status(), binary(), state :: term) :: {:ok, new_state}
+            when new_state: term
 
-  @callback handle_message(topic(), binary(), term()) :: {:ok, term()}
+  @callback handle_message(topic(), binary(), state :: term) :: {:ok, new_state}
+            when new_state: term
 
   @callback terminate(reason, state :: term) :: term
             when reason: :normal | :shutdown | {:shutdown, term}
