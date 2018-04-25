@@ -20,6 +20,8 @@ defmodule Tortoise.Driver do
 
   @callback init(term()) :: {:ok, term()}
 
+  @callback connection(status(), term()) :: {:ok, term()}
+
   @callback subscription(status(), binary(), term()) :: {:ok, term()}
 
   @callback handle_message(topic(), binary(), term()) :: {:ok, term()}

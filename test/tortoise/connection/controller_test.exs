@@ -8,7 +8,11 @@ defmodule Tortoise.Connection.ControllerTest do
   defmodule TestDriver do
     @behaviour Tortoise.Driver
 
-    defstruct pid: nil, client_id: nil, publish_count: 0, received: [], subscriptions: []
+    defstruct pid: nil,
+              client_id: nil,
+              publish_count: 0,
+              received: [],
+              subscriptions: []
 
     def init([client_id, caller]) when is_pid(caller) do
       # We pass in the caller `pid` and keep it in the state so we can
@@ -16,6 +20,14 @@ defmodule Tortoise.Connection.ControllerTest do
       # possible to make assertions on the changes in the driver
       # callback module
       {:ok, %__MODULE__{pid: caller, client_id: client_id}}
+    end
+
+    def connection(:up, state) do
+      {:ok, state}
+    end
+
+    def connection(:down, state) do
+      {:ok, state}
     end
 
     def subscription(:up, {topic_filter, _qos}, state) do

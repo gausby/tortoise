@@ -60,7 +60,8 @@ defmodule Tortoise.Connection do
 
     with {^expected_connack, socket} <- do_connect(server, connect),
          {:ok, pid} = Connection.Supervisor.start_link(opts),
-         :ok = Receiver.handle_socket(connect.client_id, {:tcp, socket}) do
+         :ok = Receiver.handle_socket(connect.client_id, {:tcp, socket}),
+         :ok = Controller.update_connection_status(connect.client_id, :up) do
       monitor_ref = {socket, Port.monitor(socket)}
 
       if not Enum.empty?(subscriptions), do: send(self(), :subscribe)
@@ -86,9 +87,11 @@ defmodule Tortoise.Connection do
 
   def handle_info({:DOWN, ref, :port, port, :normal}, %State{monitor_ref: {port, ref}} = state) do
     connect = %Connect{state.connect | clean_session: false}
+    :ok = Controller.update_connection_status(connect.client_id, :down)
 
     with {%Connack{status: :accepted} = connack, socket} <- do_connect(state.server, connect),
-         :ok = Receiver.handle_socket(connect.client_id, {:tcp, socket}) do
+         :ok = Receiver.handle_socket(connect.client_id, {:tcp, socket}),
+         :ok = Controller.update_connection_status(connect.client_id, :up) do
       monitor_ref = {socket, Port.monitor(socket)}
 
       case connack do

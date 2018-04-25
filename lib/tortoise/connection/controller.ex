@@ -27,7 +27,8 @@ defmodule Tortoise.Connection.Controller do
   @enforce_keys [:client_id, :driver]
   defstruct client_id: nil,
             ping: :queue.new(),
-            driver: %Driver{module: Tortoise.Driver.Logger, initial_args: []}
+            status: :down,
+            driver: %Driver{module: Tortoise.Driver.Default, initial_args: []}
 
   alias __MODULE__, as: State
 
@@ -86,6 +87,10 @@ defmodule Tortoise.Connection.Controller do
     GenServer.cast(via_name(client_id), {:result, track})
   end
 
+  def update_connection_status(client_id, status) when status in [:up, :down] do
+    GenServer.cast(via_name(client_id), {:update_connection_status, status})
+  end
+
   # Server callbacks
   def init(%__MODULE__{} = opts) do
     case run_init_callback(opts) do
@@ -129,6 +134,17 @@ defmodule Tortoise.Connection.Controller do
         state
       ) do
     case run_subscription_callback(track, state) do
+      {:ok, state} ->
+        {:noreply, state}
+    end
+  end
+
+  def handle_cast({:update_connection_status, same}, %State{status: same} = state) do
+    {:noreply, state}
+  end
+
+  def handle_cast({:update_connection_status, new_status}, %State{} = state) do
+    case run_connection_callback(new_status, state) do
       {:ok, state} ->
         {:noreply, state}
     end
@@ -316,5 +332,15 @@ defmodule Tortoise.Connection.Controller do
 
     updated_driver = %{state.driver | state: updated_driver_state}
     {:ok, %__MODULE__{state | driver: updated_driver}}
+  end
+
+  defp run_connection_callback(status, state) do
+    args = [status, state.driver.state]
+
+    case apply(state.driver.module, :connection, args) do
+      {:ok, updated_driver_state} ->
+        updated_driver = %{state.driver | state: updated_driver_state}
+        {:ok, %State{state | driver: updated_driver}}
+    end
   end
 end

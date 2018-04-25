@@ -3,10 +3,23 @@ defmodule Tortoise.Driver.Logger do
 
   require Logger
 
+  defstruct []
+  alias __MODULE__, as: State
+
   @behaviour Tortoise.Driver
 
   def init(_opts) do
-    {:ok, []}
+    {:ok, %State{}}
+  end
+
+  def connection(:up, state) do
+    Logger.info("Connection has been established")
+    {:ok, state}
+  end
+
+  def connection(:down, state) do
+    Logger.warn("Connection has been dropped")
+    {:ok, state}
   end
 
   def subscription(:up, {topic, qos}, state) do
