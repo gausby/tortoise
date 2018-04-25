@@ -23,9 +23,4 @@ defmodule Tortoise.Driver.Logger do
     Logger.info("#{Enum.join(topic, "/")} #{inspect(publish)}")
     {:ok, state}
   end
-
-  def disconnect(_state) do
-    Logger.info("Disconnected")
-    :ok
-  end
 end

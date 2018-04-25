@@ -48,10 +48,6 @@ defmodule Tortoise.Connection.ControllerTest do
       send(state.pid, new_state)
       {:ok, new_state}
     end
-
-    def disconnect(_state) do
-      :ok
-    end
   end
 
   # Setup ==============================================================
