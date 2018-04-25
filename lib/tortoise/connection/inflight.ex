@@ -9,6 +9,7 @@ defmodule Tortoise.Connection.Inflight do
 
   use GenServer
 
+  @enforce_keys [:client_id]
   defstruct pending: %{}, client_id: nil
 
   # Client API
@@ -121,7 +122,7 @@ defmodule Tortoise.Connection.Inflight do
   end
 
   defp execute(%Track{pending: []} = track, state) do
-    :ok = respond_caller(track, state)
+    :ok = Controller.handle_result(state.client_id, track)
     pending = Map.delete(state.pending, track.identifier)
     {:ok, %__MODULE__{state | pending: pending}}
   end
@@ -135,21 +136,6 @@ defmodule Tortoise.Connection.Inflight do
       end)
 
     {:ok, next_action, %__MODULE__{state | pending: updated_pending}}
-  end
-
-  defp respond_caller(%Track{caller: nil}, _), do: :ok
-
-  defp respond_caller(%Track{caller: {pid, ref}, result: :ok}, state)
-       when is_pid(pid) do
-    send(pid, {Tortoise, {{state.client_id, ref}, :ok}})
-    :ok
-  end
-
-  defp respond_caller(%Track{caller: {pid, ref}, result: result} = track, state)
-       when is_pid(pid) do
-    send(pid, {Tortoise, {{state.client_id, ref}, result}})
-    :ok = Controller.handle_result(state.client_id, track)
-    :ok
   end
 
   # Assign a random identifier to the tracked package; this will make
