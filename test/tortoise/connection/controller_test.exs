@@ -10,6 +10,7 @@ defmodule Tortoise.Connection.ControllerTest do
 
     defstruct pid: nil,
               client_id: nil,
+              status: nil,
               publish_count: 0,
               received: [],
               subscriptions: []
@@ -22,12 +23,10 @@ defmodule Tortoise.Connection.ControllerTest do
       {:ok, %__MODULE__{pid: caller, client_id: client_id}}
     end
 
-    def connection(:up, state) do
-      {:ok, state}
-    end
-
-    def connection(:down, state) do
-      {:ok, state}
+    def connection(status, state) do
+      new_state = %__MODULE__{state | status: status}
+      send(state.pid, new_state)
+      {:ok, new_state}
     end
 
     def subscription(:up, {topic_filter, _qos}, state) do
@@ -105,6 +104,22 @@ defmodule Tortoise.Connection.ControllerTest do
     assert Process.alive?(pid)
     assert :ok = Controller.stop(context.client_id)
     refute Process.alive?(pid)
+  end
+
+  describe "Connection callback" do
+    setup [:setup_controller]
+
+    test "Callback is triggered on connection status change", context do
+      # tell the controller that we are up
+      :ok = Controller.update_connection_status(context.client_id, :up)
+      assert_receive(%TestDriver{status: :up})
+      # switch to offline
+      :ok = Controller.update_connection_status(context.client_id, :down)
+      assert_receive(%TestDriver{status: :down})
+      # ... and back up
+      :ok = Controller.update_connection_status(context.client_id, :up)
+      assert_receive(%TestDriver{status: :up})
+    end
   end
 
   describe "Ping Control Packets" do

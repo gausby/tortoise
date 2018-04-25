@@ -144,7 +144,7 @@ defmodule Tortoise.Connection.Controller do
   end
 
   def handle_cast({:update_connection_status, new_status}, %State{} = state) do
-    case run_connection_callback(new_status, state) do
+    case run_connection_callback(new_status, %State{state | status: new_status}) do
       {:ok, state} ->
         {:noreply, state}
     end
