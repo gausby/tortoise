@@ -140,15 +140,13 @@ defmodule Tortoise.Connection do
   end
 
   def handle_info(:ping, %State{} = state) do
-    {:ok, ref} = Controller.ping(state.connect.client_id)
-
-    receive do
-      {Tortoise, {:ping_response, ^ref, _round_trip_time}} ->
-        # Logger.info "Ping: #{round_trip_time} μs"
+    case Controller.ping_sync(state.connect.client_id, 5000) do
+      {:ok, round_trip_time} ->
+        Logger.debug("Ping: #{round_trip_time} μs")
         state = reset_keep_alive(state)
         {:noreply, state}
-    after
-      5000 ->
+
+      {:stop, :timeout} ->
         {:stop, :ping_timeout, state}
     end
   end
