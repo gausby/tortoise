@@ -41,7 +41,7 @@ defmodule Tortoise.ConnectionTest do
       opts = [
         client_id: client_id,
         server: {:tcp, ip, port},
-        driver: {Tortoise.Driver.Logger, []}
+        driver: {Tortoise.Driver.Default, []}
       ]
 
       assert {:ok, _pid} = Connection.start_link(opts)
@@ -68,7 +68,7 @@ defmodule Tortoise.ConnectionTest do
       opts = [
         client_id: client_id,
         server: {:tcp, ip, port},
-        driver: {Tortoise.Driver.Logger, []}
+        driver: {Tortoise.Driver.Default, []}
       ]
 
       assert {:ok, _pid} = Connection.start_link(opts)
@@ -98,7 +98,7 @@ defmodule Tortoise.ConnectionTest do
       opts = [
         client_id: client_id,
         server: {:tcp, ip, port},
-        driver: {Tortoise.Driver.Logger, []}
+        driver: {Tortoise.Driver.Default, []}
       ]
 
       assert {:error, {:connection_failed, :unacceptable_protocol_version}} ==
@@ -121,7 +121,7 @@ defmodule Tortoise.ConnectionTest do
       opts = [
         client_id: client_id,
         server: {:tcp, ip, port},
-        driver: {Tortoise.Driver.Logger, []}
+        driver: {Tortoise.Driver.Default, []}
       ]
 
       assert {:error, {:connection_failed, :identifier_rejected}} == Connection.start_link(opts)
@@ -142,7 +142,7 @@ defmodule Tortoise.ConnectionTest do
       opts = [
         client_id: client_id,
         server: {:tcp, ip, port},
-        driver: {Tortoise.Driver.Logger, []}
+        driver: {Tortoise.Driver.Default, []}
       ]
 
       assert {:error, {:connection_failed, :server_unavailable}} == Connection.start_link(opts)
@@ -163,7 +163,7 @@ defmodule Tortoise.ConnectionTest do
       opts = [
         client_id: client_id,
         server: {:tcp, ip, port},
-        driver: {Tortoise.Driver.Logger, []}
+        driver: {Tortoise.Driver.Default, []}
       ]
 
       assert {:error, {:connection_failed, :bad_user_name_or_password}} ==
@@ -186,7 +186,7 @@ defmodule Tortoise.ConnectionTest do
       opts = [
         client_id: client_id,
         server: {:tcp, ip, port},
-        driver: {Tortoise.Driver.Logger, []}
+        driver: {Tortoise.Driver.Default, []}
       ]
 
       assert {:error, {:connection_failed, :not_authorized}} == Connection.start_link(opts)

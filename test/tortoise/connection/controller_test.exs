@@ -8,7 +8,12 @@ defmodule Tortoise.Connection.ControllerTest do
   defmodule TestDriver do
     @behaviour Tortoise.Driver
 
-    defstruct pid: nil, client_id: nil, publish_count: 0, received: []
+    defstruct pid: nil,
+              client_id: nil,
+              status: nil,
+              publish_count: 0,
+              received: [],
+              subscriptions: []
 
     def init([client_id, caller]) when is_pid(caller) do
       # We pass in the caller `pid` and keep it in the state so we can
@@ -18,7 +23,33 @@ defmodule Tortoise.Connection.ControllerTest do
       {:ok, %__MODULE__{pid: caller, client_id: client_id}}
     end
 
-    def on_publish(topic, message, %__MODULE__{} = state) do
+    def connection(status, state) do
+      new_state = %__MODULE__{state | status: status}
+      send(state.pid, new_state)
+      {:ok, new_state}
+    end
+
+    def subscription(:up, topic_filter, state) do
+      new_state = %__MODULE__{
+        state
+        | subscriptions: [topic_filter | state.subscriptions]
+      }
+
+      send(state.pid, new_state)
+      {:ok, new_state}
+    end
+
+    def subscription(:down, topic_filter, state) do
+      new_state = %__MODULE__{
+        state
+        | subscriptions: state.subscriptions -- [topic_filter]
+      }
+
+      send(state.pid, new_state)
+      {:ok, new_state}
+    end
+
+    def handle_message(topic, message, %__MODULE__{} = state) do
       new_state = %__MODULE__{
         state
         | publish_count: state.publish_count + 1,
@@ -29,11 +60,8 @@ defmodule Tortoise.Connection.ControllerTest do
       {:ok, new_state}
     end
 
-    def ping_response(_round_trip_time, state) do
-      {:ok, state}
-    end
-
-    def disconnect(_state) do
+    def terminate(reason, state) do
+      send(state.pid, {:terminating, reason})
       :ok
     end
   end
@@ -81,6 +109,23 @@ defmodule Tortoise.Connection.ControllerTest do
     assert Process.alive?(pid)
     assert :ok = Controller.stop(context.client_id)
     refute Process.alive?(pid)
+    assert_receive {:terminating, :normal}
+  end
+
+  describe "Connection callback" do
+    setup [:setup_controller]
+
+    test "Callback is triggered on connection status change", context do
+      # tell the controller that we are up
+      :ok = Controller.update_connection_status(context.client_id, :up)
+      assert_receive(%TestDriver{status: :up})
+      # switch to offline
+      :ok = Controller.update_connection_status(context.client_id, :down)
+      assert_receive(%TestDriver{status: :down})
+      # ... and back up
+      :ok = Controller.update_connection_status(context.client_id, :up)
+      assert_receive(%TestDriver{status: :up})
+    end
   end
 
   describe "Ping Control Packets" do
@@ -94,7 +139,7 @@ defmodule Tortoise.Connection.ControllerTest do
       assert %Package.Pingreq{} = Package.decode(package)
       # the server will respond with an pingresp (ping response)
       Controller.handle_incoming(context.client_id, %Package.Pingresp{})
-      assert_receive {Tortoise, {:ping_response, ^ping_ref}}
+      assert_receive {Tortoise, {:ping_response, ^ping_ref, _ping_time}}
     end
 
     test "receive a ping request", context do
@@ -113,9 +158,9 @@ defmodule Tortoise.Connection.ControllerTest do
 
       # the controller should respond to ping requests in FIFO order
       Controller.handle_incoming(context.client_id, %Package.Pingresp{})
-      assert_receive {Tortoise, {:ping_response, ^first_ping_ref}}
+      assert_receive {Tortoise, {:ping_response, ^first_ping_ref, _}}
       Controller.handle_incoming(context.client_id, %Package.Pingresp{})
-      assert_receive {Tortoise, {:ping_response, ^second_ping_ref}}
+      assert_receive {Tortoise, {:ping_response, ^second_ping_ref, _}}
     end
   end
 
@@ -233,6 +278,48 @@ defmodule Tortoise.Connection.ControllerTest do
       Controller.handle_incoming(client_id, %Package.Pubcomp{identifier: 1})
       # the caller should get a message in its mailbox
       assert_receive {Tortoise, {{^client_id, ^ref}, :ok}}
+    end
+  end
+
+  describe "Subscription" do
+    setup [:setup_controller, :setup_inflight, :setup_transmitter]
+
+    test "Subscribe to multiple topics", context do
+      client_id = context.client_id
+
+      subscribe = %Package.Subscribe{
+        identifier: 1,
+        topics: [{"foo", 0}, {"bar", 1}, {"baz", 2}]
+      }
+
+      suback = %Package.Suback{identifier: 1, acks: [{:ok, 0}, {:ok, 1}, {:ok, 2}]}
+
+      assert {:ok, ref} = Inflight.track(client_id, {:outgoing, subscribe})
+
+      # assert that the server receives a subscribe package
+      {:ok, package} = :gen_tcp.recv(context.server, 0, 200)
+      assert ^subscribe = Package.decode(package)
+      # the server will send back a subscription acknowledgement message
+      :ok = Controller.handle_incoming(client_id, suback)
+
+      assert_receive {Tortoise, {{^client_id, ^ref}, _}}
+      # the client callback module should get the subscribe notifications in order
+      assert_receive %TestDriver{subscriptions: ["foo"]}
+      assert_receive %TestDriver{subscriptions: ["bar" | _]}
+      assert_receive %TestDriver{subscriptions: ["baz" | _]}
+
+      # unsubscribe from a topic
+      unsubscribe = %Package.Unsubscribe{identifier: 2, topics: ["foo", "baz"]}
+      unsuback = %Package.Unsuback{identifier: 2}
+      assert {:ok, ref} = Inflight.track(client_id, {:outgoing, unsubscribe})
+      {:ok, package} = :gen_tcp.recv(context.server, 0, 200)
+      assert ^unsubscribe = Package.decode(package)
+      :ok = Controller.handle_incoming(client_id, unsuback)
+      assert_receive {Tortoise, {{^client_id, ^ref}, _}}
+
+      # the client callback module should remove the subscriptions in order
+      assert_receive %TestDriver{subscriptions: ["baz", "bar"]}
+      assert_receive %TestDriver{subscriptions: ["bar"]}
     end
   end
 end

@@ -1,6 +1,7 @@
 defmodule Tortoise.Driver do
   @moduledoc false
 
+  @enforce_keys [:module, :initial_args]
   defstruct module: nil, state: nil, initial_args: []
 
   @doc """
@@ -15,12 +16,20 @@ defmodule Tortoise.Driver do
   def new(%__MODULE__{} = driver), do: driver
 
   @type topic() :: [binary()]
+  @type status() :: :up | :down
 
-  @callback init(term()) :: {:ok, term()}
+  @callback init(args :: term) :: {:ok, state}
+            when state: any
 
-  @callback on_publish(topic(), binary(), term()) :: {:ok, term()}
+  @callback connection(status(), state :: term) :: {:ok, new_state}
+            when new_state: term
 
-  @callback ping_response(integer(), term()) :: {:ok, term()}
+  @callback subscription(status(), binary(), state :: term) :: {:ok, new_state}
+            when new_state: term
 
-  @callback disconnect(term()) :: :ok
+  @callback handle_message(topic(), binary(), state :: term) :: {:ok, new_state}
+            when new_state: term
+
+  @callback terminate(reason, state :: term) :: term
+            when reason: :normal | :shutdown | {:shutdown, term}
 end

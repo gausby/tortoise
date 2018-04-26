@@ -24,7 +24,12 @@ defmodule Tortoise.Connection.Controller do
 
   use GenServer
 
-  defstruct client_id: nil, ping: :queue.new(), driver: %Driver{}
+  @enforce_keys [:client_id, :driver]
+  defstruct client_id: nil,
+            ping: :queue.new(),
+            status: :down,
+            driver: %Driver{module: Tortoise.Driver.Default, initial_args: []}
+
   alias __MODULE__, as: State
 
   # Client API
@@ -64,12 +69,39 @@ defmodule Tortoise.Connection.Controller do
     GenServer.cast(via_name(client_id), {:incoming, package})
   end
 
+  def handle_result(_client_id, %Inflight.Track{caller: nil}) do
+    :ok
+  end
+
+  def handle_result(client_id, %Inflight.Track{
+        type: Package.Publish,
+        caller: {pid, ref},
+        result: :ok
+      }) do
+    send(pid, {Tortoise, {{client_id, ref}, :ok}})
+    :ok
+  end
+
+  def handle_result(client_id, %Inflight.Track{caller: {pid, ref}, result: result} = track) do
+    send(pid, {Tortoise, {{client_id, ref}, result}})
+    GenServer.cast(via_name(client_id), {:result, track})
+  end
+
+  def update_connection_status(client_id, status) when status in [:up, :down] do
+    GenServer.cast(via_name(client_id), {:update_connection_status, status})
+  end
+
   # Server callbacks
   def init(%__MODULE__{} = opts) do
     case run_init_callback(opts) do
       {:ok, %__MODULE__{} = initial_state} ->
         {:ok, initial_state}
     end
+  end
+
+  def terminate(reason, state) do
+    _ignored = run_terminate_callback(reason, state)
+    :ok
   end
 
   def handle_cast({:incoming, <<package::binary>>}, state) do
@@ -90,6 +122,37 @@ defmodule Tortoise.Connection.Controller do
     :ok = Transmitter.cast(state.client_id, %Package.Pingreq{})
     ping = :queue.in({caller, time}, state.ping)
     {:noreply, %State{state | ping: ping}}
+  end
+
+  def handle_cast(
+        {:result, %Inflight.Track{type: Package.Subscribe} = track},
+        state
+      ) do
+    case run_subscription_callback(track, state) do
+      {:ok, state} ->
+        {:noreply, state}
+    end
+  end
+
+  def handle_cast(
+        {:result, %Inflight.Track{type: Package.Unsubscribe} = track},
+        state
+      ) do
+    case run_subscription_callback(track, state) do
+      {:ok, state} ->
+        {:noreply, state}
+    end
+  end
+
+  def handle_cast({:update_connection_status, same}, %State{status: same} = state) do
+    {:noreply, state}
+  end
+
+  def handle_cast({:update_connection_status, new_status}, %State{} = state) do
+    case run_connection_callback(new_status, %State{state | status: new_status}) do
+      {:ok, state} ->
+        {:noreply, state}
+    end
   end
 
   # QoS LEVEL 0 ========================================================
@@ -182,14 +245,10 @@ defmodule Tortoise.Connection.Controller do
   end
 
   defp handle_package(%Pingresp{}, %State{ping: ping} = state) do
-    {{:value, {{caller, ref}, time}}, ping} = :queue.out(ping)
-    send(caller, {Tortoise, {:ping_response, ref}})
-    state = %State{state | ping: ping}
-
-    case run_ping_response_callback(time, state) do
-      {:ok, %State{} = state} ->
-        {:noreply, state}
-    end
+    {{:value, {{caller, ref}, start_time}}, ping} = :queue.out(ping)
+    round_trip_time = System.monotonic_time(:microsecond) - start_time
+    send(caller, {Tortoise, {:ping_response, ref, round_trip_time}})
+    {:noreply, %State{state | ping: ping}}
   end
 
   # response -----------------------------------------------------------
@@ -232,22 +291,65 @@ defmodule Tortoise.Connection.Controller do
     end
   end
 
+  defp run_terminate_callback(reason, state) do
+    args = [reason, state.driver.state]
+
+    apply(state.driver.module, :terminate, args)
+  end
+
   defp run_publish_callback(%Publish{} = publish, state) do
     topic_list = String.split(publish.topic, "/")
     args = [topic_list, publish.payload, state.driver.state]
 
-    case apply(state.driver.module, :on_publish, args) do
+    case apply(state.driver.module, :handle_message, args) do
       {:ok, updated_driver_state} ->
         updated_driver = %{state.driver | state: updated_driver_state}
         {:ok, %__MODULE__{state | driver: updated_driver}}
     end
   end
 
-  defp run_ping_response_callback(start, state) do
-    round_trip_time = System.monotonic_time(:microsecond) - start
-    args = [round_trip_time, state.driver.state]
+  defp run_subscription_callback(
+         %Inflight.Track{type: Package.Subscribe, result: subacks},
+         state
+       ) do
+    # @todo, figure out what to do when a qos is return than the one requested
+    updated_driver_state =
+      Enum.reduce(subacks, state.driver.state, fn {:ok, {topic_filter, _qos}}, acc ->
+        # notice, we ignore the reported qos here for now
+        args = [:up, topic_filter, acc]
 
-    case apply(state.driver.module, :ping_response, args) do
+        case apply(state.driver.module, :subscription, args) do
+          {:ok, state} ->
+            state
+        end
+      end)
+
+    updated_driver = %{state.driver | state: updated_driver_state}
+    {:ok, %__MODULE__{state | driver: updated_driver}}
+  end
+
+  defp run_subscription_callback(
+         %Inflight.Track{type: Package.Unsubscribe, result: unsubacks},
+         state
+       ) do
+    updated_driver_state =
+      Enum.reduce(unsubacks, state.driver.state, fn topic_filter, acc ->
+        args = [:down, topic_filter, acc]
+
+        case apply(state.driver.module, :subscription, args) do
+          {:ok, state} ->
+            state
+        end
+      end)
+
+    updated_driver = %{state.driver | state: updated_driver_state}
+    {:ok, %__MODULE__{state | driver: updated_driver}}
+  end
+
+  defp run_connection_callback(status, state) do
+    args = [status, state.driver.state]
+
+    case apply(state.driver.module, :connection, args) do
       {:ok, updated_driver_state} ->
         updated_driver = %{state.driver | state: updated_driver_state}
         {:ok, %State{state | driver: updated_driver}}
