@@ -65,6 +65,18 @@ defmodule Tortoise.Connection.Controller do
     {:ok, ref}
   end
 
+  def ping_sync(client_id, timeout \\ :infinity) do
+    {:ok, ref} = ping(client_id)
+
+    receive do
+      {Tortoise, {:ping_response, ^ref, round_trip_time}} ->
+        {:ok, round_trip_time}
+    after
+      timeout ->
+        {:error, :timeout}
+    end
+  end
+
   def handle_incoming(client_id, package) do
     GenServer.cast(via_name(client_id), {:incoming, package})
   end
