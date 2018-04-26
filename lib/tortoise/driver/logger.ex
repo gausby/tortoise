@@ -22,8 +22,8 @@ defmodule Tortoise.Driver.Logger do
     {:ok, state}
   end
 
-  def subscription(:up, {topic, qos}, state) do
-    Logger.info("Subscribed to #{topic} with QoS #{qos}")
+  def subscription(:up, topic, state) do
+    Logger.info("Subscribed to #{topic}")
     {:ok, state}
   end
 
