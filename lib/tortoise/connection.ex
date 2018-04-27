@@ -85,6 +85,11 @@ defmodule Tortoise.Connection do
     end
   end
 
+  def handle_info({:tcp_closed, _socket}, state) do
+    Logger.error("Socket closed before we handed it to the receiver")
+    {:stop, :connection_refused, state}
+  end
+
   def handle_info({:DOWN, ref, :port, port, :normal}, %State{monitor_ref: {port, ref}} = state) do
     connect = %Connect{state.connect | clean_session: false}
     :ok = Controller.update_connection_status(connect.client_id, :down)
