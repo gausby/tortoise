@@ -38,11 +38,6 @@ Tortoise.Supervisor.start_child(
 Tortoise.publish("my_client_id", "foo/bar", "Hello from the World of Tomorrow !", qos: 0)
 ```
 
-The "pipe" concept should get a better description, it is basically a
-struct that holds a socket we can put MQTT Publish messages into, and
-they will get shot directly on the server.
-
-
 ## Installation
 
 It is not available on hex yet, but it will be soon!
