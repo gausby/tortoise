@@ -43,7 +43,7 @@ defmodule Tortoise.Connection.Receiver do
       :ok ->
         :ok
 
-      {:error, :closed} ->
+      {:error, reason} when reason in [:closed, :einval] ->
         # todo, this is an edge case, figure out what to do here
         :ok
     end

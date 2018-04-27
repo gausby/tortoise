@@ -90,7 +90,8 @@ defmodule Tortoise.Connection do
     {:stop, :connection_refused, state}
   end
 
-  def handle_info({:DOWN, ref, :port, port, :normal}, %State{monitor_ref: {port, ref}} = state) do
+  def handle_info({:DOWN, ref, :port, port, reason}, %State{monitor_ref: {port, ref}} = state)
+      when reason in [:normal, :noproc] do
     connect = %Connect{state.connect | clean_session: false}
     :ok = Controller.update_connection_status(connect.client_id, :down)
 
