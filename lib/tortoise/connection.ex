@@ -85,42 +85,6 @@ defmodule Tortoise.Connection do
     end
   end
 
-  def handle_info({:tcp_closed, _socket}, state) do
-    Logger.error("Socket closed before we handed it to the receiver")
-    {:stop, :connection_refused, state}
-  end
-
-  def handle_info({:DOWN, ref, :port, port, reason}, %State{monitor_ref: {port, ref}} = state)
-      when reason in [:normal, :noproc] do
-    connect = %Connect{state.connect | clean_session: false}
-    :ok = Controller.update_connection_status(connect.client_id, :down)
-
-    with {%Connack{status: :accepted} = connack, socket} <- do_connect(state.server, connect),
-         :ok = Receiver.handle_socket(connect.client_id, {:tcp, socket}),
-         :ok = Controller.update_connection_status(connect.client_id, :up) do
-      monitor_ref = {socket, Port.monitor(socket)}
-
-      case connack do
-        %Connack{session_present: true} ->
-          result = %State{state | connect: connect, monitor_ref: monitor_ref}
-          {:noreply, reset_keep_alive(result)}
-
-        %Connack{session_present: false} ->
-          # delete inflight state ?
-          if not Enum.empty?(state.subscriptions), do: send(self(), :subscribe)
-          result = %State{state | connect: connect, monitor_ref: monitor_ref}
-          {:noreply, reset_keep_alive(result)}
-      end
-    else
-      %Connack{status: {:refused, reason}} ->
-        {:stop, {:connection_failed, reason}}
-
-      {:error, {:protocol_violation, violation}} ->
-        Logger.error("Protocol violation: #{inspect(violation)}")
-        {:stop, :protocol_violation}
-    end
-  end
-
   def handle_info(:subscribe, %State{subscriptions: subscriptions} = state) do
     client_id = state.connect.client_id
 
@@ -157,6 +121,19 @@ defmodule Tortoise.Connection do
     end
   end
 
+  # dropping connection
+  def handle_info({:tcp_closed, _socket}, state) do
+    Logger.error("Socket closed before we handed it to the receiver")
+    :ok = Controller.update_connection_status(state.connect.client_id, :down)
+    do_attempt_reconnect(state)
+  end
+
+  def handle_info({:DOWN, ref, :port, port, reason}, %State{monitor_ref: {port, ref}} = state)
+      when reason in [:normal, :noproc] do
+    :ok = Controller.update_connection_status(state.connect.client_id, :down)
+    do_attempt_reconnect(state)
+  end
+
   # Helpers
   defp reset_keep_alive(%State{keep_alive: nil} = state) do
     ref = Process.send_after(self(), :ping, state.connect.keep_alive * 1000)
@@ -190,6 +167,35 @@ defmodule Tortoise.Connection do
     else
       {:error, :econnrefused} ->
         {:error, {:connection_refused, host, port}}
+    end
+  end
+
+  defp do_attempt_reconnect(state) do
+    connect = %Connect{state.connect | clean_session: false}
+
+    with {%Connack{status: :accepted} = connack, socket} <- do_connect(state.server, connect),
+         :ok = Receiver.handle_socket(connect.client_id, {:tcp, socket}),
+         :ok = Controller.update_connection_status(connect.client_id, :up) do
+      monitor_ref = {socket, Port.monitor(socket)}
+
+      case connack do
+        %Connack{session_present: true} ->
+          result = %State{state | connect: connect, monitor_ref: monitor_ref}
+          {:noreply, reset_keep_alive(result)}
+
+        %Connack{session_present: false} ->
+          # delete inflight state ?
+          if not Enum.empty?(state.subscriptions), do: send(self(), :subscribe)
+          result = %State{state | connect: connect, monitor_ref: monitor_ref}
+          {:noreply, reset_keep_alive(result)}
+      end
+    else
+      %Connack{status: {:refused, reason}} ->
+        {:stop, {:connection_failed, reason}}
+
+      {:error, {:protocol_violation, violation}} ->
+        Logger.error("Protocol violation: #{inspect(violation)}")
+        {:stop, :protocol_violation}
     end
   end
 end
