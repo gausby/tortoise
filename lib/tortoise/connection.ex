@@ -55,7 +55,29 @@ defmodule Tortoise.Connection do
   end
 
   # Public interface
-  def publish(client_id, topic, payload \\ nil, opts \\ []) do
+  def publish(client_id, topic, payload \\ nil, opts \\ [])
+
+  def publish(%Transmitter.Pipe{} = pipe, topic, payload, opts) do
+    qos = Keyword.get(opts, :qos, 0)
+
+    publish = %Package.Publish{
+      topic: topic,
+      qos: qos,
+      payload: payload,
+      retain: Keyword.get(opts, :retain, false)
+    }
+
+    case publish do
+      %Package.Publish{qos: 0} ->
+        {:ok, pipe} = Transmitter.publish(pipe, publish)
+        pipe
+
+      %Package.Publish{qos: qos} when qos in [1, 2] ->
+        Inflight.track(pipe, {:outgoing, publish})
+    end
+  end
+
+  def publish(client_id, topic, payload, opts) do
     qos = Keyword.get(opts, :qos, 0)
 
     publish = %Package.Publish{
