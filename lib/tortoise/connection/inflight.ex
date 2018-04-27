@@ -61,7 +61,7 @@ defmodule Tortoise.Connection.Inflight do
     {:ok, ref} = track(client_id, command)
 
     receive do
-      {Tortoise, {{^client_id, ^ref}, result}} ->
+      {{Tortoise, ^client_id}, ^ref, result} ->
         result
     after
       timeout -> {:error, :timeout}

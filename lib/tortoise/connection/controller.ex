@@ -90,7 +90,7 @@ defmodule Tortoise.Connection.Controller do
         caller: {pid, ref},
         result: :ok
       }) do
-    send(pid, {Tortoise, {{client_id, ref}, :ok}})
+    send(pid, {{Tortoise, client_id}, ref, :ok})
     :ok
   end
 
