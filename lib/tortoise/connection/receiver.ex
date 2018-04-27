@@ -74,8 +74,14 @@ defmodule Tortoise.Connection.Receiver do
 
   # activate network socket for incoming traffic
   def handle_event(:internal, :activate_socket, _state_name, data) do
-    :ok = :inet.setopts(data.socket, active: :once)
-    :keep_state_and_data
+    case :inet.setopts(data.socket, active: :once) do
+      :ok ->
+        :keep_state_and_data
+
+      {:error, :einval} ->
+        # @todo consider if there could be a we buffer should drain at this point
+        {:next_state, :disconnected, data}
+    end
   end
 
   # consume buffer
