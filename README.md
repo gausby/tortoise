@@ -27,24 +27,15 @@ I would love to get some feedback and help building this thing.
 Just to get people started:
 
 ``` elixir
-# connect to the server and subscribe to foo/bar
+# connect to the server and subscribe to foo/bar with QoS 0
 Tortoise.Supervisor.start_child(
     client_id: "my_client_id",
     driver: {Tortoise.Driver.Logger, []},
     server: {:tcp, 'localhost', 1883},
     subscriptions: [{"foo/bar", 0}])
 
-# Open a pipe we can post stuff into...
-
-# ...while the word subscribe might be confusing it is meant to mean
-# "subscribe to a connection on the transmitter"; the subscribing
-# process will get a new pipe when the connection is reestablished, for
-# what ever reason. The pipe will be in the mailbox of the subscribing
-# process.
-{:ok, pipe} = Tortoise.Connection.Transmitter.subscribe_await("my_client_id");
-
 # publish a message on the broker
-Tortoise.publish(pipe, "foo/bar", "Hello from the World of Tomorrow !", qos: 0)
+Tortoise.publish("my_client_id", "foo/bar", "Hello from the World of Tomorrow !", qos: 0)
 ```
 
 The "pipe" concept should get a better description, it is basically a
