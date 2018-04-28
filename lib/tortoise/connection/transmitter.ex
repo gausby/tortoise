@@ -4,7 +4,7 @@ defmodule Tortoise.Connection.Transmitter do
   use GenStateMachine
 
   alias Tortoise.Package
-  alias Tortoise.Connection.Transmitter.Pipe
+  alias Tortoise.Pipe
 
   defstruct client_id: nil, subscribers: %{}
 

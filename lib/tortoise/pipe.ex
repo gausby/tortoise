@@ -1,4 +1,4 @@
-defmodule Tortoise.Connection.Transmitter.Pipe do
+defmodule Tortoise.Pipe do
   @moduledoc """
   The transmitter "pipe", for lack of a better word, is an opaque data
   type that can be given to a process. It contains amongst other

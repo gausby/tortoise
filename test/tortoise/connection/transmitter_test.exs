@@ -3,8 +3,7 @@ defmodule Tortoise.Connection.TransmitterTest do
   doctest Tortoise.Connection.Transmitter
 
   alias Tortoise.Connection.Transmitter
-  alias Tortoise.Package
-  alias Tortoise.Package.Publish
+  alias Tortoise.{Package, Pipe}
 
   setup context do
     {:ok, %{client_id: context.test}}
@@ -50,7 +49,7 @@ defmodule Tortoise.Connection.TransmitterTest do
       assert Transmitter.subscribers(client_id) == [self()]
       # when we get a connection the subscribers should get a socket
       _context = run_setup(context, :setup_connection)
-      assert_receive {Tortoise, {:transmitter, %Transmitter.Pipe{socket: socket}}}
+      assert_receive {Tortoise, {:transmitter, %Pipe{socket: socket}}}
       assert is_port(socket)
     end
 
@@ -60,7 +59,7 @@ defmodule Tortoise.Connection.TransmitterTest do
       assert :ok = Transmitter.subscribe(client_id)
       assert Transmitter.subscribers(client_id) == [self()]
       # The Transmitter should send the socket to the subscriber
-      assert_receive {Tortoise, {:transmitter, %Transmitter.Pipe{socket: socket}}}
+      assert_receive {Tortoise, {:transmitter, %Pipe{socket: socket}}}
       assert is_port(socket)
     end
 
@@ -126,7 +125,7 @@ defmodule Tortoise.Connection.TransmitterTest do
       client_id = context.client_id
       assert :ok = Transmitter.subscribe(client_id)
       assert_receive {Tortoise, {:transmitter, pipe}}
-      publish = %Publish{topic: "foo"}
+      publish = %Package.Publish{topic: "foo"}
 
       Transmitter.publish(pipe, publish)
       {:ok, package} = :gen_tcp.recv(context.server, 0)
@@ -137,7 +136,7 @@ defmodule Tortoise.Connection.TransmitterTest do
     test "receiving a new pipe during a publish if the socket is closed", context do
       client_id = context.client_id
       parent = self()
-      publish = %Publish{topic: "foo"}
+      publish = %Package.Publish{topic: "foo"}
 
       subscriber =
         spawn_link(fn ->
@@ -155,7 +154,7 @@ defmodule Tortoise.Connection.TransmitterTest do
           end
         end)
 
-      assert_receive {:subscriber_pipe, %Transmitter.Pipe{socket: original_socket}}
+      assert_receive {:subscriber_pipe, %Pipe{socket: original_socket}}
       {:ok, package} = :gen_tcp.recv(context.server, 0)
       assert Package.decode(package) == publish
       :ok = :gen_tcp.close(context.client)
@@ -165,7 +164,7 @@ defmodule Tortoise.Connection.TransmitterTest do
 
       {:ok, package} = :gen_tcp.recv(context.server, 0)
       assert Package.decode(package) == publish
-      assert_receive {:subscriber_pipe, %Transmitter.Pipe{socket: new_socket}}
+      assert_receive {:subscriber_pipe, %Pipe{socket: new_socket}}
       # the new socket should be different than the original socket
       refute new_socket == original_socket
     end
@@ -177,7 +176,7 @@ defmodule Tortoise.Connection.TransmitterTest do
     #     %Package.Publish{topic: "hello2", payload: "bar"},
     #     %Package.Publish{topic: "hello3", payload: "baz"}
     #   ]
-    #   |> Enum.into(%Transmitter.Pipe{client_id: context.client_id, socket: context.client})
+    #   |> Enum.into(%Pipe{client_id: context.client_id, socket: context.client})
     # end
   end
 end
