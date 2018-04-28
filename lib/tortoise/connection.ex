@@ -7,9 +7,8 @@ defmodule Tortoise.Connection do
   defstruct [:socket, :monitor_ref, :connect, :server, :session, :subscriptions, :keep_alive]
   alias __MODULE__, as: State
 
-  alias Tortoise.Connection
+  alias Tortoise.{Connection, Package, Pipe}
   alias Tortoise.Connection.{Inflight, Controller, Receiver, Transmitter}
-  alias Tortoise.Package
   alias Tortoise.Package.{Connect, Connack}
 
   def start_link(opts) do
@@ -57,7 +56,7 @@ defmodule Tortoise.Connection do
   # Public interface
   def publish(client_id, topic, payload \\ nil, opts \\ [])
 
-  def publish(%Transmitter.Pipe{} = pipe, topic, payload, opts) do
+  def publish(%Pipe{} = pipe, topic, payload, opts) do
     qos = Keyword.get(opts, :qos, 0)
 
     publish = %Package.Publish{

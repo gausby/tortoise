@@ -49,7 +49,7 @@ defmodule Tortoise.Connection.TransmitterTest do
       assert Transmitter.subscribers(client_id) == [self()]
       # when we get a connection the subscribers should get a socket
       _context = run_setup(context, :setup_connection)
-      assert_receive {Tortoise, {:transmitter, %Pipe{socket: socket}}}
+      assert_receive {{Tortoise, ^client_id}, :transmitter, %Pipe{socket: socket}}
       assert is_port(socket)
     end
 
@@ -59,7 +59,7 @@ defmodule Tortoise.Connection.TransmitterTest do
       assert :ok = Transmitter.subscribe(client_id)
       assert Transmitter.subscribers(client_id) == [self()]
       # The Transmitter should send the socket to the subscriber
-      assert_receive {Tortoise, {:transmitter, %Pipe{socket: socket}}}
+      assert_receive {{Tortoise, ^client_id}, :transmitter, %Pipe{socket: socket}}
       assert is_port(socket)
     end
 
@@ -105,7 +105,7 @@ defmodule Tortoise.Connection.TransmitterTest do
       # first we create the subscription
       assert :ok = Transmitter.subscribe(client_id)
       context = run_setup(context, :setup_connection)
-      assert_receive {Tortoise, {:transmitter, _socket}}
+      assert_receive {{Tortoise, ^client_id}, :transmitter, _socket}
       # attempt to unsubscribe from the transmitter
       :ok = Transmitter.unsubscribe(client_id)
       assert Transmitter.subscribers(client_id) == []
@@ -114,7 +114,7 @@ defmodule Tortoise.Connection.TransmitterTest do
       # subscribed at this point, so we should not receive the
       # broadcast.
       _context = run_setup(context, :setup_connection)
-      refute_receive {Tortoise, {:transmitter, _socket}}
+      refute_receive {{Tortoise, ^client_id}, :transmitter, _socket}
     end
   end
 
@@ -124,7 +124,7 @@ defmodule Tortoise.Connection.TransmitterTest do
     test "publishing on a pipe", context do
       client_id = context.client_id
       assert :ok = Transmitter.subscribe(client_id)
-      assert_receive {Tortoise, {:transmitter, pipe}}
+      assert_receive {{Tortoise, ^client_id}, :transmitter, pipe}
       publish = %Package.Publish{topic: "foo"}
 
       Transmitter.publish(pipe, publish)

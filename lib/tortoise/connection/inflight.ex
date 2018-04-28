@@ -3,7 +3,7 @@ defmodule Tortoise.Connection.Inflight do
   A process keeping track of the messages in flight
   """
 
-  alias Tortoise.Package
+  alias Tortoise.{Package, Pipe}
   alias Tortoise.Connection.{Controller, Transmitter}
   alias Tortoise.Connection.Inflight.Track
 
@@ -38,7 +38,7 @@ defmodule Tortoise.Connection.Inflight do
     :ok = GenServer.cast(via_name(client_id), {:incoming, publish})
   end
 
-  def track(%Transmitter.Pipe{client_id: client_id} = pipe, {:outgoing, package}) do
+  def track(%Pipe{client_id: client_id} = pipe, {:outgoing, package}) do
     caller = {_, ref} = {self(), make_ref()}
 
     case package do
@@ -52,7 +52,7 @@ defmodule Tortoise.Connection.Inflight do
         :ok = GenServer.cast(via_name(client_id), {:outgoing, caller, package})
     end
 
-    %Transmitter.Pipe{pipe | pending: [ref | pipe.pending]}
+    %Pipe{pipe | pending: [ref | pipe.pending]}
   end
 
   def track(client_id, {:outgoing, package}) do

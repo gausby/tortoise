@@ -53,7 +53,7 @@ defmodule Tortoise.Connection.Transmitter do
     :ok = subscribe(client_id)
 
     receive do
-      {Tortoise, {:transmitter, pipe}} ->
+      {{Tortoise, ^client_id}, :transmitter, pipe} ->
         {:ok, pipe}
     after
       timeout ->
@@ -72,6 +72,7 @@ defmodule Tortoise.Connection.Transmitter do
   end
 
   def publish(%Pipe{module: :tcp} = pipe, %Package.Publish{} = data) do
+    client_id = pipe.client_id
     publish = Tortoise.Package.encode(data)
 
     case :gen_tcp.send(pipe.socket, publish) do
@@ -80,7 +81,7 @@ defmodule Tortoise.Connection.Transmitter do
 
       {:error, :closed} ->
         receive do
-          {Tortoise, {:transmitter, pipe}} ->
+          {{Tortoise, ^client_id}, :transmitter, pipe} ->
             publish(pipe, data)
         after
           5000 ->
@@ -175,7 +176,7 @@ defmodule Tortoise.Connection.Transmitter do
     {:keep_state, updated_data}
   end
 
-  defp send_transmitter_to_subscriber(subscriber_pid, transmitter) do
-    send(subscriber_pid, {Tortoise, {:transmitter, transmitter}})
+  defp send_transmitter_to_subscriber(subscriber_pid, %Pipe{client_id: client_id} = transmitter) do
+    send(subscriber_pid, {{Tortoise, client_id}, :transmitter, transmitter})
   end
 end
