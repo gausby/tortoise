@@ -16,27 +16,105 @@ defmodule Tortoise.Pipe do
   @todo, document this stuff, and document it better.
   """
 
-  alias Tortoise.Package
+  alias Tortoise.{Package, Pipe}
   alias Tortoise.Connection.Transmitter
 
-  @enforce_keys [:client_id, :socket]
-  defstruct [:client_id, :socket, module: :tcp, pending: []]
+  @opaque t :: %__MODULE__{
+            client_id: binary(),
+            socket: port(),
+            module: :tcp,
+            active: boolean(),
+            failure: :crash | :drop,
+            timeout: non_neg_integer() | :infinity,
+            pending: [reference()]
+          }
+  @enforce_keys [:client_id]
+  defstruct([
+    :client_id,
+    socket: nil,
+    module: :tcp,
+    active: false,
+    failure: :crash,
+    timeout: :infinity,
+    pending: []
+  ])
 
-  defimpl Collectable do
-    def into(pipe) do
-      collector_fun = fn
-        acc, {:cont, %Package.Publish{qos: 0} = elem} ->
-          [Package.encode(elem) | acc]
+  def new(client_id, opts \\ []) do
+    active = Keyword.get(opts, :active, false)
+    timeout = Keyword.get(opts, :timeout, 5000)
 
-        acc, :done ->
-          Transmitter.publish(pipe, Enum.reverse(acc))
-          acc
+    opts = [timeout: timeout, active: active]
 
-        _acc, :halt ->
-          :ok
-      end
+    case Transmitter.get_socket(client_id, opts) do
+      {:ok, socket} ->
+        %Pipe{client_id: client_id, socket: socket, active: active}
 
-      {[], collector_fun}
+      {:error, :timeout} ->
+        {:error, :timeout}
     end
   end
+
+  def publish(%Pipe{} = pipe, topic, payload \\ nil, opts \\ []) do
+    publish = %Package.Publish{
+      topic: topic,
+      payload: payload,
+      qos: Keyword.get(opts, :qos, 0),
+      retain: Keyword.get(opts, :retain, false)
+    }
+
+    do_publish(pipe, publish)
+  end
+
+  defp do_publish(%Pipe{module: :tcp} = pipe, %Package.Publish{qos: 0} = publish) do
+    encoded_publish = Package.encode(publish)
+
+    case :gen_tcp.send(pipe.socket, encoded_publish) do
+      :ok ->
+        pipe
+
+      {:error, :closed} ->
+        if pipe.active do
+          client_id = pipe.client_id
+
+          receive do
+            {{Tortoise, ^client_id}, :socket, socket} ->
+              pipe = %Pipe{pipe | socket: socket}
+              do_publish(pipe, publish)
+          after
+            pipe.timeout ->
+              {:error, :timeout}
+          end
+        else
+          opts = [timeout: pipe.timeout, active: pipe.active]
+
+          case Transmitter.get_socket(pipe.client_id, opts) do
+            {:ok, socket} ->
+              pipe = %Pipe{pipe | socket: socket}
+              do_publish(pipe, publish)
+
+            {:error, :timeout} ->
+              {:error, :timeout}
+          end
+        end
+    end
+  end
+
+  # protocols
+  # defimpl Collectable do
+  #   def into(pipe) do
+  #     collector_fun = fn
+  #       acc, {:cont, %Package.Publish{qos: 0} = elem} ->
+  #         [Package.encode(elem) | acc]
+
+  #       acc, :done ->
+  #         Transmitter.publish(pipe, Enum.reverse(acc))
+  #         acc
+
+  #       _acc, :halt ->
+  #         :ok
+  #     end
+
+  #     {[], collector_fun}
+  #   end
+  # end
 end

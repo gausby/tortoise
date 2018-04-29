@@ -68,8 +68,7 @@ defmodule Tortoise.Connection do
 
     case publish do
       %Package.Publish{qos: 0} ->
-        {:ok, pipe} = Transmitter.publish(pipe, publish)
-        pipe
+        Pipe.publish(pipe, publish)
 
       %Package.Publish{qos: qos} when qos in [1, 2] ->
         Inflight.track(pipe, {:outgoing, publish})

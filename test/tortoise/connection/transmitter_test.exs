@@ -3,7 +3,6 @@ defmodule Tortoise.Connection.TransmitterTest do
   doctest Tortoise.Connection.Transmitter
 
   alias Tortoise.Connection.Transmitter
-  alias Tortoise.{Package, Pipe}
 
   setup context do
     {:ok, %{client_id: context.test}}
@@ -40,30 +39,45 @@ defmodule Tortoise.Connection.TransmitterTest do
     refute Process.alive?(pid)
   end
 
-  describe "subscribe/1" do
+  describe "get_socket/2" do
     setup [:setup_transmitter]
 
-    test "subscribe while offline", context do
+    test "get socket while offline (passive)", context do
       client_id = context.client_id
-      assert :ok = Transmitter.subscribe(client_id)
-      assert Transmitter.subscribers(client_id) == [self()]
-      # when we get a connection the subscribers should get a socket
+      parent = self()
+
+      spawn_link(fn ->
+        {:ok, socket} = Transmitter.get_socket(client_id, timeout: 5000, active: false)
+        send(parent, {:got_socket, socket})
+      end)
+
+      refute_receive {:got_socket, _socket}
       _context = run_setup(context, :setup_connection)
-      assert_receive {{Tortoise, ^client_id}, :transmitter, %Pipe{socket: socket}}
+      assert_receive {:got_socket, socket}
       assert is_port(socket)
+      assert Transmitter.subscribers(client_id) == []
     end
 
-    test "subscribe while online", context do
+    test "get socket while offline (active)", context do
       client_id = context.client_id
+      parent = self()
+
+      subscriber =
+        spawn_link(fn ->
+          {:ok, socket} = Transmitter.get_socket(client_id, timeout: 5000, active: true)
+          send(parent, {:got_socket, socket})
+          :timer.sleep(:infinity)
+        end)
+
+      refute_receive {:got_socket, _socket}
       _context = run_setup(context, :setup_connection)
-      assert :ok = Transmitter.subscribe(client_id)
-      assert Transmitter.subscribers(client_id) == [self()]
-      # The Transmitter should send the socket to the subscriber
-      assert_receive {{Tortoise, ^client_id}, :transmitter, %Pipe{socket: socket}}
+      assert_receive {:got_socket, socket}
       assert is_port(socket)
+      assert Transmitter.subscribers(client_id) == [subscriber]
     end
 
-    test "remove subscription when the subscriber terminates", context do
+    test "remove active subscription when owner process terminates", context do
+      context = run_setup(context, :setup_connection)
       client_id = context.client_id
       # First create a subscription, for this test we will terminate
       # the subscriber, so we need it to run in another process. To be
@@ -75,7 +89,7 @@ defmodule Tortoise.Connection.TransmitterTest do
 
       subscriber =
         spawn_link(fn ->
-          :ok = Transmitter.subscribe(client_id)
+          {:ok, _socket} = Transmitter.get_socket(client_id, timeout: 5000, active: true)
           # tell the parent that it can assert on the subscription
           send(parent, {:subscribed, self()})
 
@@ -103,9 +117,10 @@ defmodule Tortoise.Connection.TransmitterTest do
     test "unsubscribe", context do
       client_id = context.client_id
       # first we create the subscription
-      assert :ok = Transmitter.subscribe(client_id)
+      {:error, :timeout} = Transmitter.get_socket(client_id, active: true, timeout: 0)
+      assert Transmitter.subscribers(client_id) == [self()]
       context = run_setup(context, :setup_connection)
-      assert_receive {{Tortoise, ^client_id}, :transmitter, _socket}
+      assert_receive {{Tortoise, ^client_id}, :socket, _socket}
       # attempt to unsubscribe from the transmitter
       :ok = Transmitter.unsubscribe(client_id)
       assert Transmitter.subscribers(client_id) == []
@@ -116,67 +131,5 @@ defmodule Tortoise.Connection.TransmitterTest do
       _context = run_setup(context, :setup_connection)
       refute_receive {{Tortoise, ^client_id}, :transmitter, _socket}
     end
-  end
-
-  describe "publish/3" do
-    setup [:setup_transmitter, :setup_connection]
-
-    test "publishing on a pipe", context do
-      client_id = context.client_id
-      assert :ok = Transmitter.subscribe(client_id)
-      assert_receive {{Tortoise, ^client_id}, :transmitter, pipe}
-      publish = %Package.Publish{topic: "foo"}
-
-      Transmitter.publish(pipe, publish)
-      {:ok, package} = :gen_tcp.recv(context.server, 0)
-
-      assert Package.decode(package) == publish
-    end
-
-    test "receiving a new pipe during a publish if the socket is closed", context do
-      client_id = context.client_id
-      parent = self()
-      publish = %Package.Publish{topic: "foo"}
-
-      subscriber =
-        spawn_link(fn ->
-          {:ok, pipe} = Transmitter.subscribe_await(client_id)
-          send(parent, {:subscriber_pipe, pipe})
-          {:ok, pipe} = Transmitter.publish(pipe, publish)
-          # Now the parent will close the socket belonging to the pipe
-          # and start a new one. The next publish will get the newly
-          # created socket when it attempt to publish.
-          receive do
-            :retry_publish ->
-              # this publish should receive the new pipe
-              {:ok, pipe} = Transmitter.publish(pipe, publish)
-              send(parent, {:subscriber_pipe, pipe})
-          end
-        end)
-
-      assert_receive {:subscriber_pipe, %Pipe{socket: original_socket}}
-      {:ok, package} = :gen_tcp.recv(context.server, 0)
-      assert Package.decode(package) == publish
-      :ok = :gen_tcp.close(context.client)
-
-      send(subscriber, :retry_publish)
-      context = run_setup(context, :setup_connection)
-
-      {:ok, package} = :gen_tcp.recv(context.server, 0)
-      assert Package.decode(package) == publish
-      assert_receive {:subscriber_pipe, %Pipe{socket: new_socket}}
-      # the new socket should be different than the original socket
-      refute new_socket == original_socket
-    end
-
-    # test "pipe", context do
-    #   # is this actually smart? or am i abusing "into" here?
-    #   [
-    #     %Package.Publish{topic: "hello", payload: "foo"},
-    #     %Package.Publish{topic: "hello2", payload: "bar"},
-    #     %Package.Publish{topic: "hello3", payload: "baz"}
-    #   ]
-    #   |> Enum.into(%Pipe{client_id: context.client_id, socket: context.client})
-    # end
   end
 end
