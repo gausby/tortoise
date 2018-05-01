@@ -62,7 +62,13 @@ defmodule Tortoise.Pipe do
       retain: Keyword.get(opts, :retain, false)
     }
 
-    do_publish(pipe, publish)
+    with %Pipe{} = pipe <- do_publish(pipe, publish) do
+      pipe
+    else
+      {:error, :timeout} ->
+        # run pipe error spec
+        {:error, :timeout}
+    end
   end
 
   defp do_publish(%Pipe{module: :tcp} = pipe, %Package.Publish{qos: 0} = publish) do
@@ -73,29 +79,35 @@ defmodule Tortoise.Pipe do
         pipe
 
       {:error, :closed} ->
-        if pipe.active do
-          client_id = pipe.client_id
+        case refresh(pipe) do
+          %Pipe{} = pipe ->
+            do_publish(pipe, publish)
 
-          receive do
-            {{Tortoise, ^client_id}, :socket, socket} ->
-              pipe = %Pipe{pipe | socket: socket}
-              do_publish(pipe, publish)
-          after
-            pipe.timeout ->
-              {:error, :timeout}
-          end
-        else
-          opts = [timeout: pipe.timeout, active: pipe.active]
-
-          case Transmitter.get_socket(pipe.client_id, opts) do
-            {:ok, socket} ->
-              pipe = %Pipe{pipe | socket: socket}
-              do_publish(pipe, publish)
-
-            {:error, :timeout} ->
-              {:error, :timeout}
-          end
+          {:error, :timeout} ->
+            {:error, :timeout}
         end
+    end
+  end
+
+  defp refresh(%Pipe{active: true, client_id: client_id} = pipe) do
+    receive do
+      {{Tortoise, ^client_id}, :socket, socket} ->
+        %Pipe{pipe | socket: socket}
+    after
+      pipe.timeout ->
+        {:error, :timeout}
+    end
+  end
+
+  defp refresh(%Pipe{active: false} = pipe) do
+    opts = [timeout: pipe.timeout, active: false]
+
+    case Transmitter.get_socket(pipe.client_id, opts) do
+      {:ok, socket} ->
+        %Pipe{pipe | socket: socket}
+
+      {:error, :timeout} ->
+        {:error, :timeout}
     end
   end
 
