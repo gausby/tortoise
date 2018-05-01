@@ -88,6 +88,11 @@ defmodule Tortoise.Connection.Inflight do
     :ok = GenServer.cast(via_name(client_id), {:update, event})
   end
 
+  @doc false
+  def list_tracking(client_id) do
+    GenServer.call(via_name(client_id), :list_tracking)
+  end
+
   # Server callbacks
   def init(state) do
     {:ok, state}
@@ -121,6 +126,10 @@ defmodule Tortoise.Connection.Inflight do
       {:ok, state} ->
         {:noreply, state}
     end
+  end
+
+  def handle_call(:list_tracking, _from, state) do
+    {:reply, state.pending, state}
   end
 
   # helpers

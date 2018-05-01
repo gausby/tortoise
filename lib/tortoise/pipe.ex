@@ -120,6 +120,31 @@ defmodule Tortoise.Pipe do
     end
   end
 
+  @doc """
+  Await for acknowledge messages for the currently pending messages.
+
+  Note that this enters a selective receive loop, so the await needs
+  to happen before the process reaches its mailbox. It can be used in
+  situations where we want to send a couple of messages and continue
+  when the server has received them; This only works for messages with
+  a Quality of Service above 0.
+  """
+  def await(pipe, timeout \\ 5000)
+
+  def await(%Pipe{pending: []} = pipe, _timeout) do
+    {:ok, pipe}
+  end
+
+  def await(%Pipe{client_id: client_id, pending: [ref | rest]} = pipe, timeout) do
+    receive do
+      {{Tortoise, ^client_id}, ^ref, :ok} ->
+        await(%Pipe{pipe | pending: rest})
+    after
+      timeout ->
+        {:error, :timeout}
+    end
+  end
+
   # protocols
   # defimpl Collectable do
   #   def into(pipe) do

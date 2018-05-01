@@ -1,9 +1,19 @@
 defmodule Tortoise.PipeTest do
-  use ExUnit.Case
+  use ExUnit.Case, async: true
   doctest Tortoise.Pipe
 
   alias Tortoise.{Pipe, Package}
-  alias Tortoise.Connection.Transmitter
+  alias Tortoise.Connection.{Transmitter, Inflight}
+
+  setup context do
+    {:ok, %{client_id: context.test}}
+  end
+
+  def setup_inflight(context) do
+    opts = [client_id: context.client_id]
+    {:ok, pid} = Inflight.start_link(opts)
+    {:ok, %{inflight_pid: pid}}
+  end
 
   def setup_transmitter(context) do
     opts = [client_id: context.test]
@@ -99,6 +109,52 @@ defmodule Tortoise.PipeTest do
       assert_receive {:subscriber_pipe, %Pipe{socket: new_socket}}
       # the new socket should be different than the original socket
       refute new_socket == original_socket
+    end
+  end
+
+  describe "await/1" do
+    setup [:setup_inflight, :setup_transmitter, :setup_connection]
+
+    test "awaiting an empty pending list should complete instantly", context do
+      pipe = Pipe.new(context.client_id)
+      {:ok, %Pipe{pending: []}} = Pipe.await(pipe)
+    end
+
+    test "error with a timeout if given timeout is reached", context do
+      pipe = Pipe.new(context.client_id)
+      pipe = Pipe.publish(pipe, "foo/bar", nil, qos: 1)
+      {:error, :timeout} = Pipe.await(pipe, 20)
+    end
+
+    test "block until pending packages has been acknowledged", context do
+      client_id = context.client_id
+      parent = self()
+
+      spawn_link(fn ->
+        pipe = Pipe.new(client_id)
+        pipe = Pipe.publish(pipe, "foo/bar", nil, qos: 1)
+        pipe = Pipe.publish(pipe, "foo/baz", nil, qos: 1)
+        send(parent, :messages_published)
+        result = Pipe.await(pipe, 5000)
+        send(parent, {:result, result})
+      end)
+
+      assert_receive :messages_published
+      # get the identifiers for the pending packages
+      [pending_1, pending_2] =
+        client_id
+        |> Inflight.list_tracking()
+        |> Map.keys()
+
+      # update the tracking state of the publish, we are waiting for
+      # two publishes to get acknowledged, so one will not be enough
+      Inflight.update(client_id, {:received, %Package.Puback{identifier: pending_1}})
+      refute_receive {:result, _result}
+
+      # acknowledge the other package: now the pipe should yield
+      Inflight.update(client_id, {:received, %Package.Puback{identifier: pending_2}})
+      assert_receive {:result, result}
+      assert {:ok, %{pending: []}} = result
     end
   end
 
