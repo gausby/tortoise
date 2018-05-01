@@ -17,7 +17,7 @@ defmodule Tortoise.Pipe do
   """
 
   alias Tortoise.{Package, Pipe}
-  alias Tortoise.Connection.Transmitter
+  alias Tortoise.Connection.{Transmitter, Inflight}
 
   @opaque t :: %__MODULE__{
             client_id: binary(),
@@ -86,6 +86,15 @@ defmodule Tortoise.Pipe do
           {:error, :timeout} ->
             {:error, :timeout}
         end
+    end
+  end
+
+  defp do_publish(%Pipe{client_id: client_id} = pipe, %Package.Publish{qos: qos} = publish)
+       when qos in 1..2 do
+    case Inflight.track(client_id, {:outgoing, publish}) do
+      {:ok, ref} ->
+        updated_pending = [ref | pipe.pending]
+        %Pipe{pipe | pending: updated_pending}
     end
   end
 
