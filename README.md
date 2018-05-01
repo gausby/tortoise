@@ -27,9 +27,6 @@ I would love to get some feedback and help building this thing.
 Just to get people started:
 
 ``` elixir
-# make sure the application is started
-Tortoise.start(:temporary, [])
-
 # connect to the server and subscribe to foo/bar
 Tortoise.Supervisor.start_child(
     client_id: "my_client_id",
