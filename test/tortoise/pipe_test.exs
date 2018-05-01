@@ -130,29 +130,30 @@ defmodule Tortoise.PipeTest do
       client_id = context.client_id
       parent = self()
 
-      spawn_link(fn ->
-        pipe = Pipe.new(client_id)
-        pipe = Pipe.publish(pipe, "foo/bar", nil, qos: 1)
-        pipe = Pipe.publish(pipe, "foo/baz", nil, qos: 1)
-        send(parent, :messages_published)
-        result = Pipe.await(pipe, 5000)
-        send(parent, {:result, result})
-      end)
+      child =
+        spawn_link(fn ->
+          pipe = Pipe.new(client_id)
+          pipe = Pipe.publish(pipe, "foo/bar", nil, qos: 1)
 
-      assert_receive :messages_published
-      # get the identifiers for the pending packages
-      [pending_1, pending_2] =
-        client_id
-        |> Inflight.list_tracking()
-        |> Map.keys()
+          receive do
+            :continue ->
+              pipe = Pipe.publish(pipe, "foo/baz", nil, qos: 1)
+              result = Pipe.await(pipe, 5000)
+              send(parent, {:result, result})
+          end
+        end)
 
-      # update the tracking state of the publish, we are waiting for
-      # two publishes to get acknowledged, so one will not be enough
-      Inflight.update(client_id, {:received, %Package.Puback{identifier: pending_1}})
-      refute_receive {:result, _result}
+      # receive the publish so we can get the id and acknowledge it
+      {:ok, package} = :gen_tcp.recv(context.server, 0)
+      assert %Package.Publish{identifier: id} = Package.decode(package)
+      Inflight.update(client_id, {:received, %Package.Puback{identifier: id}})
 
-      # acknowledge the other package: now the pipe should yield
-      Inflight.update(client_id, {:received, %Package.Puback{identifier: pending_2}})
+      send(child, :continue)
+      {:ok, package} = :gen_tcp.recv(context.server, 0)
+      assert %Package.Publish{identifier: id} = Package.decode(package)
+      Inflight.update(client_id, {:received, %Package.Puback{identifier: id}})
+
+      # both messages should be acknowledged by now
       assert_receive {:result, result}
       assert {:ok, %{pending: []}} = result
     end
