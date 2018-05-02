@@ -7,7 +7,7 @@ defmodule Tortoise.Connection do
   defstruct [:socket, :monitor_ref, :connect, :server, :session, :subscriptions, :keep_alive]
   alias __MODULE__, as: State
 
-  alias Tortoise.{Connection, Package, Pipe}
+  alias Tortoise.{Connection, Package}
   alias Tortoise.Connection.{Inflight, Controller, Receiver, Transmitter}
   alias Tortoise.Package.{Connect, Connack}
 
