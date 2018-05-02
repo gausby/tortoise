@@ -1,9 +1,7 @@
 defmodule Tortoise do
   use Application
 
-  alias Tortoise.Connection.{Transmitter, Inflight}
-  alias Tortoise.Connection.Transmitter.Pipe
-  alias Tortoise.Package
+  alias Tortoise.Connection.Inflight
 
   @moduledoc """
   Documentation for Tortoise.
@@ -28,22 +26,10 @@ defmodule Tortoise do
   @doc """
   Publish a message to the MQTT broker
   """
-  def publish(%Pipe{client_id: client_id} = pipe, topic, payload, opts \\ []) do
-    qos = Keyword.get(opts, :qos, 0)
+  defdelegate publish(client_id, topic, payload \\ nil, opts \\ []), to: Tortoise.Connection
 
-    publish = %Package.Publish{
-      topic: topic,
-      qos: qos,
-      payload: payload,
-      retain: Keyword.get(opts, :retain, false)
-    }
-
-    if qos in [1, 2] do
-      Inflight.track_sync(client_id, {:outgoing, publish})
-    else
-      Transmitter.publish(pipe, publish)
-    end
-  end
+  defdelegate publish_sync(client_id, topic, payload \\ nil, opts \\ [], timeout \\ :infinity),
+    to: Tortoise.Connection
 
   def subscribe(client_id, [{_, n} | _] = topics) when is_number(n) do
     subscribe = Enum.into(topics, %Tortoise.Package.Subscribe{})

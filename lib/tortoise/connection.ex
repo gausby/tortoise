@@ -7,9 +7,8 @@ defmodule Tortoise.Connection do
   defstruct [:socket, :monitor_ref, :connect, :server, :session, :subscriptions, :keep_alive]
   alias __MODULE__, as: State
 
-  alias Tortoise.Connection
-  alias Tortoise.Connection.{Inflight, Controller, Receiver}
-  alias Tortoise.Package
+  alias Tortoise.{Connection, Package}
+  alias Tortoise.Connection.{Inflight, Controller, Receiver, Transmitter}
   alias Tortoise.Package.{Connect, Connack}
 
   def start_link(opts) do
@@ -52,6 +51,45 @@ defmodule Tortoise.Connection do
       start: {__MODULE__, :start_link, [opts]},
       type: :worker
     }
+  end
+
+  # Public interface
+  def publish(client_id, topic, payload \\ nil, opts \\ []) do
+    qos = Keyword.get(opts, :qos, 0)
+
+    publish = %Package.Publish{
+      topic: topic,
+      qos: qos,
+      payload: payload,
+      retain: Keyword.get(opts, :retain, false)
+    }
+
+    case publish do
+      %Package.Publish{qos: 0} ->
+        Transmitter.cast(client_id, publish)
+
+      %Package.Publish{qos: qos} when qos in [1, 2] ->
+        Inflight.track(client_id, {:outgoing, publish})
+    end
+  end
+
+  def publish_sync(client_id, topic, payload \\ nil, opts \\ [], timeout \\ :infinity) do
+    qos = Keyword.get(opts, :qos, 0)
+
+    publish = %Package.Publish{
+      topic: topic,
+      qos: qos,
+      payload: payload,
+      retain: Keyword.get(opts, :retain, false)
+    }
+
+    case publish do
+      %Package.Publish{qos: 0} ->
+        Transmitter.cast(client_id, publish)
+
+      %Package.Publish{qos: qos} when qos in [1, 2] ->
+        Inflight.track_sync(client_id, {:outgoing, publish}, timeout)
+    end
   end
 
   # Callbacks

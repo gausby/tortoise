@@ -216,7 +216,7 @@ defmodule Tortoise.Connection.ControllerTest do
       # the server will send back an ack message
       Controller.handle_incoming(client_id, %Package.Puback{identifier: 1})
       # the caller should get a message in its mailbox
-      assert_receive {Tortoise, {{^client_id, ^ref}, :ok}}
+      assert_receive {{Tortoise, ^client_id}, ^ref, :ok}
     end
 
     test "outgoing publish with qos 1 sync call", context do
@@ -277,7 +277,7 @@ defmodule Tortoise.Connection.ControllerTest do
       # receive pubcomp
       Controller.handle_incoming(client_id, %Package.Pubcomp{identifier: 1})
       # the caller should get a message in its mailbox
-      assert_receive {Tortoise, {{^client_id, ^ref}, :ok}}
+      assert_receive {{Tortoise, ^client_id}, ^ref, :ok}
     end
   end
 

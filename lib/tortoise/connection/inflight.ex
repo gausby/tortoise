@@ -3,7 +3,7 @@ defmodule Tortoise.Connection.Inflight do
   A process keeping track of the messages in flight
   """
 
-  alias Tortoise.Package
+  alias Tortoise.{Package, Pipe}
   alias Tortoise.Connection.{Controller, Transmitter}
   alias Tortoise.Connection.Inflight.Track
 
@@ -38,30 +38,46 @@ defmodule Tortoise.Connection.Inflight do
     :ok = GenServer.cast(via_name(client_id), {:incoming, publish})
   end
 
-  def track(client_id, {:outgoing, %Package.Publish{qos: qos} = publish})
-      when qos in 1..2 do
+  def track(%Pipe{client_id: client_id} = pipe, {:outgoing, package}) do
     caller = {_, ref} = {self(), make_ref()}
-    :ok = GenServer.cast(via_name(client_id), {:outgoing, caller, publish})
-    {:ok, ref}
+
+    case package do
+      %Package.Publish{qos: qos} when qos in 1..2 ->
+        :ok = GenServer.cast(via_name(client_id), {:outgoing, caller, package})
+
+      %Package.Subscribe{} ->
+        :ok = GenServer.cast(via_name(client_id), {:outgoing, caller, package})
+
+      %Package.Unsubscribe{} ->
+        :ok = GenServer.cast(via_name(client_id), {:outgoing, caller, package})
+    end
+
+    %Pipe{pipe | pending: [ref | pipe.pending]}
   end
 
-  def track(client_id, {:outgoing, %Package.Subscribe{} = subscribe}) do
+  def track(client_id, {:outgoing, package}) do
     caller = {_, ref} = {self(), make_ref()}
-    :ok = GenServer.cast(via_name(client_id), {:outgoing, caller, subscribe})
-    {:ok, ref}
-  end
 
-  def track(client_id, {:outgoing, %Package.Unsubscribe{} = unsubscribe}) do
-    caller = {_, ref} = {self(), make_ref()}
-    :ok = GenServer.cast(via_name(client_id), {:outgoing, caller, unsubscribe})
-    {:ok, ref}
+    case package do
+      %Package.Publish{qos: qos} when qos in 1..2 ->
+        :ok = GenServer.cast(via_name(client_id), {:outgoing, caller, package})
+        {:ok, ref}
+
+      %Package.Subscribe{} ->
+        :ok = GenServer.cast(via_name(client_id), {:outgoing, caller, package})
+        {:ok, ref}
+
+      %Package.Unsubscribe{} ->
+        :ok = GenServer.cast(via_name(client_id), {:outgoing, caller, package})
+        {:ok, ref}
+    end
   end
 
   def track_sync(client_id, {:outgoing, _} = command, timeout \\ :infinity) do
     {:ok, ref} = track(client_id, command)
 
     receive do
-      {Tortoise, {{^client_id, ^ref}, result}} ->
+      {{Tortoise, ^client_id}, ^ref, result} ->
         result
     after
       timeout -> {:error, :timeout}
