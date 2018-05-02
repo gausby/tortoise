@@ -23,7 +23,8 @@ defmodule Tortoise.MixProject do
   defp deps do
     [
       {:gen_state_machine, "~> 2.0"},
-      {:eqc_ex, "~> 1.4"}
+      {:eqc_ex, "~> 1.4"},
+      {:dialyxir, "~> 0.5", only: [:dev, :test], runtime: false}
     ]
   end
 end
