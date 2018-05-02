@@ -4,14 +4,15 @@ defmodule Tortoise.Pipe do
   type that can be given to a process. It contains amongst other
   things a socket.
 
-  A process can obtain a transmitter pipe by subscribing to a
-  Transmitter, which will broadcast a updated transmitter pipe when a
-  new socket is created for the transmitter.
+  A process can obtain a transmitter pipe by issuing a `pipe =
+  Tortoise.Pipe.new(client_id)` request, which will result in a pipe
+  in passive mode, meaning it will hold a socket it can publish
+  messages into, but might fail, in which case it will attempt to get
+  another socket from the transmitter. This all happens behind the
+  scenes, it is important though that the returned pipe is used in
+  future pipe requests, so publishing on a pipe should look like this:
 
-  The pipe is a one way construction. It is only possible to pour data
-  into a pipe, and it will only result in a message control package
-  with quality of service zero. If a higher quality of service is
-  needed the message should go through the in flight tracker process.
+    pipe = Tortoise.Pipe.publish(pipe, "foo/bar", "bonjour !")
 
   @todo, document this stuff, and document it better.
   """
