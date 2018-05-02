@@ -6,7 +6,7 @@ defmodule Tortoise.Connection.Transmitter do
   alias Tortoise.Package
 
   @enforce_keys [:client_id]
-  defstruct client_id: nil, subscribers: %{}, once: []
+  defstruct client_id: nil, subscribers: %{}, passive: []
   alias __MODULE__, as: State
 
   @type client_id :: pid() | term()
@@ -110,7 +110,7 @@ defmodule Tortoise.Connection.Transmitter do
 
     next_actions = [
       {:reply, from, :ok},
-      {:next_event, :internal, :handle_once},
+      {:next_event, :internal, :handle_passive},
       {:next_event, :internal, :broadcast_socket}
     ]
 
@@ -126,16 +126,16 @@ defmodule Tortoise.Connection.Transmitter do
   end
 
   # handle the socket to passive pipes
-  def handle_event(:internal, :handle_once, {:connected, _socket}, %State{once: []}) do
+  def handle_event(:internal, :handle_passive, {:connected, _socket}, %State{passive: []}) do
     :keep_state_and_data
   end
 
-  def handle_event(:internal, :handle_once, {:connected, socket}, %State{} = data) do
-    for pid <- data.once do
+  def handle_event(:internal, :handle_passive, {:connected, socket}, %State{} = data) do
+    for pid <- data.passive do
       send(pid, {{Tortoise, data.client_id}, :socket, socket})
     end
 
-    {:keep_state, %State{data | once: []}}
+    {:keep_state, %State{data | passive: []}}
   end
 
   # socket subscriptions
@@ -195,6 +195,6 @@ defmodule Tortoise.Connection.Transmitter do
         %State{} = data
       ) do
     next_action = {:reply, from, :pending}
-    {:keep_state, %State{data | once: [pid | data.once]}, next_action}
+    {:keep_state, %State{data | passive: [pid | data.passive]}, next_action}
   end
 end
