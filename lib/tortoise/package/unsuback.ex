@@ -21,7 +21,6 @@ defmodule Tortoise.Package.Unsuback do
 
   # Protocols ----------------------------------------------------------
   defimpl Tortoise.Encodable do
-    @spec encode(Package.Unsuback.t()) :: iodata()
     def encode(%Package.Unsuback{identifier: identifier} = t)
         when identifier in 0x0001..0xFFFF do
       [Package.Meta.encode(t.__META__), <<2, identifier::big-integer-size(16)>>]

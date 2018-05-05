@@ -80,7 +80,6 @@ defmodule Tortoise.Package.Connect do
   end
 
   defimpl Tortoise.Encodable do
-    @spec encode(Package.Connect.t()) :: iodata()
     def encode(%Package.Connect{client_id: client_id} = t)
         when is_binary(client_id) do
       [

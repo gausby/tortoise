@@ -41,7 +41,6 @@ defmodule Tortoise.Package.Unsubscribe do
 
   # Protocols ----------------------------------------------------------
   defimpl Tortoise.Encodable do
-    @spec encode(Package.Unsubscribe.t()) :: iodata()
     def encode(%Package.Unsubscribe{identifier: identifier} = t)
         when identifier in 0x0001..0xFFFF do
       [

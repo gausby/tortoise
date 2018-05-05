@@ -20,7 +20,6 @@ defmodule Tortoise.Package.Pubrec do
 
   # Protocols ----------------------------------------------------------
   defimpl Tortoise.Encodable do
-    @spec encode(Package.Pubrec.t()) :: iodata()
     def encode(%Package.Pubrec{identifier: identifier} = t)
         when identifier in 0x0001..0xFFFF do
       [Package.Meta.encode(t.__META__), <<2, t.identifier::big-integer-size(16)>>]

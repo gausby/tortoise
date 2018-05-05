@@ -43,7 +43,6 @@ defmodule Tortoise.Package.Subscribe do
 
   # PROTOCOLS ==========================================================
   defimpl Tortoise.Encodable do
-    @spec encode(Package.Subscribe.t()) :: iolist()
     def encode(%Package.Subscribe{identifier: identifier} = t)
         when identifier in 0x0001..0xFFFF do
       [

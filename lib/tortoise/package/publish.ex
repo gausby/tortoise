@@ -78,7 +78,6 @@ defmodule Tortoise.Package.Publish do
 
   # Protocols ----------------------------------------------------------
   defimpl Tortoise.Encodable do
-    @spec encode(Package.Publish.t()) :: iodata()
     def encode(%Package.Publish{identifier: nil, qos: 0} = t) do
       [
         Package.Meta.encode(%{t.__META__ | flags: encode_flags(t)}),
