@@ -92,6 +92,19 @@ defmodule Tortoise.Connection do
     end
   end
 
+  # subscribe/unsubscribe
+  def subscribe(client_id, topics, opts \\ [])
+
+  def subscribe(client_id, [{_, n} | _] = topics, opts) when is_number(n) do
+    identifier = Keyword.get(opts, :identifier, nil)
+    subscribe = Enum.into(topics, %Package.Subscribe{identifier: identifier})
+    Inflight.track(client_id, {:outgoing, subscribe})
+  end
+
+  def subscribe(client_id, {_, n} = topic, opts) when is_number(n) do
+    subscribe(client_id, [topic], opts)
+  end
+
   # Callbacks
   def init({{:tcp, _, _} = server, %Connect{} = connect, subscriptions, opts}) do
     expected_connack = %Connack{status: :accepted, session_present: false}
