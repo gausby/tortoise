@@ -302,7 +302,7 @@ defmodule Tortoise.Connection.ControllerTest do
       # the server will send back a subscription acknowledgement message
       :ok = Controller.handle_incoming(client_id, suback)
 
-      assert_receive {Tortoise, {{^client_id, ^ref}, _}}
+      assert_receive {{Tortoise, ^client_id}, ^ref, _}
       # the client callback module should get the subscribe notifications in order
       assert_receive %TestDriver{subscriptions: ["foo"]}
       assert_receive %TestDriver{subscriptions: ["bar" | _]}
@@ -315,7 +315,7 @@ defmodule Tortoise.Connection.ControllerTest do
       {:ok, package} = :gen_tcp.recv(context.server, 0, 200)
       assert ^unsubscribe = Package.decode(package)
       :ok = Controller.handle_incoming(client_id, unsuback)
-      assert_receive {Tortoise, {{^client_id, ^ref}, _}}
+      assert_receive {{Tortoise, ^client_id}, ^ref, _}
 
       # the client callback module should remove the subscriptions in order
       assert_receive %TestDriver{subscriptions: ["baz", "bar"]}

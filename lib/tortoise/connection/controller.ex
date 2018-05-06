@@ -95,7 +95,7 @@ defmodule Tortoise.Connection.Controller do
   end
 
   def handle_result(client_id, %Inflight.Track{caller: {pid, ref}, result: result} = track) do
-    send(pid, {Tortoise, {{client_id, ref}, result}})
+    send(pid, {{Tortoise, client_id}, ref, result})
     GenServer.cast(via_name(client_id), {:result, track})
   end
 
@@ -326,7 +326,7 @@ defmodule Tortoise.Connection.Controller do
        ) do
     # @todo, figure out what to do when a qos is return than the one requested
     updated_driver_state =
-      Enum.reduce(subacks, state.driver.state, fn {:ok, {topic_filter, _qos}}, acc ->
+      Enum.reduce(subacks[:ok], state.driver.state, fn {topic_filter, _qos}, acc ->
         # notice, we ignore the reported qos here for now
         args = [:up, topic_filter, acc]
 

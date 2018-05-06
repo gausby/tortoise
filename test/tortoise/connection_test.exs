@@ -224,11 +224,14 @@ defmodule Tortoise.ConnectionTest do
       assert {:ok, _pid} = Connection.start_link(opts)
       assert_receive {ScriptedMqttServer, {:received, ^connect}}
       # subscribe to a topic
-      {:ok, ref} = Tortoise.Connection.subscribe(client_id, [{"foo", 0}], identifier: 1)
+      :ok = Tortoise.Connection.subscribe(client_id, [{"foo", 0}], identifier: 1)
 
       assert_receive {ScriptedMqttServer, {:received, %Package.Subscribe{topics: [{"foo", 0}]}}}
 
-      assert_receive {Tortoise, {{^client_id, ^ref}, [ok: {"foo", 0}]}}
+      assert %Package.Subscribe{topics: subscriptions} =
+               Tortoise.Connection.subscriptions(client_id)
+
+      assert subscriptions == [{"foo", 0}]
 
       assert_receive {ScriptedMqttServer, :completed}
     end

@@ -222,18 +222,17 @@ defmodule Tortoise.Connection.Inflight.Track do
          } = track
        ) do
     result =
-      for {request, result} <- List.zip([topics, acks]) do
-        case {request, result} do
-          {{topic, level}, {:ok, level}} ->
-            {:ok, {topic, level}}
+      List.zip([topics, acks])
+      |> Enum.reduce(%{error: [], warn: [], ok: []}, fn
+        {{topic, level}, {:ok, level}}, %{ok: oks} = acc ->
+          %{acc | ok: oks ++ [{topic, level}]}
 
-          {{topic, _requested_level}, {:ok, actual_level}} ->
-            {:warn, {topic, actual_level}}
+        {{topic, requested}, {:ok, actual}}, %{warn: warns} = acc ->
+          %{acc | warn: warns ++ [{topic, [requested: requested, accepted: actual]}]}
 
-          {{topic, level}, {:error, :access_denied}} ->
-            {:error, {:access_denied, {topic, level}}}
-        end
-      end
+        {{topic, level}, {:error, :access_denied}}, %{error: errors} = acc ->
+          %{acc | error: errors ++ [{:access_denied, {topic, level}}]}
+      end)
 
     %State{track | result: result}
   end
