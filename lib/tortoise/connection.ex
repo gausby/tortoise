@@ -171,8 +171,9 @@ defmodule Tortoise.Connection do
               {:ok, updated_state} ->
                 {:noreply, updated_state}
 
-              {:error, final_state} ->
-                {:stop, :unable_to_subscribe, final_state}
+              {:error, reasons} ->
+                error = {:unable_to_subscribe, reasons}
+                {:stop, error, state}
             end
         end
     end
