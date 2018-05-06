@@ -198,19 +198,20 @@ defmodule Tortoise.ConnectionTest do
   describe "subscribing" do
     setup [:setup_scripted_mqtt_server]
 
-    test "test", context do
+    test "successful subscription", context do
       client_id = context.client_id
 
       connect = %Package.Connect{client_id: client_id, clean_session: true}
-      expected_connack = %Package.Connack{status: :accepted, session_present: false}
       subscription = Enum.into([{"foo", 0}], %Package.Subscribe{identifier: 1})
-      suback = %Package.Suback{identifier: 1, acks: [{:ok, 0}]}
+      unsubscribe = %Package.Unsubscribe{identifier: 2, topics: ["foo"]}
 
       script = [
         {:receive, connect},
-        {:send, expected_connack},
+        {:send, %Package.Connack{status: :accepted, session_present: false}},
         {:receive, subscription},
-        {:send, suback}
+        {:send, %Package.Suback{identifier: 1, acks: [{:ok, 0}]}},
+        {:receive, unsubscribe},
+        {:send, %Package.Unsuback{identifier: 2}}
       ]
 
       {:ok, {ip, port}} = ScriptedMqttServer.enact(context.scripted_mqtt_server, script)
@@ -223,15 +224,20 @@ defmodule Tortoise.ConnectionTest do
 
       assert {:ok, _pid} = Connection.start_link(opts)
       assert_receive {ScriptedMqttServer, {:received, ^connect}}
-      # subscribe to a topic
-      :ok = Tortoise.Connection.subscribe(client_id, [{"foo", 0}], identifier: 1)
 
-      assert_receive {ScriptedMqttServer, {:received, %Package.Subscribe{topics: [{"foo", 0}]}}}
+      # subscribe to a topic
+      :ok = Tortoise.Connection.subscribe(client_id, {"foo", 0}, identifier: 1)
+      assert_receive {ScriptedMqttServer, {:received, ^subscription}}
 
       assert %Package.Subscribe{topics: subscriptions} =
                Tortoise.Connection.subscriptions(client_id)
 
       assert subscriptions == [{"foo", 0}]
+
+      # now let us try to unsubscribe from foo
+      :ok = Tortoise.Connection.unsubscribe(client_id, "foo", identifier: 2)
+      assert_receive {ScriptedMqttServer, {:received, ^unsubscribe}}
+      assert %Package.Subscribe{topics: []} = Tortoise.Connection.subscriptions(client_id)
 
       assert_receive {ScriptedMqttServer, :completed}
     end

@@ -105,6 +105,18 @@ defmodule Tortoise.Connection do
     subscribe(client_id, [topic], opts)
   end
 
+  def unsubscribe(client_id, topics, opts \\ [])
+
+  def unsubscribe(client_id, topics, opts) when is_list(topics) do
+    identifier = Keyword.get(opts, :identifier, nil)
+    unsubscribe = %Package.Unsubscribe{identifier: identifier, topics: topics}
+    GenServer.call(via_name(client_id), {:unsubscribe, unsubscribe})
+  end
+
+  def unsubscribe(client_id, topic, opts) when is_binary(topic) do
+    unsubscribe(client_id, [topic], opts)
+  end
+
   def subscriptions(client_id) do
     GenServer.call(via_name(client_id), :subscriptions)
   end
@@ -209,6 +221,20 @@ defmodule Tortoise.Connection do
             GenServer.reply(from, {:error, error})
             {:stop, error, state}
         end
+    end
+  end
+
+  def handle_call({:unsubscribe, unsubscribe}, _from, state) do
+    client_id = state.connect.client_id
+
+    case Inflight.track_sync(client_id, {:outgoing, unsubscribe}, 5000) do
+      {:error, :timeout} = error ->
+        {:reply, error, state}
+
+      unsubbed ->
+        topics = Keyword.drop(state.subscriptions.topics, unsubbed)
+        subscriptions = %Package.Subscribe{state.subscriptions | topics: topics}
+        {:reply, :ok, %State{state | subscriptions: subscriptions}}
     end
   end
 
