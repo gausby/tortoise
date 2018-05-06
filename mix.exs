@@ -7,7 +7,8 @@ defmodule Tortoise.MixProject do
       version: "0.1.0",
       elixir: "~> 1.6.3",
       start_permanent: Mix.env() == :prod,
-      deps: deps()
+      deps: deps(),
+      dialyzer: dialyzer()
     ]
   end
 
@@ -25,6 +26,12 @@ defmodule Tortoise.MixProject do
       {:gen_state_machine, "~> 2.0"},
       {:eqc_ex, "~> 1.4"},
       {:dialyxir, "~> 0.5", only: [:dev, :test], runtime: false}
+    ]
+  end
+
+  defp dialyzer() do
+    [
+      ignore_warnings: "dialyzer.ignore"
     ]
   end
 end
