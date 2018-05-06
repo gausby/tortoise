@@ -194,4 +194,102 @@ defmodule Tortoise.ConnectionTest do
       assert_receive {ScriptedMqttServer, :completed}
     end
   end
+
+  describe "subscriptions" do
+    setup [:setup_scripted_mqtt_server]
+
+    test "successful subscription", context do
+      client_id = context.client_id
+
+      connect = %Package.Connect{client_id: client_id, clean_session: true}
+      subscription_foo = Enum.into([{"foo", 0}], %Package.Subscribe{identifier: 1})
+      subscription_bar = Enum.into([{"bar", 0}], %Package.Subscribe{identifier: 2})
+
+      script = [
+        {:receive, connect},
+        {:send, %Package.Connack{status: :accepted, session_present: false}},
+        # subscribe to foo with qos 0
+        {:receive, subscription_foo},
+        {:send, %Package.Suback{identifier: 1, acks: [{:ok, 0}]}},
+        # subscribe to bar with qos 0
+        {:receive, subscription_bar},
+        {:send, %Package.Suback{identifier: 2, acks: [{:ok, 0}]}}
+      ]
+
+      {:ok, {ip, port}} = ScriptedMqttServer.enact(context.scripted_mqtt_server, script)
+
+      opts = [
+        client_id: client_id,
+        server: {:tcp, ip, port},
+        driver: {Tortoise.Driver.Default, []}
+      ]
+
+      # connection
+      assert {:ok, _pid} = Connection.start_link(opts)
+      assert_receive {ScriptedMqttServer, {:received, ^connect}}
+
+      # subscribe to a foo
+      :ok = Tortoise.Connection.subscribe(client_id, {"foo", 0}, identifier: 1)
+      assert_receive {ScriptedMqttServer, {:received, ^subscription_foo}}
+      assert Enum.member?(Tortoise.Connection.subscriptions(client_id), {"foo", 0})
+
+      # subscribe to a bar
+      :ok = Tortoise.Connection.subscribe(client_id, {"bar", 0}, identifier: 2)
+      assert_receive {ScriptedMqttServer, {:received, ^subscription_bar}}
+      # both foo and bar should now be in the subscription list
+      subscriptions = Tortoise.Connection.subscriptions(client_id)
+      assert Enum.member?(subscriptions, {"foo", 0})
+      assert Enum.member?(subscriptions, {"bar", 0})
+
+      # done
+      assert_receive {ScriptedMqttServer, :completed}
+    end
+
+    test "successful unsubscribe", context do
+      client_id = context.client_id
+
+      connect = %Package.Connect{client_id: client_id, clean_session: true}
+      unsubscribe_foo = %Package.Unsubscribe{identifier: 2, topics: ["foo"]}
+      unsubscribe_bar = %Package.Unsubscribe{identifier: 3, topics: ["bar"]}
+
+      script = [
+        {:receive, connect},
+        {:send, %Package.Connack{status: :accepted, session_present: false}},
+        {:receive, %Package.Subscribe{topics: [{"foo", 0}, {"bar", 2}], identifier: 1}},
+        {:send, %Package.Suback{acks: [ok: 0, ok: 2], identifier: 1}},
+        # unsubscribe foo
+        {:receive, unsubscribe_foo},
+        {:send, %Package.Unsuback{identifier: 2}},
+        # unsubscribe bar
+        {:receive, unsubscribe_bar},
+        {:send, %Package.Unsuback{identifier: 3}}
+      ]
+
+      {:ok, {ip, port}} = ScriptedMqttServer.enact(context.scripted_mqtt_server, script)
+
+      opts = [
+        client_id: client_id,
+        server: {:tcp, ip, port},
+        driver: {Tortoise.Driver.Default, []},
+        subscriptions: %Package.Subscribe{topics: [{"foo", 0}, {"bar", 2}], identifier: 1}
+      ]
+
+      assert {:ok, _pid} = Connection.start_link(opts)
+      assert_receive {ScriptedMqttServer, {:received, ^connect}}
+
+      # now let us try to unsubscribe from foo
+      :ok = Tortoise.Connection.unsubscribe(client_id, "foo", identifier: 2)
+      assert_receive {ScriptedMqttServer, {:received, ^unsubscribe_foo}}
+
+      assert %Package.Subscribe{topics: [{"bar", 2}]} =
+               Tortoise.Connection.subscriptions(client_id)
+
+      # and unsubscribe from bar
+      :ok = Tortoise.Connection.unsubscribe(client_id, "bar", identifier: 3)
+      assert_receive {ScriptedMqttServer, {:received, ^unsubscribe_bar}}
+      assert %Package.Subscribe{topics: []} = Tortoise.Connection.subscriptions(client_id)
+
+      assert_receive {ScriptedMqttServer, :completed}
+    end
+  end
 end

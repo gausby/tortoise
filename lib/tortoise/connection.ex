@@ -26,8 +26,13 @@ defmodule Tortoise.Connection do
     }
 
     subscriptions =
-      Keyword.get(opts, :subscriptions, [])
-      |> Enum.into(%Tortoise.Package.Subscribe{})
+      case Keyword.get(opts, :subscriptions, []) do
+        topics when is_list(topics) ->
+          Enum.into(topics, %Package.Subscribe{})
+
+        %Package.Subscribe{} = subscribe ->
+          subscribe
+      end
 
     # @todo, validate that the driver is valid
     opts = Keyword.take(opts, [:client_id, :driver])
@@ -92,6 +97,35 @@ defmodule Tortoise.Connection do
     end
   end
 
+  # subscribe/unsubscribe
+  def subscribe(client_id, topics, opts \\ [])
+
+  def subscribe(client_id, [{_, n} | _] = topics, opts) when is_number(n) do
+    identifier = Keyword.get(opts, :identifier, nil)
+    subscribe = Enum.into(topics, %Package.Subscribe{identifier: identifier})
+    GenServer.call(via_name(client_id), {:subscribe, subscribe})
+  end
+
+  def subscribe(client_id, {_, n} = topic, opts) when is_number(n) do
+    subscribe(client_id, [topic], opts)
+  end
+
+  def unsubscribe(client_id, topics, opts \\ [])
+
+  def unsubscribe(client_id, topics, opts) when is_list(topics) do
+    identifier = Keyword.get(opts, :identifier, nil)
+    unsubscribe = %Package.Unsubscribe{identifier: identifier, topics: topics}
+    GenServer.call(via_name(client_id), {:unsubscribe, unsubscribe})
+  end
+
+  def unsubscribe(client_id, topic, opts) when is_binary(topic) do
+    unsubscribe(client_id, [topic], opts)
+  end
+
+  def subscriptions(client_id) do
+    GenServer.call(via_name(client_id), :subscriptions)
+  end
+
   # Callbacks
   def init({{:tcp, _, _} = server, %Connect{} = connect, subscriptions, opts}) do
     expected_connack = %Connack{status: :accepted, session_present: false}
@@ -133,16 +167,19 @@ defmodule Tortoise.Connection do
 
       false ->
         # subscribe to the predefined topics
-        {:ok, ref} = Inflight.track(client_id, {:outgoing, subscriptions})
-
-        receive do
-          {Tortoise, {{^client_id, ^ref}, _result}} ->
-            # todo, handle topics that had errors like "access denied"
-            # todo, handle topics that got a lower qos than expected
-            {:noreply, state}
-        after
-          5000 ->
+        case Inflight.track_sync(client_id, {:outgoing, subscriptions}, 5000) do
+          {:error, :timeout} ->
             {:stop, :subscription_timeout, state}
+
+          result ->
+            case handle_suback_result(result, state) do
+              {:ok, updated_state} ->
+                {:noreply, updated_state}
+
+              {:error, reasons} ->
+                error = {:unable_to_subscribe, reasons}
+                {:stop, error, state}
+            end
         end
     end
   end
@@ -172,7 +209,55 @@ defmodule Tortoise.Connection do
     do_attempt_reconnect(state)
   end
 
+  # subscribing
+  def handle_call({:subscribe, subscribe}, from, state) do
+    client_id = state.connect.client_id
+
+    case Inflight.track_sync(client_id, {:outgoing, subscribe}, 5000) do
+      {:error, :timeout} = error ->
+        {:reply, error, state}
+
+      result ->
+        case handle_suback_result(result, state) do
+          {:ok, updated_state} ->
+            {:reply, :ok, updated_state}
+
+          {:error, reasons} ->
+            error = {:unable_to_subscribe, reasons}
+            GenServer.reply(from, {:error, error})
+            {:stop, error, state}
+        end
+    end
+  end
+
+  def handle_call({:unsubscribe, unsubscribe}, _from, state) do
+    client_id = state.connect.client_id
+
+    case Inflight.track_sync(client_id, {:outgoing, unsubscribe}, 5000) do
+      {:error, :timeout} = error ->
+        {:reply, error, state}
+
+      unsubbed ->
+        topics = Keyword.drop(state.subscriptions.topics, unsubbed)
+        subscriptions = %Package.Subscribe{state.subscriptions | topics: topics}
+        {:reply, :ok, %State{state | subscriptions: subscriptions}}
+    end
+  end
+
+  def handle_call(:subscriptions, _from, state) do
+    {:reply, state.subscriptions, state}
+  end
+
   # Helpers
+  defp handle_suback_result(%{:error => []} = results, %State{} = state) do
+    subscriptions = Enum.into(results[:ok], state.subscriptions)
+    {:ok, %State{state | subscriptions: subscriptions}}
+  end
+
+  defp handle_suback_result(%{:error => errors}, %State{}) do
+    {:error, errors}
+  end
+
   defp reset_keep_alive(%State{keep_alive: nil} = state) do
     ref = Process.send_after(self(), :ping, state.connect.keep_alive * 1000)
     %State{state | keep_alive: ref}
