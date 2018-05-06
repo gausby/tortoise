@@ -26,8 +26,13 @@ defmodule Tortoise.Connection do
     }
 
     subscriptions =
-      Keyword.get(opts, :subscriptions, [])
-      |> Enum.into(%Tortoise.Package.Subscribe{})
+      case Keyword.get(opts, :subscriptions, []) do
+        topics when is_list(topics) ->
+          Enum.into(topics, %Package.Subscribe{})
+
+        %Package.Subscribe{} = subscribe ->
+          subscribe
+      end
 
     # @todo, validate that the driver is valid
     opts = Keyword.take(opts, [:client_id, :driver])
