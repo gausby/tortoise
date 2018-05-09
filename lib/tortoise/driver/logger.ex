@@ -1,4 +1,4 @@
-defmodule Tortoise.Driver.Logger do
+defmodule Tortoise.Handler.Logger do
   @moduledoc false
 
   require Logger
@@ -6,7 +6,7 @@ defmodule Tortoise.Driver.Logger do
   defstruct []
   alias __MODULE__, as: State
 
-  @behaviour Tortoise.Driver
+  @behaviour Tortoise.Handler
 
   def init(_opts) do
     {:ok, %State{}}

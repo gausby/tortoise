@@ -8,7 +8,7 @@ defmodule Tortoise.App do
   """
   def start(_type, _args) do
     # read configuration and start connections
-    # start with client_id, and driver from config
+    # start with client_id, and handler from config
 
     children = [
       {Registry, [keys: :unique, name: Registry.Tortoise]},

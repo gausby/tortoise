@@ -34,8 +34,8 @@ defmodule Tortoise.Connection do
           subscribe
       end
 
-    # @todo, validate that the driver is valid
-    opts = Keyword.take(opts, [:client_id, :driver])
+    # @todo, validate that the handler is valid
+    opts = Keyword.take(opts, [:client_id, :handler])
     initial = {server, connect, subscriptions, opts}
     GenServer.start_link(__MODULE__, initial, name: via_name(client_id))
   end

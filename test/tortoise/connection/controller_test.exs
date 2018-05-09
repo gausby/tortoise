@@ -5,8 +5,8 @@ defmodule Tortoise.Connection.ControllerTest do
   alias Tortoise.Package
   alias Tortoise.Connection.{Controller, Inflight, Transmitter}
 
-  defmodule TestDriver do
-    @behaviour Tortoise.Driver
+  defmodule TestHandler do
+    @behaviour Tortoise.Handler
 
     defstruct pid: nil,
               client_id: nil,
@@ -18,7 +18,7 @@ defmodule Tortoise.Connection.ControllerTest do
     def init([client_id, caller]) when is_pid(caller) do
       # We pass in the caller `pid` and keep it in the state so we can
       # send messages back to the test process, which will make it
-      # possible to make assertions on the changes in the driver
+      # possible to make assertions on the changes in the handler
       # callback module
       {:ok, %__MODULE__{pid: caller, client_id: client_id}}
     end
@@ -72,12 +72,12 @@ defmodule Tortoise.Connection.ControllerTest do
   end
 
   def setup_controller(context) do
-    driver = %Tortoise.Driver{
-      module: __MODULE__.TestDriver,
+    handler = %Tortoise.Handler{
+      module: __MODULE__.TestHandler,
       initial_args: [context.client_id, self()]
     }
 
-    opts = [client_id: context.client_id, driver: driver]
+    opts = [client_id: context.client_id, handler: handler]
     {:ok, pid} = Controller.start_link(opts)
     {:ok, %{controller_pid: pid}}
   end
@@ -99,12 +99,12 @@ defmodule Tortoise.Connection.ControllerTest do
 
   # tests --------------------------------------------------------------
   test "life cycle", context do
-    driver = %Tortoise.Driver{
-      module: __MODULE__.TestDriver,
+    handler = %Tortoise.Handler{
+      module: __MODULE__.TestHandler,
       initial_args: [context.client_id, self()]
     }
 
-    opts = [client_id: context.client_id, driver: driver]
+    opts = [client_id: context.client_id, handler: handler]
     assert {:ok, pid} = Controller.start_link(opts)
     assert Process.alive?(pid)
     assert :ok = Controller.stop(context.client_id)
@@ -118,13 +118,13 @@ defmodule Tortoise.Connection.ControllerTest do
     test "Callback is triggered on connection status change", context do
       # tell the controller that we are up
       :ok = Controller.update_connection_status(context.client_id, :up)
-      assert_receive(%TestDriver{status: :up})
+      assert_receive(%TestHandler{status: :up})
       # switch to offline
       :ok = Controller.update_connection_status(context.client_id, :down)
-      assert_receive(%TestDriver{status: :down})
+      assert_receive(%TestHandler{status: :down})
       # ... and back up
       :ok = Controller.update_connection_status(context.client_id, :up)
-      assert_receive(%TestDriver{status: :up})
+      assert_receive(%TestHandler{status: :up})
     end
   end
 
@@ -177,7 +177,7 @@ defmodule Tortoise.Connection.ControllerTest do
       assert :ok = Controller.handle_incoming(context.client_id, publish)
       topic_list = String.split(publish.topic, "/")
       payload = publish.payload
-      assert_receive(%TestDriver{received: [{^topic_list, ^payload} | _]})
+      assert_receive(%TestHandler{received: [{^topic_list, ^payload} | _]})
     end
 
     test "update callback module state between publishes", context do
@@ -185,9 +185,9 @@ defmodule Tortoise.Connection.ControllerTest do
       # Our callback module will increment a counter when it receives
       # a publish control packet
       :ok = Controller.handle_incoming(context.client_id, publish)
-      assert_receive %TestDriver{publish_count: 1}
+      assert_receive %TestHandler{publish_count: 1}
       :ok = Controller.handle_incoming(context.client_id, publish)
-      assert_receive %TestDriver{publish_count: 2}
+      assert_receive %TestHandler{publish_count: 2}
     end
   end
 
@@ -304,9 +304,9 @@ defmodule Tortoise.Connection.ControllerTest do
 
       assert_receive {{Tortoise, ^client_id}, ^ref, _}
       # the client callback module should get the subscribe notifications in order
-      assert_receive %TestDriver{subscriptions: ["foo"]}
-      assert_receive %TestDriver{subscriptions: ["bar" | _]}
-      assert_receive %TestDriver{subscriptions: ["baz" | _]}
+      assert_receive %TestHandler{subscriptions: ["foo"]}
+      assert_receive %TestHandler{subscriptions: ["bar" | _]}
+      assert_receive %TestHandler{subscriptions: ["baz" | _]}
 
       # unsubscribe from a topic
       unsubscribe = %Package.Unsubscribe{identifier: 2, topics: ["foo", "baz"]}
@@ -318,8 +318,8 @@ defmodule Tortoise.Connection.ControllerTest do
       assert_receive {{Tortoise, ^client_id}, ^ref, _}
 
       # the client callback module should remove the subscriptions in order
-      assert_receive %TestDriver{subscriptions: ["baz", "bar"]}
-      assert_receive %TestDriver{subscriptions: ["bar"]}
+      assert_receive %TestHandler{subscriptions: ["baz", "bar"]}
+      assert_receive %TestHandler{subscriptions: ["bar"]}
     end
   end
 end
