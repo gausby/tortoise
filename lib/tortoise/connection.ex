@@ -191,7 +191,7 @@ defmodule Tortoise.Connection do
         state = reset_keep_alive(state)
         {:noreply, state}
 
-      {:stop, :timeout} ->
+      {:error, :timeout} ->
         {:stop, :ping_timeout, state}
     end
   end
