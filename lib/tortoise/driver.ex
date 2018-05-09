@@ -1,11 +1,11 @@
-defmodule Tortoise.Driver do
+defmodule Tortoise.Handler do
   @moduledoc false
 
   @enforce_keys [:module, :initial_args]
   defstruct module: nil, state: nil, initial_args: []
 
   @doc """
-  Helper for building a Driver struct so we can keep it as an opaque
+  Helper for building a Handler struct so we can keep it as an opaque
   type in the system.
   """
   def new({module, args}) when is_atom(module) and is_list(args) do
@@ -13,7 +13,7 @@ defmodule Tortoise.Driver do
   end
 
   # identity
-  def new(%__MODULE__{} = driver), do: driver
+  def new(%__MODULE__{} = handler), do: handler
 
   @type topic() :: [binary()]
   @type status() :: :up | :down

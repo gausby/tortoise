@@ -1,7 +1,7 @@
-defmodule Tortoise.Driver.Default do
+defmodule Tortoise.Handler.Default do
   @moduledoc false
 
-  @behaviour Tortoise.Driver
+  @behaviour Tortoise.Handler
 
   defstruct []
   alias __MODULE__, as: State

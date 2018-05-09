@@ -3,7 +3,7 @@ defmodule Tortoise.Connection.Controller do
 
   alias Tortoise.Package
   alias Tortoise.Connection.{Transmitter, Inflight}
-  alias Tortoise.Driver
+  alias Tortoise.Handler
 
   alias Tortoise.Package.{
     Connect,
@@ -24,22 +24,22 @@ defmodule Tortoise.Connection.Controller do
 
   use GenServer
 
-  @enforce_keys [:client_id, :driver]
+  @enforce_keys [:client_id, :handler]
   defstruct client_id: nil,
             ping: :queue.new(),
             status: :down,
-            driver: %Driver{module: Tortoise.Driver.Default, initial_args: []}
+            handler: %Handler{module: Handler.Default, initial_args: []}
 
   alias __MODULE__, as: State
 
   # Client API
   def start_link(opts) do
     client_id = Keyword.fetch!(opts, :client_id)
-    driver = Driver.new(Keyword.fetch!(opts, :driver))
+    handler = Handler.new(Keyword.fetch!(opts, :handler))
 
     init_state = %__MODULE__{
       client_id: client_id,
-      driver: driver
+      handler: handler
     }
 
     GenServer.start_link(__MODULE__, init_state, name: via_name(client_id))
@@ -288,35 +288,34 @@ defmodule Tortoise.Connection.Controller do
   # command ------------------------------------------------------------
   defp handle_package(%Disconnect{}, state) do
     # not a server
-    # apply(state.driver, :disconnect, [])
     {:noreply, state}
   end
 
-  # driver callbacks
+  # handler callbacks
   defp run_init_callback(state) do
-    args = [state.driver.initial_args]
+    args = [state.handler.initial_args]
 
-    case apply(state.driver.module, :init, args) do
+    case apply(state.handler.module, :init, args) do
       {:ok, initial_state} ->
-        updated_driver = %{state.driver | state: initial_state}
-        {:ok, %__MODULE__{state | driver: updated_driver}}
+        updated_handler = %{state.handler | state: initial_state}
+        {:ok, %__MODULE__{state | handler: updated_handler}}
     end
   end
 
   defp run_terminate_callback(reason, state) do
-    args = [reason, state.driver.state]
+    args = [reason, state.handler.state]
 
-    apply(state.driver.module, :terminate, args)
+    apply(state.handler.module, :terminate, args)
   end
 
   defp run_publish_callback(%Publish{} = publish, state) do
     topic_list = String.split(publish.topic, "/")
-    args = [topic_list, publish.payload, state.driver.state]
+    args = [topic_list, publish.payload, state.handler.state]
 
-    case apply(state.driver.module, :handle_message, args) do
-      {:ok, updated_driver_state} ->
-        updated_driver = %{state.driver | state: updated_driver_state}
-        {:ok, %__MODULE__{state | driver: updated_driver}}
+    case apply(state.handler.module, :handle_message, args) do
+      {:ok, updated_handler_state} ->
+        updated_handler = %{state.handler | state: updated_handler_state}
+        {:ok, %__MODULE__{state | handler: updated_handler}}
     end
   end
 
@@ -325,46 +324,46 @@ defmodule Tortoise.Connection.Controller do
          state
        ) do
     # @todo, figure out what to do when a qos is return than the one requested
-    updated_driver_state =
-      Enum.reduce(subacks[:ok], state.driver.state, fn {topic_filter, _qos}, acc ->
+    updated_handler_state =
+      Enum.reduce(subacks[:ok], state.handler.state, fn {topic_filter, _qos}, acc ->
         # notice, we ignore the reported qos here for now
         args = [:up, topic_filter, acc]
 
-        case apply(state.driver.module, :subscription, args) do
+        case apply(state.handler.module, :subscription, args) do
           {:ok, state} ->
             state
         end
       end)
 
-    updated_driver = %{state.driver | state: updated_driver_state}
-    {:ok, %__MODULE__{state | driver: updated_driver}}
+    updated_handler = %{state.handler | state: updated_handler_state}
+    {:ok, %__MODULE__{state | handler: updated_handler}}
   end
 
   defp run_subscription_callback(
          %Inflight.Track{type: Package.Unsubscribe, result: unsubacks},
          state
        ) do
-    updated_driver_state =
-      Enum.reduce(unsubacks, state.driver.state, fn topic_filter, acc ->
+    updated_handler_state =
+      Enum.reduce(unsubacks, state.handler.state, fn topic_filter, acc ->
         args = [:down, topic_filter, acc]
 
-        case apply(state.driver.module, :subscription, args) do
+        case apply(state.handler.module, :subscription, args) do
           {:ok, state} ->
             state
         end
       end)
 
-    updated_driver = %{state.driver | state: updated_driver_state}
-    {:ok, %__MODULE__{state | driver: updated_driver}}
+    updated_handler = %{state.handler | state: updated_handler_state}
+    {:ok, %__MODULE__{state | handler: updated_handler}}
   end
 
   defp run_connection_callback(status, state) do
-    args = [status, state.driver.state]
+    args = [status, state.handler.state]
 
-    case apply(state.driver.module, :connection, args) do
-      {:ok, updated_driver_state} ->
-        updated_driver = %{state.driver | state: updated_driver_state}
-        {:ok, %State{state | driver: updated_driver}}
+    case apply(state.handler.module, :connection, args) do
+      {:ok, updated_handler_state} ->
+        updated_handler = %{state.handler | state: updated_handler_state}
+        {:ok, %State{state | handler: updated_handler}}
     end
   end
 end

@@ -30,7 +30,7 @@ Just to get people started:
 # connect to the server and subscribe to foo/bar with QoS 0
 Tortoise.Supervisor.start_child(
     client_id: "my_client_id",
-    driver: {Tortoise.Driver.Logger, []},
+    handler: {Tortoise.Handler.Logger, []},
     server: {:tcp, 'localhost', 1883},
     subscriptions: [{"foo/bar", 0}])
 
