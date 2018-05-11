@@ -23,7 +23,8 @@ defmodule Tortoise.MixProject do
   # Run "mix help deps" to learn about dependencies.
   defp deps do
     [
-      {:gen_state_machine, "~> 2.0"},
+      # "~> 2.0"
+      {:gen_state_machine, github: "ericentin/gen_state_machine"},
       {:eqc_ex, "~> 1.4"},
       {:dialyxir, "~> 0.5", only: [:dev, :test], runtime: false}
     ]
