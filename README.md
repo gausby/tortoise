@@ -58,6 +58,19 @@ Documentation can be generated with [ExDoc](https://github.com/elixir-lang/ex_do
 and published on [HexDocs](https://hexdocs.pm). Once published, the docs can
 be found at [https://hexdocs.pm/tortoise](https://hexdocs.pm/tortoise).
 
+## Building documentation
+
+To build the documentation run the following command in a terminal emulator:
+
+``` shell
+MIX_ENV=docs mix docs
+```
+
+This will build the documentation in place them in the *doc*-folder in
+the root of the project. These docs will also find their way to the
+Hexdocs website when they project has been published on Hex in the
+future.
+
 ## License
 
 Copyright 2018 Martin Gausby
