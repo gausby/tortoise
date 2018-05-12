@@ -2,7 +2,7 @@ language: elixir
 
 matrix:
     include:
-        - elixir: 1.6.4
+        - elixir: 1.6.5
           otp_release: 20.2
 
 script:
