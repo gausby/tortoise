@@ -1,14 +1,17 @@
 defmodule Tortoise.MixProject do
   use Mix.Project
 
+  @version "0.1.0"
+
   def project do
     [
       app: :tortoise,
-      version: "0.1.0",
-      elixir: "~> 1.6.3",
+      version: @version,
+      elixir: "~> 1.6.5",
       start_permanent: Mix.env() == :prod,
       deps: deps(),
-      dialyzer: dialyzer()
+      dialyzer: dialyzer(),
+      docs: docs()
     ]
   end
 
@@ -25,7 +28,21 @@ defmodule Tortoise.MixProject do
     [
       {:gen_state_machine, "~> 2.0.2"},
       {:eqc_ex, "~> 1.4"},
-      {:dialyxir, "~> 0.5", only: [:dev, :test], runtime: false}
+      {:dialyxir, "~> 0.5", only: [:dev, :test], runtime: false},
+      {:ex_doc, "~> 0.18", only: :docs}
+    ]
+  end
+
+  defp docs() do
+    [
+      main: "readme",
+      name: "Tortoise",
+      source_ref: "v#{@version}",
+      canonical: "http://hexdocs.pm/tortoise",
+      source_url: "https://github.com/gausby/tortoise",
+      extras: [
+        "README.md"
+      ]
     ]
   end
 
