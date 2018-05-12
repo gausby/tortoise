@@ -13,7 +13,6 @@ defmodule Tortoise.Package.Disconnect do
 
   # Protocols ----------------------------------------------------------
   defimpl Tortoise.Encodable do
-    @spec encode(Package.Disconnect.t()) :: iodata()
     def encode(%Package.Disconnect{} = t) do
       [Package.Meta.encode(t.__META__), 0]
     end

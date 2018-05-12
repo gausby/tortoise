@@ -6,7 +6,6 @@ defmodule Tortoise.Package.Meta do
   @enforce_keys [:opcode]
   defstruct opcode: 0, flags: 0
 
-  @spec encode(t) :: binary()
   def encode(meta) do
     <<meta.opcode::4, meta.flags::4>>
   end

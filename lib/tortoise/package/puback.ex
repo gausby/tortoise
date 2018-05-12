@@ -21,7 +21,6 @@ defmodule Tortoise.Package.Puback do
 
   # Protocols ----------------------------------------------------------
   defimpl Tortoise.Encodable do
-    @spec encode(Package.Puback.t()) :: iodata()
     def encode(%Package.Puback{identifier: identifier} = t)
         when identifier in 0x0001..0xFFFF do
       [Package.Meta.encode(t.__META__), <<2, identifier::big-integer-size(16)>>]

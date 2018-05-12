@@ -40,7 +40,6 @@ defmodule Tortoise.Package.Connack do
   end
 
   defimpl Tortoise.Encodable do
-    @spec encode(Package.Connack.t()) :: iolist()
     def encode(%Package.Connack{session_present: session_present, status: status} = t)
         when status != nil do
       [

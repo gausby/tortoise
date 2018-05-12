@@ -24,31 +24,21 @@ defmodule Tortoise.Connection.Inflight.Track do
   """
 
   @type package_identifier :: 0x0001..0xFFFF
-  @type package ::
-          Package.Publish
-          | Package.Puback
-          | Package.Pubrec
-          | Package.Pubrel
-          | Package.Pubcomp
-          | Package.Subscribe
-          | Package.Suback
-          | Package.Unsubscribe
-          | Package.Unsuback
+  @type package :: Package.Publish | Package.Subscribe | Package.Unsubscribe
 
-  @type caller :: {pid(), reference()}
+  @type caller :: {pid(), reference()} | nil
   @type polarity :: :positive | {:negative, caller()}
-  @type next_action :: {:expect, package()} | {:dispatch, package()}
-  @type status_update :: {:received, package()} | {:dispatched, package()}
+  @type next_action :: {:dispatch | :expect, Tortoise.Encodable.t()}
+  @type status_update :: {:received | :dispatched, Tortoise.Encodable.t()}
 
   @opaque t :: %__MODULE__{
             polarity: :positive | :negative,
             type: package,
-            identifier: package_identifier() | nil,
+            identifier: package_identifier(),
             status: [status_update()],
             pending: [next_action()],
-            caller: nil | {pid(), reference()},
-            # todo
-            result: term()
+            caller: caller(),
+            result: term() | nil
           }
   @enforce_keys [:type, :identifier, :polarity, :pending]
   defstruct type: nil,
@@ -62,7 +52,7 @@ defmodule Tortoise.Connection.Inflight.Track do
   alias __MODULE__, as: State
   alias Tortoise.Package
 
-  @spec update(__MODULE__.t(), package()) :: {next_action() | nil, __MODULE__.t()}
+  @spec update(__MODULE__.t(), status_update()) :: __MODULE__.t()
   # ":dispatch, ..." should be answered with ":dispatched, ..."
   def update(
         %State{identifier: id, pending: [{:dispatch, package} | rest]} = state,
@@ -107,17 +97,20 @@ defmodule Tortoise.Connection.Inflight.Track do
     {:expect, package}
   end
 
+  @type trackable :: Tortoise.Encodable
+
   @doc """
   Set up a data structure that will track the status of a control
   packet
   """
-  @spec create(polarity(), Package.Publish.t()) :: __MODULE__.t()
-  def create(:positive, %Package.Publish{qos: 1, identifier: id}) do
+  # @todo, enable this when I've figured out what is wrong with this spec
+  # @spec create(polarity :: polarity(), package :: trackable()) :: __MODULE__.t()
+  def create(:positive, %Package.Publish{qos: 1, identifier: id} = publish) do
     %State{
       type: Package.Publish,
       polarity: :positive,
       identifier: id,
-      status: [{:received, Package.Publish}],
+      status: [{:received, publish}],
       pending: [{:dispatch, %Package.Puback{identifier: id}}]
     }
   end
@@ -136,12 +129,13 @@ defmodule Tortoise.Connection.Inflight.Track do
     }
   end
 
-  def create(:positive, %Package.Publish{identifier: id, qos: 2}) do
+  def create(:positive, %Package.Publish{identifier: id, qos: 2} = publish) do
     %State{
       type: Package.Publish,
       polarity: :positive,
       identifier: id,
-      status: [{:received, Package.Publish}],
+      status: [{:received, publish}],
+      caller: nil,
       pending: [
         {:dispatch, %Package.Pubrec{identifier: id}},
         {:expect, %Package.Pubrel{identifier: id}},

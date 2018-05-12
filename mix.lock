@@ -1,4 +1,5 @@
 %{
+  "dialyxir": {:hex, :dialyxir, "0.5.1", "b331b091720fd93e878137add264bac4f644e1ddae07a70bf7062c7862c4b952", [], [], "hexpm"},
   "eqc_ex": {:hex, :eqc_ex, "1.4.2", "c89322cf8fbd4f9ddcb18141fb162a871afd357c55c8c0198441ce95ffe2e105", [], [], "hexpm"},
-  "gen_state_machine": {:hex, :gen_state_machine, "2.0.1", "85efd5a0376929c3a4246dd943e17564a2908c7ddd7acd242d84594e785d83f8", [:mix], [], "hexpm"},
+  "gen_state_machine": {:hex, :gen_state_machine, "2.0.2", "52abcba0981a058940c2a9b33b704e126d808418a6e85d45fa466d7450a90381", [:mix], [], "hexpm"},
 }

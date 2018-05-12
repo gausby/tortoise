@@ -50,7 +50,6 @@ defmodule Tortoise.Package.Suback do
 
   # Protocols ----------------------------------------------------------
   defimpl Tortoise.Encodable do
-    @spec encode(Package.Suback.t()) :: iodata()
     def encode(%Package.Suback{identifier: identifier} = t)
         when identifier in 0x0001..0xFFFF do
       [
