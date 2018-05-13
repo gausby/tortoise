@@ -35,13 +35,13 @@ defmodule Tortoise.MixProject do
 
   defp docs() do
     [
-      main: "readme",
       name: "Tortoise",
       source_ref: "v#{@version}",
+      main: "introduction",
       canonical: "http://hexdocs.pm/tortoise",
       source_url: "https://github.com/gausby/tortoise",
       extras: [
-        "README.md"
+        "docs/introduction.md"
       ]
     ]
   end
