@@ -28,12 +28,16 @@ defmodule Tortoise do
 
   @doc """
   Will publish a message to the broker. This is very similar to
-  `Tortoise.publish/4`, it takes the same configuration options, but
-  it will block the calling process until the message has been
-  delivered.
+  `Tortoise.publish/4` with the difference that it will block the
+  calling process until the message has been delivered; the
+  configuration options are the same with the addition of the
+  `timeout` option which specify how long we are willing to wait for a
+  reply. Per default the timeout is set to `:infinity`, it is
+  advisable to set it to a reasonable amount in milliseconds as it
+  otherwise could block forever.
 
       msg = "Hello, from the World of Tomorrow !"
-      case Tortoise.publish_sync("my_client_id", "foo/bar", msg) do
+      case Tortoise.publish_sync("my_client_id", "foo/bar", msg, qos: 2, timeout: 200) do
         :ok ->
           :done
 
@@ -41,9 +45,13 @@ defmodule Tortoise do
           :timeout
       end
 
+  Notice: It does not make sense to use `publish_sync/4` on a publish
+  that has a QoS=0, because that will return instantly anyways. It is
+  made possible for consistency, and it is the default QoS.
+
   See the documentation for `Tortoise.publish/4` for configuration.
   """
-  defdelegate publish_sync(client_id, topic, payload \\ nil, opts \\ [], timeout \\ :infinity),
+  defdelegate publish_sync(client_id, topic, payload \\ nil, opts \\ []),
     to: Tortoise.Connection
 
   @doc """
