@@ -27,6 +27,16 @@ defmodule Tortoise.Handler.Logger do
     {:ok, state}
   end
 
+  def subscription({:warn, [requested: req, accepted: qos]}, topic, state) do
+    Logger.warn("Subscribed to #{topic}; requested #{req} but got accepted with QoS #{qos}")
+    {:ok, state}
+  end
+
+  def subscription({:error, reason}, topic, state) do
+    Logger.error("Error subscribing to #{topic}; #{inspect(reason)}")
+    {:ok, state}
+  end
+
   def subscription(:down, topic, state) do
     Logger.info("Unsubscribed from #{topic}")
     {:ok, state}

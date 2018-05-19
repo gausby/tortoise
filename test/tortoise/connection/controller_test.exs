@@ -32,7 +32,7 @@ defmodule Tortoise.Connection.ControllerTest do
     def subscription(:up, topic_filter, state) do
       new_state = %__MODULE__{
         state
-        | subscriptions: [topic_filter | state.subscriptions]
+        | subscriptions: [{topic_filter, :ok} | state.subscriptions]
       }
 
       send(state.pid, new_state)
@@ -42,11 +42,27 @@ defmodule Tortoise.Connection.ControllerTest do
     def subscription(:down, topic_filter, state) do
       new_state = %__MODULE__{
         state
-        | subscriptions: state.subscriptions -- [topic_filter]
+        | subscriptions:
+            Enum.reject(state.subscriptions, fn {topic, _} -> topic == topic_filter end)
       }
 
       send(state.pid, new_state)
       {:ok, new_state}
+    end
+
+    def subscription({:warn, warning}, topic_filter, state) do
+      new_state = %__MODULE__{
+        state
+        | subscriptions: [{topic_filter, warning} | state.subscriptions]
+      }
+
+      send(state.pid, new_state)
+      {:ok, new_state}
+    end
+
+    def subscription({:error, reason}, topic_filter, state) do
+      send(state.pid, {:subscription_error, {topic_filter, reason}})
+      {:ok, state}
     end
 
     def handle_message(topic, message, %__MODULE__{} = state) do
@@ -304,9 +320,9 @@ defmodule Tortoise.Connection.ControllerTest do
 
       assert_receive {{Tortoise, ^client_id}, ^ref, _}
       # the client callback module should get the subscribe notifications in order
-      assert_receive %TestHandler{subscriptions: ["foo"]}
-      assert_receive %TestHandler{subscriptions: ["bar" | _]}
-      assert_receive %TestHandler{subscriptions: ["baz" | _]}
+      assert_receive %TestHandler{subscriptions: [{"foo", :ok}]}
+      assert_receive %TestHandler{subscriptions: [{"bar", :ok} | _]}
+      assert_receive %TestHandler{subscriptions: [{"baz", :ok} | _]}
 
       # unsubscribe from a topic
       unsubscribe = %Package.Unsubscribe{identifier: 2, topics: ["foo", "baz"]}
@@ -318,8 +334,66 @@ defmodule Tortoise.Connection.ControllerTest do
       assert_receive {{Tortoise, ^client_id}, ^ref, _}
 
       # the client callback module should remove the subscriptions in order
-      assert_receive %TestHandler{subscriptions: ["baz", "bar"]}
-      assert_receive %TestHandler{subscriptions: ["bar"]}
+      assert_receive %TestHandler{subscriptions: [{"baz", :ok}, {"bar", :ok}]}
+      assert_receive %TestHandler{subscriptions: [{"bar", :ok}]}
+    end
+
+    test "Subscribe to a topic that return different QoS than requested", context do
+      client_id = context.client_id
+
+      subscribe = %Package.Subscribe{
+        identifier: 1,
+        topics: [{"foo", 2}]
+      }
+
+      suback = %Package.Suback{identifier: 1, acks: [{:ok, 0}]}
+
+      assert {:ok, ref} = Inflight.track(client_id, {:outgoing, subscribe})
+
+      # assert that the server receives a subscribe package
+      {:ok, package} = :gen_tcp.recv(context.server, 0, 200)
+      assert ^subscribe = Package.decode(package)
+      # the server will send back a subscription acknowledgement message
+      :ok = Controller.handle_incoming(client_id, suback)
+
+      assert_receive {{Tortoise, ^client_id}, ^ref, _}
+      # the client callback module should get the subscribe notifications in order
+      assert_receive %TestHandler{subscriptions: [{"foo", [requested: 2, accepted: 0]}]}
+
+      # unsubscribe from a topic
+      unsubscribe = %Package.Unsubscribe{identifier: 2, topics: ["foo"]}
+      unsuback = %Package.Unsuback{identifier: 2}
+      assert {:ok, ref} = Inflight.track(client_id, {:outgoing, unsubscribe})
+      {:ok, package} = :gen_tcp.recv(context.server, 0, 200)
+      assert ^unsubscribe = Package.decode(package)
+      :ok = Controller.handle_incoming(client_id, unsuback)
+      assert_receive {{Tortoise, ^client_id}, ^ref, _}
+
+      # the client callback module should remove the subscription
+      assert_receive %TestHandler{subscriptions: []}
+    end
+
+    test "Subscribe to a topic resulting in an error", context do
+      client_id = context.client_id
+
+      subscribe = %Package.Subscribe{
+        identifier: 1,
+        topics: [{"foo", 1}]
+      }
+
+      suback = %Package.Suback{identifier: 1, acks: [{:error, :access_denied}]}
+
+      assert {:ok, ref} = Inflight.track(client_id, {:outgoing, subscribe})
+
+      # assert that the server receives a subscribe package
+      {:ok, package} = :gen_tcp.recv(context.server, 0, 200)
+      assert ^subscribe = Package.decode(package)
+      # the server will send back a subscription acknowledgement message
+      :ok = Controller.handle_incoming(client_id, suback)
+
+      assert_receive {{Tortoise, ^client_id}, ^ref, _}
+      # the callback module should get the error
+      assert_receive {:subscription_error, {"foo", :access_denied}}
     end
   end
 end
