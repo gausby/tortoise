@@ -323,16 +323,42 @@ defmodule Tortoise.Connection.Controller do
          %Inflight.Track{type: Package.Subscribe, result: subacks},
          state
        ) do
-    # @todo, figure out what to do when a qos is return than the one requested
-    updated_handler_state =
-      Enum.reduce(subacks[:ok], state.handler.state, fn {topic_filter, _qos}, acc ->
-        # notice, we ignore the reported qos here for now
-        args = [:up, topic_filter, acc]
+    handler_module = state.handler.module
 
-        case apply(state.handler.module, :subscription, args) do
-          {:ok, state} ->
-            state
-        end
+    updated_handler_state =
+      Enum.reduce(subacks, state.handler.state, fn
+        {_, []}, state ->
+          state
+
+        {:ok, oks}, state ->
+          Enum.reduce(oks, state, fn {topic_filter, _qos}, acc ->
+            args = [:up, topic_filter, acc]
+
+            case apply(handler_module, :subscription, args) do
+              {:ok, state} ->
+                state
+            end
+          end)
+
+        {:warn, warns}, state ->
+          Enum.reduce(warns, state, fn {topic_filter, warning}, acc ->
+            args = [{:warn, warning}, topic_filter, acc]
+
+            case apply(handler_module, :subscription, args) do
+              {:ok, state} ->
+                state
+            end
+          end)
+
+        {:error, errors}, state ->
+          Enum.reduce(errors, state, fn {reason, {topic_filter, _qos}}, acc ->
+            args = [{:error, reason}, topic_filter, acc]
+
+            case apply(handler_module, :subscription, args) do
+              {:ok, state} ->
+                state
+            end
+          end)
       end)
 
     updated_handler = %{state.handler | state: updated_handler_state}
