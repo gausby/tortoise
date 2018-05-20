@@ -11,8 +11,21 @@ defmodule Tortoise.MixProject do
       start_permanent: Mix.env() == :prod,
       deps: deps(),
       dialyzer: dialyzer(),
-      docs: docs()
+      docs: docs(),
+      test_coverage: [tool: ExCoveralls],
+      preferred_cli_env:
+        cli_env_for(:test, [
+          "coveralls",
+          "coveralls.detail",
+          "coveralls.html",
+          "coveralls.json",
+          "coveralls.post"
+        ])
     ]
+  end
+
+  defp cli_env_for(env, tasks) do
+    Enum.reduce(tasks, [], fn key, acc -> Keyword.put(acc, :"#{key}", env) end)
   end
 
   # Run "mix help compile.app" to learn about applications.
@@ -29,6 +42,7 @@ defmodule Tortoise.MixProject do
       {:gen_state_machine, "~> 2.0.2"},
       {:eqc_ex, "~> 1.4"},
       {:dialyxir, "~> 0.5", only: [:dev, :test], runtime: false},
+      {:excoveralls, "~> 0.8", only: :test},
       {:ex_doc, "~> 0.18", only: :docs}
     ]
   end

@@ -1,6 +1,7 @@
 # Tortoise
 
 [![Build Status](https://travis-ci.org/gausby/tortoise.svg)](https://travis-ci.org/gausby/tortoise)
+[![Coverage Status](https://coveralls.io/repos/github/gausby/tortoise/badge.svg?branch=master)](https://coveralls.io/github/gausby/tortoise?branch=master)
 
 A MQTT Client application that keep connections to one or more MQTT
 brokers, handles subscriptions, and expose a publisher for publishing
