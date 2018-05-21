@@ -15,14 +15,14 @@ defmodule Tortoise.MixProject do
       dialyzer: dialyzer(),
       docs: docs(),
       test_coverage: [tool: ExCoveralls],
-      preferred_cli_env:
-        cli_env_for(:test, [
-          "coveralls",
-          "coveralls.detail",
-          "coveralls.html",
-          "coveralls.json",
-          "coveralls.post"
-        ])
+      preferred_cli_env: [
+        coveralls: :test,
+        "coveralls.detail": :test,
+        "coveralls.html": :test,
+        "coveralls.json": :test,
+        "coveralls.post": :test,
+        docs: :docs
+      ]
     ]
   end
 
@@ -30,10 +30,6 @@ defmodule Tortoise.MixProject do
     """
     A MQTT client for Elixir.
     """
-  end
-
-  defp cli_env_for(env, tasks) do
-    Enum.reduce(tasks, [], fn key, acc -> Keyword.put(acc, :"#{key}", env) end)
   end
 
   # Run "mix help compile.app" to learn about applications.
