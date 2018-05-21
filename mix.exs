@@ -59,7 +59,7 @@ defmodule Tortoise.MixProject do
     [
       maintainers: ["Martin Gausby"],
       licenses: ["Apache 2.0"],
-      files: ["lib", "priv", "mix.exs", "README*", "CHANGELOG*", "LICENSE*", "license*"],
+      files: ["lib", "mix.exs", "README*", "CHANGELOG*", "LICENSE*"],
       links: %{"GitHub" => "https://github.com/gausby/tortoise"}
     ]
   end
