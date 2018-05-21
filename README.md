@@ -1,5 +1,7 @@
 # Tortoise
 
+[![Hex.pm](https://img.shields.io/hexpm/l/tortoise.svg "Apache 2.0 Licensed")](https://github.com/gausby/tortoise/blob/master/LICENSE)
+[![Hex version](https://img.shields.io/hexpm/v/tortoise.svg "Hex version")](https://hex.pm/packages/tortoise)
 [![Build Status](https://travis-ci.org/gausby/tortoise.svg)](https://travis-ci.org/gausby/tortoise)
 [![Coverage Status](https://coveralls.io/repos/github/gausby/tortoise/badge.svg?branch=master)](https://coveralls.io/github/gausby/tortoise?branch=master)
 
@@ -7,8 +9,9 @@ A MQTT Client application that keep connections to one or more MQTT
 brokers, handles subscriptions, and expose a publisher for publishing
 messages to the broker.
 
-This is work in progress. I need to write documentation before it us
-usable, but as such the client should support:
+This is work in progress. The documentation sure needs improvements,
+and while the user interface is stabilizing there might be some
+changes in the future. Amongst other things the client should support:
 
   - Keeping a connection to a MQTT server (version 3.1.1 for now)
   - Publishing and subscribing to topics of QoS 0, 1, and 2
@@ -41,11 +44,9 @@ Tortoise.publish("my_client_id", "foo/bar", "Hello from the World of Tomorrow !"
 
 ## Installation
 
-It is not available on hex yet, but it will be soon!
-
-When [available in Hex](https://hex.pm/docs/publish), the package can
-be installed by adding `tortoise` to your list of dependencies in
-`mix.exs`:
+Tortoise is [available in Hex](https://hex.pm/docs/publish), the
+package can be installed by adding `tortoise` to your list of
+dependencies in `mix.exs`:
 
 ```elixir
 def deps do

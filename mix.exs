@@ -9,6 +9,8 @@ defmodule Tortoise.MixProject do
       version: @version,
       elixir: "~> 1.6.5",
       start_permanent: Mix.env() == :prod,
+      description: description(),
+      package: package(),
       deps: deps(),
       dialyzer: dialyzer(),
       docs: docs(),
@@ -22,6 +24,12 @@ defmodule Tortoise.MixProject do
           "coveralls.post"
         ])
     ]
+  end
+
+  defp description() do
+    """
+    A MQTT client for Elixir.
+    """
   end
 
   defp cli_env_for(env, tasks) do
@@ -44,6 +52,15 @@ defmodule Tortoise.MixProject do
       {:dialyxir, "~> 0.5", only: [:dev, :test], runtime: false},
       {:excoveralls, "~> 0.8", only: :test},
       {:ex_doc, "~> 0.18", only: :docs}
+    ]
+  end
+
+  defp package() do
+    [
+      maintainers: ["Martin Gausby"],
+      licenses: ["Apache 2.0"],
+      files: ["lib", "priv", "mix.exs", "README*", "CHANGELOG*", "LICENSE*", "license*"],
+      links: %{"GitHub" => "https://github.com/gausby/tortoise"}
     ]
   end
 
