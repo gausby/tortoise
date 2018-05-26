@@ -15,8 +15,8 @@ defmodule Tortoise.Connection.TransmitterTest do
   end
 
   def setup_connection(context) do
-    {:ok, client_socket, server_socket} = Tortoise.TestTCPTunnel.new()
-    :ok = Transmitter.handle_socket(context.test, client_socket)
+    {:ok, client_socket, server_socket} = Tortoise.Integration.TestTCPTunnel.new()
+    :ok = Transmitter.handle_socket(context.test, {Tortoise.Transport.Tcp, client_socket})
     {:ok, %{client: client_socket, server: server_socket}}
   end
 
@@ -51,9 +51,9 @@ defmodule Tortoise.Connection.TransmitterTest do
         send(parent, {:got_socket, socket})
       end)
 
-      refute_receive {:got_socket, _socket}
+      refute_receive {:got_socket, {_transport, _socket}}
       _context = run_setup(context, :setup_connection)
-      assert_receive {:got_socket, socket}
+      assert_receive {:got_socket, {_transport, socket}}
       assert is_port(socket)
       assert Transmitter.subscribers(client_id) == []
     end
@@ -69,9 +69,9 @@ defmodule Tortoise.Connection.TransmitterTest do
           :timer.sleep(:infinity)
         end)
 
-      refute_receive {:got_socket, _socket}
+      refute_receive {:got_socket, {_transport, _socket}}
       _context = run_setup(context, :setup_connection)
-      assert_receive {:got_socket, socket}
+      assert_receive {:got_socket, {_transport, socket}}
       assert is_port(socket)
       assert Transmitter.subscribers(client_id) == [subscriber]
     end

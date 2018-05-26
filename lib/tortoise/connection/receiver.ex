@@ -5,7 +5,7 @@ defmodule Tortoise.Connection.Receiver do
 
   alias Tortoise.Connection.{Transmitter, Controller}
 
-  defstruct client_id: nil, socket: nil, buffer: <<>>
+  defstruct client_id: nil, transport: nil, socket: nil, buffer: <<>>
   alias __MODULE__, as: State
 
   def start_link(opts) do
@@ -36,10 +36,10 @@ defmodule Tortoise.Connection.Receiver do
     }
   end
 
-  def handle_socket(client_id, {:tcp, socket}) do
-    {:ok, pid} = GenStateMachine.call(via_name(client_id), {:handle_socket, socket})
+  def handle_socket(client_id, {transport, socket}) do
+    {:ok, pid} = GenStateMachine.call(via_name(client_id), {:handle_socket, transport, socket})
 
-    case :gen_tcp.controlling_process(socket, pid) do
+    case transport.controlling_process(socket, pid) do
       :ok ->
         :ok
 
@@ -73,13 +73,17 @@ defmodule Tortoise.Connection.Receiver do
   end
 
   # activate network socket for incoming traffic
+  def handle_event(:internal, :activate_socket, _state_name, %State{transport: nil}) do
+    {:stop, :no_transport}
+  end
+
   def handle_event(:internal, :activate_socket, _state_name, data) do
-    case :inet.setopts(data.socket, active: :once) do
+    case data.transport.setopts(data.socket, active: :once) do
       :ok ->
         :keep_state_and_data
 
       {:error, :einval} ->
-        # @todo consider if there could be a we buffer should drain at this point
+        # @todo consider if there could be a buffer we should drain at this point
         {:next_state, :disconnected, data}
     end
   end
@@ -142,7 +146,7 @@ defmodule Tortoise.Connection.Receiver do
     :keep_state_and_data
   end
 
-  def handle_event({:call, from}, {:handle_socket, socket}, :disconnected, data) do
+  def handle_event({:call, from}, {:handle_socket, transport, socket}, :disconnected, data) do
     new_state = {:connected, :receiving_fixed_header}
 
     next_actions = [
@@ -153,11 +157,13 @@ defmodule Tortoise.Connection.Receiver do
     ]
 
     # better reset the buffer
-    {:next_state, new_state, %State{data | socket: socket, buffer: <<>>}, next_actions}
+    new_data = %State{data | transport: transport, socket: socket, buffer: <<>>}
+
+    {:next_state, new_state, new_data, next_actions}
   end
 
   def handle_event(:internal, :pass_socket_to_transmitter, {:connected, _}, data) do
-    :ok = Transmitter.handle_socket(data.client_id, data.socket)
+    :ok = Transmitter.handle_socket(data.client_id, {data.transport, data.socket})
     :keep_state_and_data
   end
 

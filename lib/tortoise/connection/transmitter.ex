@@ -42,8 +42,8 @@ defmodule Tortoise.Connection.Transmitter do
     GenStateMachine.stop(via_name(client_id))
   end
 
-  def handle_socket(client_id, socket) do
-    GenStateMachine.call(via_name(client_id), {:handle_socket, socket})
+  def handle_socket(client_id, {transport, socket}) do
+    GenStateMachine.call(via_name(client_id), {:handle_socket, {transport, socket}})
   end
 
   def unsubscribe(client_id) do
@@ -61,13 +61,13 @@ defmodule Tortoise.Connection.Transmitter do
     timeout = Keyword.get(opts, :timeout, :infinity)
 
     case GenStateMachine.call(via_name(client_id), {:get_socket, active}) do
-      {:ok, socket} ->
-        {:ok, socket}
+      {:ok, {transport, socket}} ->
+        {:ok, {transport, socket}}
 
       :pending ->
         receive do
-          {{Tortoise, ^client_id}, :socket, socket} ->
-            {:ok, socket}
+          {{Tortoise, ^client_id}, :socket, {transport, socket}} ->
+            {:ok, {transport, socket}}
         after
           timeout ->
             {:error, :timeout}
@@ -86,8 +86,8 @@ defmodule Tortoise.Connection.Transmitter do
   end
 
   # Putting data on the wire
-  def handle_event(:cast, {:transmit, package}, {:connected, socket}, data) do
-    case :gen_tcp.send(socket, package) do
+  def handle_event(:cast, {:transmit, package}, {:connected, transport, socket}, data) do
+    case transport.send(socket, package) do
       :ok ->
         :keep_state_and_data
 
@@ -105,8 +105,8 @@ defmodule Tortoise.Connection.Transmitter do
 
   # receiving sockets and dispatching to processes holding pipes
   # configured as "active"
-  def handle_event({:call, from}, {:handle_socket, socket}, _, data) do
-    new_state = {:connected, socket}
+  def handle_event({:call, from}, {:handle_socket, {transport, socket}}, _, data) do
+    new_state = {:connected, transport, socket}
 
     next_actions = [
       {:reply, from, :ok},
@@ -117,22 +117,24 @@ defmodule Tortoise.Connection.Transmitter do
     {:next_state, new_state, data, next_actions}
   end
 
-  def handle_event(:internal, :broadcast_socket, {:connected, socket}, data) do
+  def handle_event(:internal, :broadcast_socket, {:connected, transport, socket}, data) do
     for {subscriber, _monitor_ref} <- data.subscribers do
-      send(subscriber, {{Tortoise, data.client_id}, :socket, socket})
+      send(subscriber, {{Tortoise, data.client_id}, :socket, {transport, socket}})
     end
 
     :keep_state_and_data
   end
 
   # handle the socket to passive pipes
-  def handle_event(:internal, :handle_passive, {:connected, _socket}, %State{passive: []}) do
+  def handle_event(:internal, :handle_passive, {:connected, _transport, _socket}, %State{
+        passive: []
+      }) do
     :keep_state_and_data
   end
 
-  def handle_event(:internal, :handle_passive, {:connected, socket}, %State{} = data) do
+  def handle_event(:internal, :handle_passive, {:connected, transport, socket}, %State{} = data) do
     for pid <- data.passive do
-      send(pid, {{Tortoise, data.client_id}, :socket, socket})
+      send(pid, {{Tortoise, data.client_id}, :socket, {transport, socket}})
     end
 
     {:keep_state, %State{data | passive: []}}
@@ -165,17 +167,27 @@ defmodule Tortoise.Connection.Transmitter do
   end
 
   # requesting sockets
-  def handle_event({:call, {pid, _} = from}, {:get_socket, true}, {:connected, socket}, %State{}) do
+  def handle_event(
+        {:call, {pid, _} = from},
+        {:get_socket, true},
+        {:connected, transport, socket},
+        %State{}
+      ) do
     next_actions = [
       {:next_event, :internal, {:add_subscriber, pid}},
-      {:reply, from, {:ok, socket}}
+      {:reply, from, {:ok, {transport, socket}}}
     ]
 
     {:keep_state_and_data, next_actions}
   end
 
-  def handle_event({:call, from}, {:get_socket, false}, {:connected, socket}, %State{}) do
-    next_action = {:reply, from, {:ok, socket}}
+  def handle_event(
+        {:call, from},
+        {:get_socket, false},
+        {:connected, transport, socket},
+        %State{}
+      ) do
+    next_action = {:reply, from, {:ok, {transport, socket}}}
     {:keep_state_and_data, next_action}
   end
 

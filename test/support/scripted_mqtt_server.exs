@@ -6,6 +6,8 @@ defmodule Tortoise.Integration.ScriptedMqttServer do
 
   @moduledoc false
 
+  @transport Tortoise.Transport.Tcp
+
   use GenServer
 
   defstruct server_socket: nil, script: [], client_pid: nil, client: nil, server_info: nil
@@ -24,7 +26,7 @@ defmodule Tortoise.Integration.ScriptedMqttServer do
 
   # Server callbacks
   def init(:na) do
-    case :gen_tcp.listen(0, [:binary, active: false]) do
+    case @transport.listen([:binary, active: false]) do
       {:ok, socket} ->
         {:ok, server_info} = :inet.sockname(socket)
         {:ok, %__MODULE__{server_info: server_info, server_socket: socket}}
@@ -33,7 +35,7 @@ defmodule Tortoise.Integration.ScriptedMqttServer do
 
   def handle_call({:enact, script}, {pid, _} = caller, state) do
     GenServer.reply(caller, {:ok, state.server_info})
-    {:ok, client} = :gen_tcp.accept(state.server_socket, 200)
+    {:ok, client} = @transport.accept(state.server_socket, 200)
     :ok = :inet.setopts(client, active: :once)
     next_action(%State{state | client_pid: pid, script: script, client: client})
   end
@@ -56,7 +58,7 @@ defmodule Tortoise.Integration.ScriptedMqttServer do
   defp next_action(%State{script: [{:send, package} | remaining]} = state) do
     # send the package right away
     encoded_package = Package.encode(package)
-    :ok = :gen_tcp.send(state.client, encoded_package)
+    :ok = @transport.send(state.client, encoded_package)
     next_action(%State{state | script: remaining})
   end
 
@@ -67,8 +69,8 @@ defmodule Tortoise.Integration.ScriptedMqttServer do
   end
 
   defp next_action(%State{script: [:disconnect | remaining]} = state) do
-    :ok = :gen_tcp.close(state.client)
-    {:ok, client} = :gen_tcp.accept(state.server_socket, 200)
+    :ok = @transport.close(state.client)
+    {:ok, client} = @transport.accept(state.server_socket, 200)
     :ok = :inet.setopts(client, active: :once)
     next_action(%State{state | script: remaining, client: client})
   end

@@ -7,13 +7,13 @@ defmodule Tortoise.Connection do
   defstruct [:socket, :monitor_ref, :connect, :server, :session, :subscriptions, :keep_alive]
   alias __MODULE__, as: State
 
-  alias Tortoise.{Connection, Package}
+  alias Tortoise.{Transport, Connection, Package}
   alias Tortoise.Connection.{Inflight, Controller, Receiver, Transmitter}
   alias Tortoise.Package.{Connect, Connack}
 
   def start_link(opts) do
     client_id = Keyword.fetch!(opts, :client_id)
-    server = Keyword.fetch!(opts, :server)
+    server = opts |> Keyword.fetch!(:server) |> coerce_server()
 
     connect = %Package.Connect{
       client_id: client_id,
@@ -38,6 +38,11 @@ defmodule Tortoise.Connection do
     opts = Keyword.take(opts, [:client_id, :handler])
     initial = {server, connect, subscriptions, opts}
     GenServer.start_link(__MODULE__, initial, name: via_name(client_id))
+  end
+
+  defp coerce_server({:tcp, host, port}) do
+    opts = [:binary, packet: :raw, active: false]
+    %Transport{type: Transport.Tcp, host: host, port: port, opts: opts}
   end
 
   def via_name(pid) when is_pid(pid), do: pid
@@ -128,12 +133,12 @@ defmodule Tortoise.Connection do
   end
 
   # Callbacks
-  def init({{:tcp, _, _} = server, %Connect{} = connect, subscriptions, opts}) do
+  def init({transport, %Connect{} = connect, subscriptions, opts}) do
     expected_connack = %Connack{status: :accepted, session_present: false}
 
-    with {^expected_connack, socket} <- do_connect(server, connect),
+    with {^expected_connack, socket} <- do_connect(transport, connect),
          {:ok, pid} = Connection.Supervisor.start_link(opts),
-         :ok = Receiver.handle_socket(connect.client_id, {:tcp, socket}),
+         :ok = Receiver.handle_socket(connect.client_id, {transport.type, socket}),
          :ok = Controller.update_connection_status(connect.client_id, :up) do
       monitor_ref = {socket, Port.monitor(socket)}
 
@@ -141,7 +146,7 @@ defmodule Tortoise.Connection do
 
       result = %State{
         session: pid,
-        server: server,
+        server: transport,
         connect: connect,
         monitor_ref: monitor_ref,
         subscriptions: subscriptions
@@ -271,12 +276,12 @@ defmodule Tortoise.Connection do
     %State{state | keep_alive: ref}
   end
 
-  defp do_connect({:tcp, host, port}, %Connect{} = connect) do
-    tcp_opts = [:binary, packet: :raw, active: false]
+  defp do_connect(server, %Connect{} = connect) do
+    %{type: transport, host: host, port: port, opts: tcp_opts} = server
 
-    with {:ok, socket} <- :gen_tcp.connect(host, port, tcp_opts),
-         :ok = :gen_tcp.send(socket, Package.encode(connect)),
-         {:ok, packet} <- :gen_tcp.recv(socket, 4, 5000) do
+    with {:ok, socket} <- transport.connect(host, port, tcp_opts),
+         :ok = transport.send(socket, Package.encode(connect)),
+         {:ok, packet} <- transport.recv(socket, 4, 5000) do
       case Package.decode(packet) do
         %Connack{status: :accepted} = connack ->
           {connack, socket}
@@ -294,11 +299,11 @@ defmodule Tortoise.Connection do
     end
   end
 
-  defp do_attempt_reconnect(state) do
+  defp do_attempt_reconnect(%State{server: transport} = state) do
     connect = %Connect{state.connect | clean_session: false}
 
-    with {%Connack{status: :accepted} = connack, socket} <- do_connect(state.server, connect),
-         :ok = Receiver.handle_socket(connect.client_id, {:tcp, socket}),
+    with {%Connack{status: :accepted} = connack, socket} <- do_connect(transport, connect),
+         :ok = Receiver.handle_socket(connect.client_id, {transport.type, socket}),
          :ok = Controller.update_connection_status(connect.client_id, :up) do
       monitor_ref = {socket, Port.monitor(socket)}
 

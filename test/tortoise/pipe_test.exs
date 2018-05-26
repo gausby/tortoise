@@ -22,8 +22,8 @@ defmodule Tortoise.PipeTest do
   end
 
   def setup_connection(context) do
-    {:ok, client_socket, server_socket} = Tortoise.TestTCPTunnel.new()
-    :ok = Transmitter.handle_socket(context.test, client_socket)
+    {:ok, client_socket, server_socket} = Tortoise.Integration.TestTCPTunnel.new()
+    :ok = Transmitter.handle_socket(context.test, {Tortoise.Transport.Tcp, client_socket})
     {:ok, %{client: client_socket, server: server_socket}}
   end
 
