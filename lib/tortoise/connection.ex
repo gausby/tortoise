@@ -4,8 +4,10 @@ defmodule Tortoise.Connection do
 
   require Logger
 
-  defstruct [:socket, :monitor_ref, :connect, :server, :session, :subscriptions, :keep_alive]
+  defstruct [:connect, :server, :session, :subscriptions, :keep_alive]
   alias __MODULE__, as: State
+
+  @type client_id() :: binary() | atom()
 
   alias Tortoise.{Transport, Connection, Package}
   alias Tortoise.Connection.{Inflight, Controller, Receiver, Transmitter}
@@ -40,11 +42,6 @@ defmodule Tortoise.Connection do
     GenServer.start_link(__MODULE__, initial, name: via_name(client_id))
   end
 
-  defp coerce_server({:tcp, host, port}) do
-    opts = [:binary, packet: :raw, active: false]
-    %Transport{type: Transport.Tcp, host: host, port: port, opts: opts}
-  end
-
   def via_name(pid) when is_pid(pid), do: pid
 
   def via_name(client_id) do
@@ -61,6 +58,16 @@ defmodule Tortoise.Connection do
       start: {__MODULE__, :start_link, [opts]},
       type: :worker
     }
+  end
+
+  defp coerce_server({:tcp, host, port}) do
+    opts = [:binary, packet: :raw, active: false]
+    %Transport{type: Transport.Tcp, host: host, port: port, opts: opts}
+  end
+
+  defp coerce_server({:ssl, host, port, opts}) do
+    opts = [:binary, {:packet, :raw}, {:active, false} | opts]
+    %Transport{type: Transport.SSL, host: host, port: port, opts: opts}
   end
 
   # Public interface
@@ -132,6 +139,12 @@ defmodule Tortoise.Connection do
     GenServer.call(via_name(client_id), :subscriptions)
   end
 
+  @doc false
+  @spec renew(client_id()) :: :ok
+  def renew(client_id) do
+    GenServer.cast(via_name(client_id), :renew_connection)
+  end
+
   # Callbacks
   def init({transport, %Connect{} = connect, subscriptions, opts}) do
     expected_connack = %Connack{status: :accepted, session_present: false}
@@ -140,15 +153,12 @@ defmodule Tortoise.Connection do
          {:ok, pid} = Connection.Supervisor.start_link(opts),
          :ok = Receiver.handle_socket(connect.client_id, {transport.type, socket}),
          :ok = Controller.update_connection_status(connect.client_id, :up) do
-      monitor_ref = {socket, Port.monitor(socket)}
-
       if not Enum.empty?(subscriptions), do: send(self(), :subscribe)
 
       result = %State{
         session: pid,
         server: transport,
         connect: connect,
-        monitor_ref: monitor_ref,
         subscriptions: subscriptions
       }
 
@@ -203,14 +213,13 @@ defmodule Tortoise.Connection do
   end
 
   # dropping connection
-  def handle_info({:tcp_closed, _socket}, state) do
+  def handle_info({transport, _socket}, state) when transport in [:tcp_closed, :ssl_closed] do
     Logger.error("Socket closed before we handed it to the receiver")
     :ok = Controller.update_connection_status(state.connect.client_id, :down)
     do_attempt_reconnect(state)
   end
 
-  def handle_info({:DOWN, ref, :port, port, reason}, %State{monitor_ref: {port, ref}} = state)
-      when reason in [:normal, :noproc] do
+  def handle_cast(:renew_connection, state) do
     :ok = Controller.update_connection_status(state.connect.client_id, :down)
     do_attempt_reconnect(state)
   end
@@ -277,9 +286,9 @@ defmodule Tortoise.Connection do
   end
 
   defp do_connect(server, %Connect{} = connect) do
-    %{type: transport, host: host, port: port, opts: tcp_opts} = server
+    %{type: transport, host: host, port: port, opts: opts} = server
 
-    with {:ok, socket} <- transport.connect(host, port, tcp_opts),
+    with {:ok, socket} <- transport.connect(host, port, opts),
          :ok = transport.send(socket, Package.encode(connect)),
          {:ok, packet} <- transport.recv(socket, 4, 5000) do
       case Package.decode(packet) do
@@ -305,17 +314,15 @@ defmodule Tortoise.Connection do
     with {%Connack{status: :accepted} = connack, socket} <- do_connect(transport, connect),
          :ok = Receiver.handle_socket(connect.client_id, {transport.type, socket}),
          :ok = Controller.update_connection_status(connect.client_id, :up) do
-      monitor_ref = {socket, Port.monitor(socket)}
-
       case connack do
         %Connack{session_present: true} ->
-          result = %State{state | connect: connect, monitor_ref: monitor_ref}
+          result = %State{state | connect: connect}
           {:noreply, reset_keep_alive(result)}
 
         %Connack{session_present: false} ->
           # delete inflight state ?
           if not Enum.empty?(state.subscriptions), do: send(self(), :subscribe)
-          result = %State{state | connect: connect, monitor_ref: monitor_ref}
+          result = %State{state | connect: connect}
           {:noreply, reset_keep_alive(result)}
       end
     else

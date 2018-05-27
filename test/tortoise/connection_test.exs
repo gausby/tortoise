@@ -25,6 +25,18 @@ defmodule Tortoise.ConnectionTest do
     {:ok, %{scripted_mqtt_server: pid}}
   end
 
+  def setup_scripted_mqtt_server_ssl(_context) do
+    certs_opts = :ct_helper.get_certs_from_ets()
+
+    server_opts = [
+      transport: Tortoise.Transport.SSL,
+      opts: [:binary, {:active, false}, {:packet, :raw} | certs_opts]
+    ]
+
+    {:ok, pid} = ScriptedMqttServer.start_link(server_opts)
+    {:ok, %{scripted_mqtt_server: pid, key: certs_opts[:key], cert: certs_opts[:cert]}}
+  end
+
   describe "successful connect" do
     setup [:setup_scripted_mqtt_server]
 
@@ -289,6 +301,30 @@ defmodule Tortoise.ConnectionTest do
       assert_receive {ScriptedMqttServer, {:received, ^unsubscribe_bar}}
       assert %Package.Subscribe{topics: []} = Tortoise.Connection.subscriptions(client_id)
 
+      assert_receive {ScriptedMqttServer, :completed}
+    end
+  end
+
+  describe "encrypted connection" do
+    setup [:setup_scripted_mqtt_server_ssl]
+
+    test "successful connect", context do
+      client_id = context.client_id
+
+      connect = %Package.Connect{client_id: client_id, clean_session: true}
+      expected_connack = %Package.Connack{status: :accepted, session_present: false}
+
+      script = [{:receive, connect}, {:send, expected_connack}]
+      {:ok, {ip, port}} = ScriptedMqttServer.enact(context.scripted_mqtt_server, script)
+
+      opts = [
+        client_id: client_id,
+        server: {:ssl, ip, port, [key: context.key, cert: context.cert]},
+        handler: {Tortoise.Handler.Default, []}
+      ]
+
+      assert {:ok, _pid} = Connection.start_link(opts)
+      assert_receive {ScriptedMqttServer, {:received, ^connect}}
       assert_receive {ScriptedMqttServer, :completed}
     end
   end

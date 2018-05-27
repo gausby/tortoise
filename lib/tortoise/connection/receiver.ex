@@ -53,16 +53,9 @@ defmodule Tortoise.Connection.Receiver do
     {:ok, :disconnected, data}
   end
 
-  # Dropped connection: the connection process will monitor the
-  # socket, so it should be busy trying to reestablish a connection at
-  # this point
-  def handle_event(:info, {:tcp_closed, socket}, _state, %{socket: socket} = data) do
-    # should we empty the buffer?
-    {:next_state, :disconnected, %{data | socket: nil}}
-  end
-
-  # receiving data on the tcp connection
-  def handle_event(:info, {:tcp, socket, tcp_data}, _, %{socket: socket} = data) do
+  # receiving data on the network connection
+  def handle_event(:info, {transport, socket, tcp_data}, _, %{socket: socket} = data)
+      when transport in [:tcp, :ssl] do
     next_actions = [
       {:next_event, :internal, :activate_socket},
       {:next_event, :internal, :consume_buffer}
@@ -70,6 +63,18 @@ defmodule Tortoise.Connection.Receiver do
 
     new_data = %{data | buffer: <<data.buffer::binary, tcp_data::binary>>}
     {:keep_state, new_data, next_actions}
+  end
+
+  # Dropped connection: tell the connection process that it should
+  # attempt to get a new network socket; unfortunately we cannot just
+  # monitor the socket port in the connection process as a transport
+  # method such as the SSL based one will pass an opaque data
+  # structure around instead of a port that can be monitored.
+  def handle_event(:info, {transport, socket}, _state, %{socket: socket} = data)
+      when transport in [:tcp_closed, :ssl_closed] do
+    # should we empty the buffer?
+    :ok = Tortoise.Connection.renew(data.client_id)
+    {:next_state, :disconnected, %{data | socket: nil}}
   end
 
   # activate network socket for incoming traffic

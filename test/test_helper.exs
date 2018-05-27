@@ -255,6 +255,9 @@ defmodule Tortoise.TestGenerators do
   end
 end
 
+# make certs for tests using the SSL transport
+:ok = :ct_helper.make_certs_in_ets()
+
 {:ok, _} = Tortoise.Integration.TestTCPTunnel.start_link()
 
 ExUnit.start()

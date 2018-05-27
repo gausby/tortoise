@@ -35,7 +35,16 @@ defmodule Tortoise.Integration.ScriptedMqttServer do
   def init(opts) do
     transport = Keyword.get(opts, :transport, Tortoise.Transport.Tcp)
 
-    case transport.listen([:binary, active: false]) do
+    transport_opts =
+      case Keyword.get(opts, :opts, :default) do
+        :default ->
+          [:binary, active: false, packet: :raw]
+
+        opts_list when is_list(opts_list) ->
+          opts_list
+      end
+
+    case transport.listen(transport_opts) do
       {:ok, socket} ->
         {:ok, server_info} = transport.sockname(socket)
 
@@ -52,16 +61,17 @@ defmodule Tortoise.Integration.ScriptedMqttServer do
   def handle_call({:enact, script}, {pid, _} = caller, state) do
     GenServer.reply(caller, {:ok, state.server_info})
     {:ok, client} = state.transport.accept(state.server_socket, 200)
+    :ok = state.transport.accept_ack(client, 200)
     :ok = state.transport.setopts(client, active: :once)
     next_action(%State{state | client_pid: pid, script: script, client: client})
   end
 
-  def handle_info({:tcp_closed, client}, %State{script: [], client: client} = state) do
-    {:stop, :normal, state}
-  end
-
-  def handle_info({:tcp, _, tcp_data}, %State{script: [{:receive, expected} | script]} = state) do
-    case Package.decode(tcp_data) do
+  def handle_info(
+        {transport, _, data},
+        %State{script: [{:receive, expected} | script]} = state
+      )
+      when transport in [:tcp, :ssl] do
+    case Package.decode(data) do
       ^expected ->
         send(state.client_pid, {__MODULE__, {:received, expected}})
         next_action(%State{state | script: script})
@@ -69,6 +79,11 @@ defmodule Tortoise.Integration.ScriptedMqttServer do
       otherwise ->
         throw({:unexpected_package, otherwise})
     end
+  end
+
+  def handle_info({transport, client}, %State{script: [], client: client} = state)
+      when transport in [:tcp_closed, :ssl_closed] do
+    {:stop, :normal, state}
   end
 
   defp next_action(%State{script: [{:send, package} | remaining]} = state) do
