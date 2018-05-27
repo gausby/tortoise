@@ -21,8 +21,6 @@ defmodule Tortoise.Transport do
 
   @callback accept_ack(socket(), timeout()) :: :ok
 
-  @callback connect(charlist(), :inet.port_number(), opts()) :: {:ok, socket()} | {:error, atom()}
-
   @callback connect(charlist(), :inet.port_number(), opts(), timeout()) ::
               {:ok, socket()} | {:error, atom()}
 

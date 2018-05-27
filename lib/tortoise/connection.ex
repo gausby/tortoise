@@ -288,7 +288,7 @@ defmodule Tortoise.Connection do
   defp do_connect(server, %Connect{} = connect) do
     %{type: transport, host: host, port: port, opts: opts} = server
 
-    with {:ok, socket} <- transport.connect(host, port, opts),
+    with {:ok, socket} <- transport.connect(host, port, opts, 10000),
          :ok = transport.send(socket, Package.encode(connect)),
          {:ok, packet} <- transport.recv(socket, 4, 5000) do
       case Package.decode(packet) do

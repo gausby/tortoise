@@ -38,11 +38,6 @@ defmodule Tortoise.Transport.SSL do
     end
   end
 
-  def connect(host, port, opts) do
-    # [:binary, active: false, packet: :raw]
-    :ssl.connect(host, port, opts)
-  end
-
   def connect(host, port, opts, timeout) do
     # [:binary, active: false, packet: :raw]
     :ssl.connect(host, port, opts, timeout)

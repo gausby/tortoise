@@ -17,12 +17,6 @@ defmodule Tortoise.Transport.Tcp do
     :ok
   end
 
-  def connect(host, port, opts) do
-    # forced_opts = [:binary, active: false, packet: :raw]
-    # opts = Keyword.merge(opts, forced_opts)
-    :gen_tcp.connect(host, port, opts)
-  end
-
   def connect(host, port, opts, timeout) do
     # forced_opts = [:binary, active: false, packet: :raw]
     # opts = Keyword.merge(opts, forced_opts)
