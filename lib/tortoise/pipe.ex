@@ -23,7 +23,7 @@ defmodule Tortoise.Pipe do
   @opaque t :: %__MODULE__{
             client_id: binary(),
             socket: port(),
-            module: :tcp,
+            transport: atom(),
             active: boolean(),
             failure: :crash | :drop,
             timeout: non_neg_integer() | :infinity,
@@ -33,7 +33,7 @@ defmodule Tortoise.Pipe do
   defstruct([
     :client_id,
     socket: nil,
-    module: :tcp,
+    transport: Tortoise.Transport.Tcp,
     active: false,
     failure: :crash,
     timeout: :infinity,
@@ -47,8 +47,8 @@ defmodule Tortoise.Pipe do
     opts = [timeout: timeout, active: active]
 
     case Transmitter.get_socket(client_id, opts) do
-      {:ok, socket} ->
-        %Pipe{client_id: client_id, socket: socket, active: active}
+      {:ok, {transport, socket}} ->
+        %Pipe{client_id: client_id, transport: transport, socket: socket, active: active}
 
       {:error, :timeout} ->
         {:error, :timeout}
@@ -72,10 +72,10 @@ defmodule Tortoise.Pipe do
     end
   end
 
-  defp do_publish(%Pipe{module: :tcp} = pipe, %Package.Publish{qos: 0} = publish) do
+  defp do_publish(%Pipe{} = pipe, %Package.Publish{qos: 0} = publish) do
     encoded_publish = Package.encode(publish)
 
-    case :gen_tcp.send(pipe.socket, encoded_publish) do
+    case pipe.transport.send(pipe.socket, encoded_publish) do
       :ok ->
         pipe
 
@@ -101,8 +101,8 @@ defmodule Tortoise.Pipe do
 
   defp refresh(%Pipe{active: true, client_id: client_id} = pipe) do
     receive do
-      {{Tortoise, ^client_id}, :socket, socket} ->
-        %Pipe{pipe | socket: socket}
+      {{Tortoise, ^client_id}, :socket, {transport, socket}} ->
+        %Pipe{pipe | transport: transport, socket: socket}
     after
       pipe.timeout ->
         {:error, :timeout}
@@ -113,8 +113,8 @@ defmodule Tortoise.Pipe do
     opts = [timeout: pipe.timeout, active: false]
 
     case Transmitter.get_socket(pipe.client_id, opts) do
-      {:ok, socket} ->
-        %Pipe{pipe | socket: socket}
+      {:ok, {transport, socket}} ->
+        %Pipe{pipe | transport: transport, socket: socket}
 
       {:error, :timeout} ->
         {:error, :timeout}

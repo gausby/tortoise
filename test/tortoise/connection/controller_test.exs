@@ -107,8 +107,8 @@ defmodule Tortoise.Connection.ControllerTest do
   def setup_transmitter(context) do
     opts = [client_id: context.client_id]
     {:ok, _} = Transmitter.start_link(opts)
-    {:ok, client_socket, server_socket} = Tortoise.TestTCPTunnel.new()
-    Transmitter.handle_socket(context.test, client_socket)
+    {:ok, client_socket, server_socket} = Tortoise.Integration.TestTCPTunnel.new()
+    Transmitter.handle_socket(context.test, {Tortoise.Transport.Tcp, client_socket})
 
     {:ok, %{client: client_socket, server: server_socket}}
   end

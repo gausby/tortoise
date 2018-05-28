@@ -12,7 +12,7 @@ defmodule Tortoise.Connection.ReceiverTest do
 
   def setup_receiver(context) do
     opts = [client_id: context.client_id]
-    {:ok, client_socket, server_socket} = Tortoise.TestTCPTunnel.new()
+    {:ok, client_socket, server_socket} = Tortoise.Integration.TestTCPTunnel.new()
     {:ok, _} = Receiver.start_link(opts)
 
     Transmitter.handle_socket(context.test, client_socket)

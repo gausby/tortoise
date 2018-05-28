@@ -1,7 +1,7 @@
 defmodule Tortoise.MixProject do
   use Mix.Project
 
-  @version "0.1.0"
+  @version "0.2.0"
 
   def project do
     [
@@ -35,7 +35,7 @@ defmodule Tortoise.MixProject do
   # Run "mix help compile.app" to learn about applications.
   def application do
     [
-      extra_applications: [:logger],
+      extra_applications: [:logger, :ssl],
       mod: {Tortoise.App, []}
     ]
   end
@@ -47,7 +47,8 @@ defmodule Tortoise.MixProject do
       {:eqc_ex, "~> 1.4"},
       {:dialyxir, "~> 0.5", only: [:dev, :test], runtime: false},
       {:excoveralls, "~> 0.8", only: :test},
-      {:ex_doc, "~> 0.18", only: :docs}
+      {:ex_doc, "~> 0.18", only: :docs},
+      {:ct_helper, github: "ninenines/ct_helper", only: :test}
     ]
   end
 
