@@ -11,11 +11,11 @@ messages to the broker.
 
 This is work in progress. The documentation sure needs improvements,
 and while the user interface is stabilizing there might be some
-changes in the future. Amongst other things the client should support:
+changes in the future. Amongst other things the client supports:
 
   - Keeping a connection to a MQTT server (version 3.1.1 for now)
   - Publishing and subscribing to topics of QoS 0, 1, and 2
-  - Connecting via TCP
+  - Connecting via TCP and SSL (experimental)
   - The fundamentals are there, but some of the API's might change in
     the near future
 
