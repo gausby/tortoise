@@ -3,39 +3,13 @@ defmodule Tortoise.Transport.SSL do
 
   @behaviour Tortoise.Transport
 
-  def listen(opts) do
-    case Keyword.has_key?(opts, :cert) do
-      true ->
-        :ssl.listen(0, opts)
+  alias Tortoise.Transport
 
-      false ->
-        throw("Please specify the cert key for the SSL transport")
-    end
-  end
-
-  def accept(listen_socket, timeout) do
-    :ssl.transport_accept(listen_socket, timeout)
-  end
-
-  def accept_ack(client_socket, timeout) do
-    case :ssl.ssl_accept(client_socket, timeout) do
-      :ok ->
-        :ok
-
-      # abnormal data sent to socket
-      {:error, {:tls_alert, _}} ->
-        :ok = close(client_socket)
-        exit(:normal)
-
-      # Socket most likely stopped responding, don't error out.
-      {:error, reason} when reason in [:timeout, :closed] ->
-        :ok = close(client_socket)
-        exit(:normal)
-
-      {:error, reason} ->
-        :ok = close(client_socket)
-        throw(reason)
-    end
+  def new(opts) do
+    {host, opts} = Keyword.pop(opts, :host)
+    {port, opts} = Keyword.pop(opts, :port)
+    opts = [:binary, {:packet, :raw}, {:active, false} | opts]
+    %Transport{type: __MODULE__, host: host, port: port, opts: opts}
   end
 
   def connect(host, port, opts, timeout) do
@@ -85,5 +59,40 @@ defmodule Tortoise.Transport.SSL do
 
   def close(socket) do
     :ssl.close(socket)
+  end
+
+  def listen(opts) do
+    case Keyword.has_key?(opts, :cert) do
+      true ->
+        :ssl.listen(0, opts)
+
+      false ->
+        throw("Please specify the cert key for the SSL transport")
+    end
+  end
+
+  def accept(listen_socket, timeout) do
+    :ssl.transport_accept(listen_socket, timeout)
+  end
+
+  def accept_ack(client_socket, timeout) do
+    case :ssl.ssl_accept(client_socket, timeout) do
+      :ok ->
+        :ok
+
+      # abnormal data sent to socket
+      {:error, {:tls_alert, _}} ->
+        :ok = close(client_socket)
+        exit(:normal)
+
+      # Socket most likely stopped responding, don't error out.
+      {:error, reason} when reason in [:timeout, :closed] ->
+        :ok = close(client_socket)
+        exit(:normal)
+
+      {:error, reason} ->
+        :ok = close(client_socket)
+        throw(reason)
+    end
   end
 end

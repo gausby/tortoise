@@ -15,7 +15,7 @@ defmodule Tortoise.Connection do
 
   def start_link(opts) do
     client_id = Keyword.fetch!(opts, :client_id)
-    server = opts |> Keyword.fetch!(:server) |> coerce_server()
+    server = opts |> Keyword.fetch!(:server) |> Transport.new()
 
     connect = %Package.Connect{
       client_id: client_id,
@@ -58,16 +58,6 @@ defmodule Tortoise.Connection do
       start: {__MODULE__, :start_link, [opts]},
       type: :worker
     }
-  end
-
-  defp coerce_server({:tcp, host, port}) do
-    opts = [:binary, packet: :raw, active: false]
-    %Transport{type: Transport.Tcp, host: host, port: port, opts: opts}
-  end
-
-  defp coerce_server({:ssl, host, port, opts}) do
-    opts = [:binary, {:packet, :raw}, {:active, false} | opts]
-    %Transport{type: Transport.SSL, host: host, port: port, opts: opts}
   end
 
   # Public interface
@@ -286,7 +276,7 @@ defmodule Tortoise.Connection do
   end
 
   defp do_connect(server, %Connect{} = connect) do
-    %{type: transport, host: host, port: port, opts: opts} = server
+    %Transport{type: transport, host: host, port: port, opts: opts} = server
 
     with {:ok, socket} <- transport.connect(host, port, opts, 10000),
          :ok = transport.send(socket, Package.encode(connect)),

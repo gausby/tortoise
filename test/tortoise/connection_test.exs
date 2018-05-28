@@ -52,7 +52,7 @@ defmodule Tortoise.ConnectionTest do
 
       opts = [
         client_id: client_id,
-        server: {:tcp, ip, port},
+        server: {Tortoise.Transport.Tcp, [host: ip, port: port]},
         handler: {Tortoise.Handler.Default, []}
       ]
 
@@ -79,7 +79,7 @@ defmodule Tortoise.ConnectionTest do
 
       opts = [
         client_id: client_id,
-        server: {:tcp, ip, port},
+        server: {Tortoise.Transport.Tcp, [host: ip, port: port]},
         handler: {Tortoise.Handler.Default, []}
       ]
 
@@ -109,7 +109,7 @@ defmodule Tortoise.ConnectionTest do
 
       opts = [
         client_id: client_id,
-        server: {:tcp, ip, port},
+        server: {Tortoise.Transport.Tcp, [host: ip, port: port]},
         handler: {Tortoise.Handler.Default, []}
       ]
 
@@ -132,7 +132,7 @@ defmodule Tortoise.ConnectionTest do
 
       opts = [
         client_id: client_id,
-        server: {:tcp, ip, port},
+        server: {Tortoise.Transport.Tcp, [host: ip, port: port]},
         handler: {Tortoise.Handler.Default, []}
       ]
 
@@ -153,7 +153,7 @@ defmodule Tortoise.ConnectionTest do
 
       opts = [
         client_id: client_id,
-        server: {:tcp, ip, port},
+        server: {Tortoise.Transport.Tcp, [host: ip, port: port]},
         handler: {Tortoise.Handler.Default, []}
       ]
 
@@ -174,7 +174,7 @@ defmodule Tortoise.ConnectionTest do
 
       opts = [
         client_id: client_id,
-        server: {:tcp, ip, port},
+        server: {Tortoise.Transport.Tcp, [host: ip, port: port]},
         handler: {Tortoise.Handler.Default, []}
       ]
 
@@ -197,7 +197,7 @@ defmodule Tortoise.ConnectionTest do
 
       opts = [
         client_id: client_id,
-        server: {:tcp, ip, port},
+        server: {Tortoise.Transport.Tcp, [host: ip, port: port]},
         handler: {Tortoise.Handler.Default, []}
       ]
 
@@ -232,7 +232,7 @@ defmodule Tortoise.ConnectionTest do
 
       opts = [
         client_id: client_id,
-        server: {:tcp, ip, port},
+        server: {Tortoise.Transport.Tcp, [host: ip, port: port]},
         handler: {Tortoise.Handler.Default, []}
       ]
 
@@ -281,7 +281,7 @@ defmodule Tortoise.ConnectionTest do
 
       opts = [
         client_id: client_id,
-        server: {:tcp, ip, port},
+        server: {Tortoise.Transport.Tcp, [host: ip, port: port]},
         handler: {Tortoise.Handler.Default, []},
         subscriptions: %Package.Subscribe{topics: [{"foo", 0}, {"bar", 2}], identifier: 1}
       ]
@@ -319,7 +319,8 @@ defmodule Tortoise.ConnectionTest do
 
       opts = [
         client_id: client_id,
-        server: {:ssl, ip, port, [key: context.key, cert: context.cert]},
+        server:
+          {Tortoise.Transport.SSL, [host: ip, port: port, key: context.key, cert: context.cert]},
         handler: {Tortoise.Handler.Default, []}
       ]
 

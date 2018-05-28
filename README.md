@@ -35,12 +35,25 @@ Just to get people started:
 Tortoise.Supervisor.start_child(
     client_id: "my_client_id",
     handler: {Tortoise.Handler.Logger, []},
-    server: {:tcp, 'localhost', 1883},
+    server: {Tortoise.Transport.Tcp, host: 'localhost', port: 1883},
     subscriptions: [{"foo/bar", 0}])
 
 # publish a message on the broker
 Tortoise.publish("my_client_id", "foo/bar", "Hello from the World of Tomorrow !", qos: 0)
 ```
+
+To connect to a MQTT server using SSL the `Tortoise.Transport.SSL`
+transport can be used like this:
+
+``` elixir
+Tortoise.Supervisor.start_child(
+    client_id: "my_client_id",
+    handler: {Tortoise.Handler.Logger, []},
+    server: {Tortoise.Transport.SSL, host: host, port: port, key: key, cert: cert},
+    subscriptions: [{"foo/bar", 0}])
+```
+
+Look at the `connection_test.exs`-file for an example.
 
 ## Installation
 
@@ -51,7 +64,7 @@ dependencies in `mix.exs`:
 ```elixir
 def deps do
   [
-    {:tortoise, "~> 0.1.0"}
+    {:tortoise, "~> 0.2.0"}
   ]
 end
 ```

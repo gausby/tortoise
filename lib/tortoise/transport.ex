@@ -8,12 +8,32 @@ defmodule Tortoise.Transport do
   NineNines.
   """
 
+  @opaque t :: %__MODULE__{
+            type: atom(),
+            host: binary(),
+            port: non_neg_integer(),
+            opts: [term()]
+          }
+
   @enforce_keys [:type, :host, :port]
   defstruct type: nil, host: nil, port: nil, opts: []
+
+  @doc """
+  Create a new Transport specification used by the Connection process
+  to log on to the MQTT server. This allow us to filter the options
+  passed to the connection type, and guide the user to connect to the
+  individual transport type.
+  """
+  @spec new({atom(), [term()]}) :: t()
+  def new({transport, opts}) do
+    %Tortoise.Transport{type: ^transport} = transport.new(opts)
+  end
 
   @type socket() :: any()
   @type opts() :: any()
   @type stats() :: any()
+
+  @callback new(opts()) :: Transport.t()
 
   @callback listen(opts()) :: {:ok, socket()} | {:error, atom()}
 
