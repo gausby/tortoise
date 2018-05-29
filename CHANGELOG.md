@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.2.2 - 2018-05-29
+
+### Changed
+
+- Fix an issue where larger messages would crash the receiver. It has
+  been fixed and tested with messages as large as 268435455 bytes;
+  which is a pretty big MQTT message.
+
 ## 0.2.1 - 2018-05-29
 
 ### Added
