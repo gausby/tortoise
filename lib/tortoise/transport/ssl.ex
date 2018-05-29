@@ -5,9 +5,12 @@ defmodule Tortoise.Transport.SSL do
 
   alias Tortoise.Transport
 
+  @default_opts [verify: :verify_peer]
+
   def new(opts) do
     {host, opts} = Keyword.pop(opts, :host)
     {port, opts} = Keyword.pop(opts, :port)
+    opts = Keyword.merge(@default_opts, opts)
     opts = [:binary, {:packet, :raw}, {:active, false} | opts]
     %Transport{type: __MODULE__, host: host, port: port, opts: opts}
   end
