@@ -118,7 +118,7 @@ defmodule Tortoise.Connection.Receiver do
     {:next_state, next_state, new_data, next_actions}
   end
 
-  def handle_event(:internal, :consume_buffer, {:connected, {:receiving_variable, _, _}}, _data) do
+  def handle_event(:internal, :consume_buffer, {:connected, {:receiving_variable, _}}, _data) do
     # await more bytes
     :keep_state_and_data
   end
