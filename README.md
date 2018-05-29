@@ -64,7 +64,7 @@ dependencies in `mix.exs`:
 ```elixir
 def deps do
   [
-    {:tortoise, "~> 0.2.0"}
+    {:tortoise, "~> 0.2.1"}
   ]
 end
 ```

@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.2.1 - 2018-05-29
+
+### Added
+
+- The `Tortoise.Transport.SSL` will now pass in `[verify:
+  :verify_peer]` as the default option when connecting. This will
+  guide the user to pass in a list of trusted CA certificates, such as
+  one provided by the Certifi package, or opt out of this by passing
+  the `verify: :verify_none` option; this will make it hard for the
+  user to make unsafe choices.
+
+  Thanks to [Bram Verburg](https://github.com/voltone) for this
+  improvement.
+
 ## 0.2.0 - 2018-05-28
 
 ### Added
