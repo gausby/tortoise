@@ -34,7 +34,14 @@ defmodule Tortoise.ConnectionTest do
     ]
 
     {:ok, pid} = ScriptedMqttServer.start_link(server_opts)
-    {:ok, %{scripted_mqtt_server: pid, key: certs_opts[:key], cert: certs_opts[:cert]}}
+
+    {:ok,
+     %{
+       scripted_mqtt_server: pid,
+       key: certs_opts[:key],
+       cert: certs_opts[:cert],
+       cacerts: certs_opts[:cacerts]
+     }}
   end
 
   describe "successful connect" do
@@ -320,13 +327,74 @@ defmodule Tortoise.ConnectionTest do
       opts = [
         client_id: client_id,
         server:
-          {Tortoise.Transport.SSL, [host: ip, port: port, key: context.key, cert: context.cert]},
+          {Tortoise.Transport.SSL,
+           [
+             host: ip,
+             port: port,
+             key: context.key,
+             cert: context.cert,
+             verify: :verify_peer,
+             cacerts: context.cacerts(),
+             server_name_indication: :disable
+           ]},
         handler: {Tortoise.Handler.Default, []}
       ]
 
       assert {:ok, _pid} = Connection.start_link(opts)
       assert_receive {ScriptedMqttServer, {:received, ^connect}}
       assert_receive {ScriptedMqttServer, :completed}
+    end
+
+    test "successful connect (no certificate verification)", context do
+      client_id = context.client_id
+
+      connect = %Package.Connect{client_id: client_id, clean_session: true}
+      expected_connack = %Package.Connack{status: :accepted, session_present: false}
+
+      script = [{:receive, connect}, {:send, expected_connack}]
+      {:ok, {ip, port}} = ScriptedMqttServer.enact(context.scripted_mqtt_server, script)
+
+      opts = [
+        client_id: client_id,
+        server:
+          {Tortoise.Transport.SSL,
+           [
+             host: ip,
+             port: port,
+             key: context.key,
+             cert: context.cert,
+             verify: :verify_none
+           ]},
+        handler: {Tortoise.Handler.Default, []}
+      ]
+
+      assert {:ok, _pid} = Connection.start_link(opts)
+      assert_receive {ScriptedMqttServer, {:received, ^connect}}
+      assert_receive {ScriptedMqttServer, :completed}
+    end
+
+    test "unsuccessful connect", context do
+      Process.flag(:trap_exit, true)
+      client_id = context.client_id
+
+      {:ok, {ip, port}} = ScriptedMqttServer.enact(context.scripted_mqtt_server, [])
+
+      opts = [
+        client_id: client_id,
+        server:
+          {Tortoise.Transport.SSL,
+           [
+             host: ip,
+             port: port,
+             key: context.key,
+             cert: context.cert
+           ]},
+        handler: {Tortoise.Handler.Default, []}
+      ]
+
+      # Need to pass :cacerts/:cacerts_file option, or set :verify to
+      # :verify_none to opt out of server cert verification
+      assert {:error, _reason} = Connection.start_link(opts)
     end
   end
 end
