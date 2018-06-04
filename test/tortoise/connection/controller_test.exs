@@ -158,6 +158,23 @@ defmodule Tortoise.Connection.ControllerTest do
       assert_receive {Tortoise, {:ping_response, ^ping_ref, _ping_time}}
     end
 
+    test "send a sync ping request", context do
+      # send a ping request to the server
+      parent = self()
+
+      spawn_link(fn ->
+        {:ok, time} = Controller.ping_sync(context.client_id)
+        send(parent, {:ping_result, time})
+      end)
+
+      # assert that the server receives a ping request package
+      {:ok, package} = :gen_tcp.recv(context.server, 0, 200)
+      assert %Package.Pingreq{} = Package.decode(package)
+      # the server will respond with an pingresp (ping response)
+      Controller.handle_incoming(context.client_id, %Package.Pingresp{})
+      assert_receive {:ping_result, _time}
+    end
+
     test "receive a ping request", context do
       # receiving a ping request from the server
       Controller.handle_incoming(context.client_id, %Package.Pingreq{})
