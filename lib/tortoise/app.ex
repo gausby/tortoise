@@ -11,7 +11,7 @@ defmodule Tortoise.App do
     # start with client_id, and handler from config
 
     children = [
-      {Registry, [keys: :unique, name: Registry.Tortoise]},
+      {Registry, [keys: :unique, name: Tortoise.Registry]},
       {Tortoise.Supervisor, [strategy: :one_for_one]}
     ]
 

@@ -19,14 +19,8 @@ defmodule Tortoise.Connection.Inflight do
     GenServer.start_link(__MODULE__, initial_state, name: via_name(client_id))
   end
 
-  def via_name(pid) when is_pid(pid), do: pid
-
-  def via_name(client_id) do
-    {:via, Registry, reg_name(client_id)}
-  end
-
-  def reg_name(client_id) do
-    {Registry.Tortoise, {__MODULE__, client_id}}
+  defp via_name(client_id) do
+    Tortoise.Registry.via_name(__MODULE__, client_id)
   end
 
   def stop(client_id) do
