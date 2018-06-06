@@ -53,7 +53,7 @@ defmodule Tortoise.Handler do
     end
   end
 
-  def execute({:publish, publish}, %__MODULE__{} = handler) do
+  def execute({:publish, %Package.Publish{} = publish}, %__MODULE__{} = handler) do
     topic_list = String.split(publish.topic, "/")
     args = [topic_list, publish.payload, handler.state]
 
