@@ -46,7 +46,7 @@ defmodule Tortoise.HandlerTest do
 
   describe "execute init/1" do
     test "return ok-tuple", context do
-      assert {:ok, %Handler{}} = Handler.execute(:init, context.handler)
+      assert {:ok, %Handler{}} = Handler.execute(context.handler, :init)
       assert_receive :init
     end
   end
@@ -54,10 +54,10 @@ defmodule Tortoise.HandlerTest do
   describe "execute connection/2" do
     test "return ok-tuple", context do
       handler = set_state(context.handler, pid: self())
-      assert {:ok, %Handler{}} = Handler.execute({:connection, :up}, handler)
+      assert {:ok, %Handler{}} = Handler.execute(handler, {:connection, :up})
       assert_receive {:connection, :up}
 
-      assert {:ok, %Handler{}} = Handler.execute({:connection, :down}, handler)
+      assert {:ok, %Handler{}} = Handler.execute(handler, {:connection, :down})
       assert_receive {:connection, :down}
     end
   end
@@ -69,7 +69,7 @@ defmodule Tortoise.HandlerTest do
       topics = "foo/bar"
       publish = %Package.Publish{topic: topics, payload: payload}
 
-      assert {:ok, %Handler{}} = Handler.execute({:publish, publish}, handler)
+      assert {:ok, %Handler{}} = Handler.execute(handler, {:publish, publish})
       # the topics will be in the form of a list making it possible to
       # pattern match on the topic levels
       assert_receive {:publish, topic_list, ^payload}
@@ -90,7 +90,7 @@ defmodule Tortoise.HandlerTest do
         |> Track.update({:received, suback})
 
       handler = set_state(context.handler, pid: self())
-      assert {:ok, %Handler{}} = Handler.execute({:subscribe, result}, handler)
+      assert {:ok, %Handler{}} = Handler.execute(handler, {:subscribe, result})
 
       assert_receive {:subscription, :up, "foo"}
       assert_receive {:subscription, {:error, :access_denied}, "baz"}
@@ -110,7 +110,7 @@ defmodule Tortoise.HandlerTest do
         |> Track.update({:received, unsuback})
 
       handler = set_state(context.handler, pid: self())
-      assert {:ok, %Handler{}} = Handler.execute({:unsubscribe, result}, handler)
+      assert {:ok, %Handler{}} = Handler.execute(handler, {:unsubscribe, result})
       # we should receive two subscription down messages
       assert_receive {:subscription, :down, "foo/bar"}
       assert_receive {:subscription, :down, "baz/quun"}
@@ -120,7 +120,7 @@ defmodule Tortoise.HandlerTest do
   describe "execute terminate/2" do
     test "return ok", context do
       handler = set_state(context.handler, pid: self())
-      assert :ok = Handler.execute({:terminate, :normal}, handler)
+      assert :ok = Handler.execute(handler, {:terminate, :normal})
       assert_receive {:terminate, :normal}
     end
   end

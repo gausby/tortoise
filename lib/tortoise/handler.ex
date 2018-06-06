@@ -37,14 +37,14 @@ defmodule Tortoise.Handler do
             when reason: :normal | :shutdown | {:shutdown, term}
 
   @doc false
-  def execute(:init, %__MODULE__{} = handler) do
+  def execute(handler, :init) do
     case apply(handler.module, :init, [handler.initial_args]) do
       {:ok, initial_state} ->
         {:ok, %__MODULE__{handler | state: initial_state}}
     end
   end
 
-  def execute({:connection, status}, %__MODULE__{} = handler) do
+  def execute(handler, {:connection, status}) do
     args = [status, handler.state]
 
     case apply(handler.module, :connection, args) do
@@ -53,7 +53,7 @@ defmodule Tortoise.Handler do
     end
   end
 
-  def execute({:publish, %Package.Publish{} = publish}, %__MODULE__{} = handler) do
+  def execute(handler, {:publish, %Package.Publish{} = publish}) do
     topic_list = String.split(publish.topic, "/")
     args = [topic_list, publish.payload, handler.state]
 
@@ -64,8 +64,8 @@ defmodule Tortoise.Handler do
   end
 
   def execute(
-        {:unsubscribe, %Inflight.Track{type: Package.Unsubscribe, result: unsubacks}},
-        %__MODULE__{} = handler
+        handler,
+        {:unsubscribe, %Inflight.Track{type: Package.Unsubscribe, result: unsubacks}}
       ) do
     updated_handler_state =
       Enum.reduce(unsubacks, handler.state, fn topic_filter, acc ->
@@ -81,8 +81,8 @@ defmodule Tortoise.Handler do
   end
 
   def execute(
-        {:subscribe, %Inflight.Track{type: Package.Subscribe, result: subacks}},
-        %__MODULE__{} = handler
+        handler,
+        {:subscribe, %Inflight.Track{type: Package.Subscribe, result: subacks}}
       ) do
     updated_handler_state =
       Enum.reduce(subacks, handler.state, fn
@@ -123,7 +123,7 @@ defmodule Tortoise.Handler do
     {:ok, %__MODULE__{handler | state: updated_handler_state}}
   end
 
-  def execute({:terminate, reason}, %__MODULE__{} = handler) do
+  def execute(handler, {:terminate, reason}) do
     _ignored = apply(handler.module, :terminate, [reason, handler.state])
     :ok
   end

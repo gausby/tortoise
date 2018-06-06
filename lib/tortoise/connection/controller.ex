@@ -99,14 +99,14 @@ defmodule Tortoise.Connection.Controller do
 
   # Server callbacks
   def init(%State{handler: handler} = opts) do
-    case Handler.execute(:init, handler) do
+    case Handler.execute(handler, :init) do
       {:ok, %Handler{} = updated_handler} ->
         {:ok, %State{opts | handler: updated_handler}}
     end
   end
 
   def terminate(reason, %State{handler: handler}) do
-    _ignored = Handler.execute({:terminate, reason}, handler)
+    _ignored = Handler.execute(handler, {:terminate, reason})
     :ok
   end
 
@@ -134,7 +134,7 @@ defmodule Tortoise.Connection.Controller do
         {:result, %Inflight.Track{type: Package.Subscribe} = track},
         %State{handler: handler} = state
       ) do
-    case Handler.execute({:subscribe, track}, handler) do
+    case Handler.execute(handler, {:subscribe, track}) do
       {:ok, updated_handler} ->
         {:noreply, %State{state | handler: updated_handler}}
     end
@@ -144,7 +144,7 @@ defmodule Tortoise.Connection.Controller do
         {:result, %Inflight.Track{type: Package.Unsubscribe} = track},
         %State{handler: handler} = state
       ) do
-    case Handler.execute({:unsubscribe, track}, handler) do
+    case Handler.execute(handler, {:unsubscribe, track}) do
       {:ok, updated_handler} ->
         {:noreply, %State{state | handler: updated_handler}}
     end
@@ -155,7 +155,7 @@ defmodule Tortoise.Connection.Controller do
   end
 
   def handle_cast({:update_connection_status, new_status}, %State{handler: handler} = state) do
-    case Handler.execute({:connection, new_status}, handler) do
+    case Handler.execute(handler, {:connection, new_status}) do
       {:ok, updated_handler} ->
         {:noreply, %State{state | handler: updated_handler, status: new_status}}
     end
@@ -167,7 +167,7 @@ defmodule Tortoise.Connection.Controller do
          %Publish{qos: 0, dup: false} = publish,
          %State{handler: handler} = state
        ) do
-    case Handler.execute({:publish, publish}, handler) do
+    case Handler.execute(handler, {:publish, publish}) do
       {:ok, updated_handler} ->
         {:noreply, %State{state | handler: updated_handler}}
 
@@ -183,7 +183,7 @@ defmodule Tortoise.Connection.Controller do
        ) do
     :ok = Inflight.track(state.client_id, {:incoming, publish})
 
-    case Handler.execute({:publish, publish}, handler) do
+    case Handler.execute(handler, {:publish, publish}) do
       {:ok, updated_handler} ->
         {:noreply, %State{state | handler: updated_handler}}
     end
@@ -203,7 +203,7 @@ defmodule Tortoise.Connection.Controller do
        ) do
     :ok = Inflight.track(state.client_id, {:incoming, publish})
 
-    case Handler.execute({:publish, publish}, handler) do
+    case Handler.execute(handler, {:publish, publish}) do
       {:ok, updated_handler} ->
         {:noreply, %State{state | handler: updated_handler}}
     end
