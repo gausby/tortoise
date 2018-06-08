@@ -5,7 +5,7 @@ defmodule Tortoise.Handler do
   alias Tortoise.Connection.Inflight
 
   @enforce_keys [:module, :initial_args]
-  defstruct module: nil, state: nil, initial_args: []
+  defstruct module: nil, state: nil, initial_args: [], next_actions: []
 
   @doc """
   Helper for building a Handler struct so we can keep it as an opaque
@@ -55,12 +55,10 @@ defmodule Tortoise.Handler do
 
   def execute(handler, {:publish, %Package.Publish{} = publish}) do
     topic_list = String.split(publish.topic, "/")
-    args = [topic_list, publish.payload, handler.state]
 
-    case apply(handler.module, :handle_message, args) do
-      {:ok, updated_state} ->
-        {:ok, %__MODULE__{handler | state: updated_state}}
-    end
+    handler.module
+    |> apply(:handle_message, [topic_list, publish.payload, handler.state])
+    |> handle_result(handler)
   end
 
   def execute(
@@ -126,5 +124,15 @@ defmodule Tortoise.Handler do
   def execute(handler, {:terminate, reason}) do
     _ignored = apply(handler.module, :terminate, [reason, handler.state])
     :ok
+  end
+
+  defp handle_result({:ok, updated_state}, handler) do
+    {:ok, %__MODULE__{handler | state: updated_state}}
+  end
+
+  defp handle_result({:ok, updated_state, next_actions}, handler)
+       when is_list(next_actions) do
+    next_actions = handler.next_actions ++ next_actions
+    {:ok, %__MODULE__{handler | state: updated_state, next_actions: next_actions}}
   end
 end

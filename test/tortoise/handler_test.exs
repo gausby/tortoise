@@ -24,6 +24,12 @@ defmodule Tortoise.HandlerTest do
       {:ok, state}
     end
 
+    # with next actions
+    def handle_message(topic, payload, %{next_actions: next_actions} = state) do
+      send(state[:pid], {:publish, topic, payload})
+      {:ok, state, next_actions}
+    end
+
     def handle_message(topic, payload, state) do
       send(state[:pid], {:publish, topic, payload})
       {:ok, state}
@@ -63,18 +69,36 @@ defmodule Tortoise.HandlerTest do
   end
 
   describe "execute handle_message/2" do
-    test "return ok", context do
-      handler = set_state(context.handler, pid: self())
+    test "return ok-2", context do
+      handler = set_state(context.handler, %{pid: self()})
       payload = :crypto.strong_rand_bytes(5)
-      topics = "foo/bar"
-      publish = %Package.Publish{topic: topics, payload: payload}
+      topic = "foo/bar"
+      publish = %Package.Publish{topic: topic, payload: payload}
 
       assert {:ok, %Handler{}} = Handler.execute(handler, {:publish, publish})
-      # the topics will be in the form of a list making it possible to
+      # the topic will be in the form of a list making it possible to
       # pattern match on the topic levels
       assert_receive {:publish, topic_list, ^payload}
       assert is_list(topic_list)
-      assert topics == Enum.join(topic_list, "/")
+      assert topic == Enum.join(topic_list, "/")
+    end
+
+    test "return ok-3", context do
+      next_actions = [{:subscribe, "foo/bar", [qos: 0]}]
+      opts = %{pid: self(), next_actions: next_actions}
+      handler = set_state(context.handler, opts)
+      payload = :crypto.strong_rand_bytes(5)
+      topic = "foo/bar"
+      publish = %Package.Publish{topic: topic, payload: payload}
+
+      assert {:ok, %Handler{next_actions: ^next_actions}} =
+               Handler.execute(handler, {:publish, publish})
+
+      # the topic will be in the form of a list making it possible to
+      # pattern match on the topic levels
+      assert_receive {:publish, topic_list, ^payload}
+      assert is_list(topic_list)
+      assert topic == Enum.join(topic_list, "/")
     end
   end
 
