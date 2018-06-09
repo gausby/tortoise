@@ -45,12 +45,9 @@ defmodule Tortoise.Handler do
   end
 
   def execute(handler, {:connection, status}) do
-    args = [status, handler.state]
-
-    case apply(handler.module, :connection, args) do
-      {:ok, updated_state} ->
-        {:ok, %__MODULE__{handler | state: updated_state}}
-    end
+    handler.module
+    |> apply(:connection, [status, handler.state])
+    |> handle_result(handler)
   end
 
   def execute(handler, {:publish, %Package.Publish{} = publish}) do
