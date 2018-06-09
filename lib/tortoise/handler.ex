@@ -62,17 +62,14 @@ defmodule Tortoise.Handler do
         handler,
         {:unsubscribe, %Inflight.Track{type: Package.Unsubscribe, result: unsubacks}}
       ) do
-    updated_handler_state =
-      Enum.reduce(unsubacks, handler.state, fn topic_filter, acc ->
-        args = [:down, topic_filter, acc]
+    Enum.reduce(unsubacks, {:ok, handler}, fn topic_filter, {:ok, acc} ->
+      acc.module
+      |> apply(:subscription, [:down, topic_filter, acc.state])
+      |> handle_result(acc)
 
-        case apply(handler.module, :subscription, args) do
-          {:ok, state} ->
-            state
-        end
-      end)
-
-    {:ok, %__MODULE__{handler | state: updated_handler_state}}
+      # _, {:stop, acc} ->
+      #   {:stop, acc}
+    end)
   end
 
   def execute(

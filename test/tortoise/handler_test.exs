@@ -74,14 +74,19 @@ defmodule Tortoise.HandlerTest do
 
     test "return ok-3-tuple", context do
       next_actions = [{:subscribe, "foo/bar", qos: 0}]
+
       handler =
         context.handler
         |> set_state(%{pid: self(), next_actions: next_actions})
 
-      assert {:ok, %Handler{next_actions: ^next_actions}} = Handler.execute(handler, {:connection, :up})
+      assert {:ok, %Handler{next_actions: ^next_actions}} =
+               Handler.execute(handler, {:connection, :up})
+
       assert_receive {:connection, :up}
 
-      assert {:ok, %Handler{next_actions: ^next_actions}} = Handler.execute(handler, {:connection, :down})
+      assert {:ok, %Handler{next_actions: ^next_actions}} =
+               Handler.execute(handler, {:connection, :down})
+
       assert_receive {:connection, :down}
     end
   end
