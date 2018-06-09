@@ -169,7 +169,7 @@ defmodule Tortoise.HandlerTest do
 
   describe "execute unsubscribe/2" do
     test "return ok", context do
-      unsubscribe = %Package.Unsubscribe{identifier: 1, topics: ["foo/bar", "baz/quun"]}
+      unsubscribe = %Package.Unsubscribe{identifier: 1, topics: ["foo/bar", "baz/quux"]}
       unsuback = %Package.Unsuback{identifier: 1}
       caller = {self(), make_ref()}
 
@@ -182,7 +182,7 @@ defmodule Tortoise.HandlerTest do
       assert {:ok, %Handler{}} = Handler.execute(handler, {:unsubscribe, result})
       # we should receive two subscription down messages
       assert_receive {:subscription, :down, "foo/bar"}
-      assert_receive {:subscription, :down, "baz/quun"}
+      assert_receive {:subscription, :down, "baz/quux"}
     end
   end
 
