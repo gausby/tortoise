@@ -76,43 +76,16 @@ defmodule Tortoise.Handler do
         handler,
         {:subscribe, %Inflight.Track{type: Package.Subscribe, result: subacks}}
       ) do
-    updated_handler_state =
-      Enum.reduce(subacks, handler.state, fn
-        {_, []}, state ->
-          state
+    subacks
+    |> flatten_subacks()
+    |> Enum.reduce({:ok, handler}, fn {op, topic_filter}, {:ok, handler} ->
+      handler.module
+      |> apply(:subscription, [op, topic_filter, handler.state])
+      |> handle_result(handler)
 
-        {:ok, oks}, state ->
-          Enum.reduce(oks, state, fn {topic_filter, _qos}, acc ->
-            args = [:up, topic_filter, acc]
-
-            case apply(handler.module, :subscription, args) do
-              {:ok, state} ->
-                state
-            end
-          end)
-
-        {:warn, warns}, state ->
-          Enum.reduce(warns, state, fn {topic_filter, warning}, acc ->
-            args = [{:warn, warning}, topic_filter, acc]
-
-            case apply(handler.module, :subscription, args) do
-              {:ok, state} ->
-                state
-            end
-          end)
-
-        {:error, errors}, state ->
-          Enum.reduce(errors, state, fn {reason, {topic_filter, _qos}}, acc ->
-            args = [{:error, reason}, topic_filter, acc]
-
-            case apply(handler.module, :subscription, args) do
-              {:ok, state} ->
-                state
-            end
-          end)
-      end)
-
-    {:ok, %__MODULE__{handler | state: updated_handler_state}}
+      # _, {:stop, acc} ->
+      #   {:stop, acc}
+    end)
   end
 
   def execute(handler, {:terminate, reason}) do
@@ -120,6 +93,37 @@ defmodule Tortoise.Handler do
     :ok
   end
 
+  # Subacks will come in a map with three keys in the form of tuples
+  # where the fist element is one of `:ok`, `:warn`, or `:error`. This
+  # is done to make it easy to pattern match in other parts of the
+  # system, and error out early if the result set contain errors. In
+  # this part of the system it is more convenient to transform the
+  # data to a flat list containing tuples of `{operation, data}` so we
+  # can reduce the handler state to collect the possible next actions,
+  # and pass through if there is an :error or :disconnect return.
+  defp flatten_subacks(subacks) do
+    Enum.reduce(subacks, [], fn
+      {_, []}, acc ->
+        acc
+
+      {:ok, entries}, acc ->
+        for {topic_filter, _qos} <- entries do
+          {:up, topic_filter}
+        end ++ acc
+
+      {:warn, entries}, acc ->
+        for {topic_filter, warning} <- entries do
+          {{:warn, warning}, topic_filter}
+        end ++ acc
+
+      {:error, entries}, acc ->
+        for {reason, {topic_filter, _qos}} <- entries do
+          {{:error, reason}, topic_filter}
+        end ++ acc
+    end)
+  end
+
+  # handle the user defined return from the callback
   defp handle_result({:ok, updated_state}, handler) do
     {:ok, %__MODULE__{handler | state: updated_state}}
   end
