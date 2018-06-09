@@ -130,7 +130,23 @@ defmodule Tortoise.Handler do
 
   defp handle_result({:ok, updated_state, next_actions}, handler)
        when is_list(next_actions) do
-    next_actions = handler.next_actions ++ next_actions
-    {:ok, %__MODULE__{handler | state: updated_state, next_actions: next_actions}}
+    case Enum.split_with(next_actions, &valid_next_action?/1) do
+      {next_actions, []} ->
+        next_actions = handler.next_actions ++ next_actions
+        {:ok, %__MODULE__{handler | state: updated_state, next_actions: next_actions}}
+
+      {_, errors} ->
+        throw({:invalid_next_action, errors})
+    end
   end
+
+  defp valid_next_action?({:subscribe, topic, opts}) do
+    is_binary(topic) and is_list(opts)
+  end
+
+  defp valid_next_action?({:unsubscribe, topic}) do
+    is_binary(topic)
+  end
+
+  defp valid_next_action?(_otherwise), do: false
 end
