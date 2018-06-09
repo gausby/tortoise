@@ -79,15 +79,15 @@ defmodule Tortoise.HandlerTest do
         context.handler
         |> set_state(%{pid: self(), next_actions: next_actions})
 
-      assert {:ok, %Handler{next_actions: ^next_actions}} =
-               Handler.execute(handler, {:connection, :up})
+      assert {:ok, %Handler{}} = Handler.execute(handler, {:connection, :up})
 
       assert_receive {:connection, :up}
+      assert_receive {:next_action, {:subscribe, "foo/bar", qos: 0}}
 
-      assert {:ok, %Handler{next_actions: ^next_actions}} =
-               Handler.execute(handler, {:connection, :down})
+      assert {:ok, %Handler{}} = Handler.execute(handler, {:connection, :down})
 
       assert_receive {:connection, :down}
+      assert_receive {:next_action, {:subscribe, "foo/bar", qos: 0}}
     end
   end
 
@@ -114,8 +114,9 @@ defmodule Tortoise.HandlerTest do
       topic = "foo/bar"
       publish = %Package.Publish{topic: topic, payload: payload}
 
-      assert {:ok, %Handler{next_actions: ^next_actions}} =
-               Handler.execute(handler, {:publish, publish})
+      assert {:ok, %Handler{}} = Handler.execute(handler, {:publish, publish})
+
+      assert_receive {:next_action, {:subscribe, "foo/bar", qos: 0}}
 
       # the topic will be in the form of a list making it possible to
       # pattern match on the topic levels
@@ -134,6 +135,10 @@ defmodule Tortoise.HandlerTest do
 
       assert {:error, {:invalid_next_action, [{:invalid, "bar"}]}} =
                Handler.execute(handler, {:publish, publish})
+
+      refute_receive {:next_action, {:invalid, "bar"}}
+      # we should not receive the otherwise valid next_action
+      refute_receive {:next_action, {:unsubscribe, "foo/bar"}}
 
       # the callback is still run so lets check the received data
       assert_receive {:publish, topic_list, ^payload}

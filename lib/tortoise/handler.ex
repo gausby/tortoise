@@ -5,7 +5,7 @@ defmodule Tortoise.Handler do
   alias Tortoise.Connection.Inflight
 
   @enforce_keys [:module, :initial_args]
-  defstruct module: nil, state: nil, initial_args: [], next_actions: []
+  defstruct module: nil, state: nil, initial_args: []
 
   @doc """
   Helper for building a Handler struct so we can keep it as an opaque
@@ -132,8 +132,10 @@ defmodule Tortoise.Handler do
        when is_list(next_actions) do
     case Enum.split_with(next_actions, &valid_next_action?/1) do
       {next_actions, []} ->
-        next_actions = handler.next_actions ++ next_actions
-        {:ok, %__MODULE__{handler | state: updated_state, next_actions: next_actions}}
+        # send the next actions to the process mailbox. Notice that
+        # this code is run in the context of the connection controller
+        for action <- next_actions, do: send(self(), {:next_action, action})
+        {:ok, %__MODULE__{handler | state: updated_state}}
 
       {_, errors} ->
         {:error, {:invalid_next_action, errors}}
