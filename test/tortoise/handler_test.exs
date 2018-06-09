@@ -123,6 +123,23 @@ defmodule Tortoise.HandlerTest do
       assert is_list(topic_list)
       assert topic == Enum.join(topic_list, "/")
     end
+
+    test "return ok-3 with invalid next action", context do
+      next_actions = [{:unsubscribe, "foo/bar"}, {:invalid, "bar"}]
+      opts = %{pid: self(), next_actions: next_actions}
+      handler = set_state(context.handler, opts)
+      payload = :crypto.strong_rand_bytes(5)
+      topic = "foo/bar"
+      publish = %Package.Publish{topic: topic, payload: payload}
+
+      assert {:error, {:invalid_next_action, [{:invalid, "bar"}]}} =
+               Handler.execute(handler, {:publish, publish})
+
+      # the callback is still run so lets check the received data
+      assert_receive {:publish, topic_list, ^payload}
+      assert is_list(topic_list)
+      assert topic == Enum.join(topic_list, "/")
+    end
   end
 
   describe "execute subscribe/2" do

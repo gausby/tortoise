@@ -136,7 +136,7 @@ defmodule Tortoise.Handler do
         {:ok, %__MODULE__{handler | state: updated_state, next_actions: next_actions}}
 
       {_, errors} ->
-        throw({:invalid_next_action, errors})
+        {:error, {:invalid_next_action, errors}}
     end
   end
 
