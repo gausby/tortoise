@@ -21,7 +21,8 @@ changes in the future. Amongst other things the client supports:
 
 Most of the public facing interface should be in the `Tortoise`
 module. See the GitHub issues for work in progress "known issues in
-the design", "what needs to be done", and so forth list of todo's.
+the design", "what needs to be done", and so forth; feel free to open
+your own issues if something is confusing or broken.
 
 I would love to get some feedback and help building this thing.
 
@@ -64,7 +65,7 @@ dependencies in `mix.exs`:
 ```elixir
 def deps do
   [
-    {:tortoise, "~> 0.2.2"}
+    {:tortoise, "~> 0.3.0"}
   ]
 end
 ```

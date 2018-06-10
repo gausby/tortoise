@@ -1,5 +1,48 @@
 # Changelog
 
+## 0.3.0 - 2018-06-10
+
+### Added
+
+- Thanks to [Troels Brødsgaard](https://github.com/trarbr) Tortoise
+  now implement a module for its registry. This is found in
+  `Tortoise.Registry`.
+
+- The user defined controller handler callback module now accept "next
+  actions" in the return tuple; this allow the user to specify that a
+  topic should get subscribed to, or unsubscribed from, by specifying
+  a return like `{:ok, new_state, [{:subscribe, "foo/bar", qos: 3},
+  {:unsubscribe, "baz/quux"}]`.
+
+  This is needed as the controller must not be blocked, and the user
+  defined callback module run in the context of the controller. By
+  allowing next actions like this the user can subscribe and
+  unsubscribe to topics when certain events happen.
+
+- The test coverage tool will now ignore modules found in the
+  *lib/tortoise/handlers/*-folder. These modules implement the
+  `Tortoise.Handler`-behaviour, so they should be good.
+
+### Changed
+
+- `Tortoise.subscribe/3` is now async, so a message will get sent to
+  the mailbox of the calling process. The old behavior can be found in
+  the newly created `Tortoise.subscribe_sync/3` that will block until
+  the server has acknowledged the subscribe.
+
+- `Tortoise.unsubscribe/3` is now also async, so like the subscribe a
+  message will get sent to the mailbox of the calling process. The old
+  behavior can be found in the newly added
+  `Tortoise.unsubscribe_sync/3` that will block until the server has
+  acknowledged the subscribe.
+
+- A major refactorization of the code handling the logic running the
+  user defined controller callbacks has been lifted from the
+  `Tortoise.Connection.Controller` and put into the `Tortoise.Handler`
+  module. This change made it possible to support the next actions,
+  and makes it much easier test and add new next action types in the
+  future.
+
 ## 0.2.2 - 2018-05-29
 
 ### Changed
