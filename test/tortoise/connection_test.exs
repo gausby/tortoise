@@ -222,7 +222,8 @@ defmodule Tortoise.ConnectionTest do
 
       connect = %Package.Connect{client_id: client_id, clean_session: true}
       subscription_foo = Enum.into([{"foo", 0}], %Package.Subscribe{identifier: 1})
-      subscription_bar = Enum.into([{"bar", 0}], %Package.Subscribe{identifier: 2})
+      subscription_bar = Enum.into([{"bar", 1}], %Package.Subscribe{identifier: 2})
+      subscription_baz = Enum.into([{"baz", 2}], %Package.Subscribe{identifier: 3})
 
       script = [
         {:receive, connect},
@@ -232,7 +233,9 @@ defmodule Tortoise.ConnectionTest do
         {:send, %Package.Suback{identifier: 1, acks: [{:ok, 0}]}},
         # subscribe to bar with qos 0
         {:receive, subscription_bar},
-        {:send, %Package.Suback{identifier: 2, acks: [{:ok, 0}]}}
+        {:send, %Package.Suback{identifier: 2, acks: [{:ok, 1}]}},
+        {:receive, subscription_baz},
+        {:send, %Package.Suback{identifier: 3, acks: [{:ok, 2}]}}
       ]
 
       {:ok, {ip, port}} = ScriptedMqttServer.enact(context.scripted_mqtt_server, script)
@@ -253,12 +256,20 @@ defmodule Tortoise.ConnectionTest do
       assert Enum.member?(Tortoise.Connection.subscriptions(client_id), {"foo", 0})
 
       # subscribe to a bar
-      :ok = Tortoise.Connection.subscribe_sync(client_id, {"bar", 0}, identifier: 2)
+      assert {:ok, ref} = Tortoise.Connection.subscribe(client_id, {"bar", 1}, identifier: 2)
+      assert_receive {{Tortoise, ^client_id}, ^ref, :ok}
       assert_receive {ScriptedMqttServer, {:received, ^subscription_bar}}
-      # both foo and bar should now be in the subscription list
+
+      # subscribe to a baz
+      assert {:ok, ref} = Tortoise.Connection.subscribe(client_id, "baz", qos: 2, identifier: 3)
+      assert_receive {{Tortoise, ^client_id}, ^ref, :ok}
+      assert_receive {ScriptedMqttServer, {:received, ^subscription_baz}}
+
+      # foo, bar, and baz should now be in the subscription list
       subscriptions = Tortoise.Connection.subscriptions(client_id)
       assert Enum.member?(subscriptions, {"foo", 0})
-      assert Enum.member?(subscriptions, {"bar", 0})
+      assert Enum.member?(subscriptions, {"bar", 1})
+      assert Enum.member?(subscriptions, {"baz", 2})
 
       # done
       assert_receive {ScriptedMqttServer, :completed}
@@ -304,7 +315,8 @@ defmodule Tortoise.ConnectionTest do
                Tortoise.Connection.subscriptions(client_id)
 
       # and unsubscribe from bar
-      :ok = Tortoise.Connection.unsubscribe_sync(client_id, "bar", identifier: 3)
+      assert {:ok, ref} = Tortoise.Connection.unsubscribe(client_id, "bar", identifier: 3)
+      assert_receive {{Tortoise, ^client_id}, ^ref, :ok}
       assert_receive {ScriptedMqttServer, {:received, ^unsubscribe_bar}}
       assert %Package.Subscribe{topics: []} = Tortoise.Connection.subscriptions(client_id)
 
