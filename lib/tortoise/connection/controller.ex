@@ -1,6 +1,8 @@
 defmodule Tortoise.Connection.Controller do
   @moduledoc false
 
+  require Logger
+
   alias Tortoise.Package
   alias Tortoise.Connection.{Transmitter, Inflight}
   alias Tortoise.Handler
@@ -28,6 +30,7 @@ defmodule Tortoise.Connection.Controller do
   defstruct client_id: nil,
             ping: :queue.new(),
             status: :down,
+            awaiting: %{},
             handler: %Handler{module: Handler.Default, initial_args: []}
 
   alias __MODULE__, as: State
@@ -37,7 +40,7 @@ defmodule Tortoise.Connection.Controller do
     client_id = Keyword.fetch!(opts, :client_id)
     handler = Handler.new(Keyword.fetch!(opts, :handler))
 
-    init_state = %__MODULE__{
+    init_state = %State{
       client_id: client_id,
       handler: handler
     }
@@ -51,6 +54,10 @@ defmodule Tortoise.Connection.Controller do
 
   def stop(client_id) do
     GenServer.stop(via_name(client_id))
+  end
+
+  def info(client_id) do
+    GenServer.call(via_name(client_id), :info)
   end
 
   def ping(client_id) do
@@ -98,16 +105,20 @@ defmodule Tortoise.Connection.Controller do
   end
 
   # Server callbacks
-  def init(%__MODULE__{} = opts) do
-    case run_init_callback(opts) do
-      {:ok, %__MODULE__{} = initial_state} ->
-        {:ok, initial_state}
+  def init(%State{handler: handler} = opts) do
+    case Handler.execute(handler, :init) do
+      {:ok, %Handler{} = updated_handler} ->
+        {:ok, %State{opts | handler: updated_handler}}
     end
   end
 
-  def terminate(reason, state) do
-    _ignored = run_terminate_callback(reason, state)
+  def terminate(reason, %State{handler: handler}) do
+    _ignored = Handler.execute(handler, {:terminate, reason})
     :ok
+  end
+
+  def handle_call(:info, _from, state) do
+    {:reply, state, state}
   end
 
   def handle_cast({:incoming, <<package::binary>>}, state) do
@@ -132,21 +143,21 @@ defmodule Tortoise.Connection.Controller do
 
   def handle_cast(
         {:result, %Inflight.Track{type: Package.Subscribe} = track},
-        state
+        %State{handler: handler} = state
       ) do
-    case run_subscription_callback(track, state) do
-      {:ok, state} ->
-        {:noreply, state}
+    case Handler.execute(handler, {:subscribe, track}) do
+      {:ok, updated_handler} ->
+        {:noreply, %State{state | handler: updated_handler}}
     end
   end
 
   def handle_cast(
         {:result, %Inflight.Track{type: Package.Unsubscribe} = track},
-        state
+        %State{handler: handler} = state
       ) do
-    case run_subscription_callback(track, state) do
-      {:ok, state} ->
-        {:noreply, state}
+    case Handler.execute(handler, {:unsubscribe, track}) do
+      {:ok, updated_handler} ->
+        {:noreply, %State{state | handler: updated_handler}}
     end
   end
 
@@ -154,20 +165,51 @@ defmodule Tortoise.Connection.Controller do
     {:noreply, state}
   end
 
-  def handle_cast({:update_connection_status, new_status}, %State{} = state) do
-    case run_connection_callback(new_status, %State{state | status: new_status}) do
-      {:ok, state} ->
+  def handle_cast({:update_connection_status, new_status}, %State{handler: handler} = state) do
+    case Handler.execute(handler, {:connection, new_status}) do
+      {:ok, updated_handler} ->
+        {:noreply, %State{state | handler: updated_handler, status: new_status}}
+    end
+  end
+
+  def handle_info({:next_action, {:subscribe, topic, opts} = action}, state) do
+    {qos, opts} = Keyword.pop_first(opts, :qos, 0)
+
+    case Tortoise.Connection.subscribe(state.client_id, [{topic, qos}], opts) do
+      {:ok, ref} ->
+        updated_awaiting = Map.put_new(state.awaiting, ref, action)
+        {:noreply, %State{state | awaiting: updated_awaiting}}
+    end
+  end
+
+  def handle_info({:next_action, {:unsubscribe, topic} = action}, state) do
+    case Tortoise.Connection.unsubscribe(state.client_id, topic) do
+      {:ok, ref} ->
+        updated_awaiting = Map.put_new(state.awaiting, ref, action)
+        {:noreply, %State{state | awaiting: updated_awaiting}}
+    end
+  end
+
+  def handle_info({{Tortoise, client_id}, ref, result}, %{client_id: client_id} = state) do
+    case {result, Map.pop(state.awaiting, ref)} do
+      {_, {nil, _}} ->
+        Logger.warn("Unexpected async result")
         {:noreply, state}
+
+      {:ok, {_action, updated_awaiting}} ->
+        {:noreply, %State{state | awaiting: updated_awaiting}}
     end
   end
 
   # QoS LEVEL 0 ========================================================
   # commands -----------------------------------------------------------
-  defp handle_package(%Publish{qos: 0, dup: false} = publish, state) do
-    # dispatch message
-    case run_publish_callback(publish, state) do
-      {:ok, state} ->
-        {:noreply, state}
+  defp handle_package(
+         %Publish{qos: 0, dup: false} = publish,
+         %State{handler: handler} = state
+       ) do
+    case Handler.execute(handler, {:publish, publish}) do
+      {:ok, updated_handler} ->
+        {:noreply, %State{state | handler: updated_handler}}
 
         # handle stop
     end
@@ -175,12 +217,15 @@ defmodule Tortoise.Connection.Controller do
 
   # QoS LEVEL 1 ========================================================
   # commands -----------------------------------------------------------
-  defp handle_package(%Publish{qos: 1} = publish, state) do
+  defp handle_package(
+         %Publish{qos: 1} = publish,
+         %State{handler: handler} = state
+       ) do
     :ok = Inflight.track(state.client_id, {:incoming, publish})
-    # dispatch message
-    case run_publish_callback(publish, state) do
-      {:ok, state} ->
-        {:noreply, state}
+
+    case Handler.execute(handler, {:publish, publish}) do
+      {:ok, updated_handler} ->
+        {:noreply, %State{state | handler: updated_handler}}
     end
   end
 
@@ -192,12 +237,15 @@ defmodule Tortoise.Connection.Controller do
 
   # QoS LEVEL 2 ========================================================
   # commands -----------------------------------------------------------
-  defp handle_package(%Publish{qos: 2, dup: false} = publish, state) do
+  defp handle_package(
+         %Publish{qos: 2, dup: false} = publish,
+         %State{handler: handler} = state
+       ) do
     :ok = Inflight.track(state.client_id, {:incoming, publish})
 
-    case run_publish_callback(publish, state) do
-      {:ok, state} ->
-        {:noreply, state}
+    case Handler.execute(handler, {:publish, publish}) do
+      {:ok, updated_handler} ->
+        {:noreply, %State{state | handler: updated_handler}}
     end
   end
 
@@ -283,107 +331,5 @@ defmodule Tortoise.Connection.Controller do
   defp handle_package(%Disconnect{}, state) do
     # not a server
     {:noreply, state}
-  end
-
-  # handler callbacks
-  defp run_init_callback(state) do
-    args = [state.handler.initial_args]
-
-    case apply(state.handler.module, :init, args) do
-      {:ok, initial_state} ->
-        updated_handler = %{state.handler | state: initial_state}
-        {:ok, %__MODULE__{state | handler: updated_handler}}
-    end
-  end
-
-  defp run_terminate_callback(reason, state) do
-    args = [reason, state.handler.state]
-
-    apply(state.handler.module, :terminate, args)
-  end
-
-  defp run_publish_callback(%Publish{} = publish, state) do
-    topic_list = String.split(publish.topic, "/")
-    args = [topic_list, publish.payload, state.handler.state]
-
-    case apply(state.handler.module, :handle_message, args) do
-      {:ok, updated_handler_state} ->
-        updated_handler = %{state.handler | state: updated_handler_state}
-        {:ok, %__MODULE__{state | handler: updated_handler}}
-    end
-  end
-
-  defp run_subscription_callback(
-         %Inflight.Track{type: Package.Subscribe, result: subacks},
-         state
-       ) do
-    handler_module = state.handler.module
-
-    updated_handler_state =
-      Enum.reduce(subacks, state.handler.state, fn
-        {_, []}, state ->
-          state
-
-        {:ok, oks}, state ->
-          Enum.reduce(oks, state, fn {topic_filter, _qos}, acc ->
-            args = [:up, topic_filter, acc]
-
-            case apply(handler_module, :subscription, args) do
-              {:ok, state} ->
-                state
-            end
-          end)
-
-        {:warn, warns}, state ->
-          Enum.reduce(warns, state, fn {topic_filter, warning}, acc ->
-            args = [{:warn, warning}, topic_filter, acc]
-
-            case apply(handler_module, :subscription, args) do
-              {:ok, state} ->
-                state
-            end
-          end)
-
-        {:error, errors}, state ->
-          Enum.reduce(errors, state, fn {reason, {topic_filter, _qos}}, acc ->
-            args = [{:error, reason}, topic_filter, acc]
-
-            case apply(handler_module, :subscription, args) do
-              {:ok, state} ->
-                state
-            end
-          end)
-      end)
-
-    updated_handler = %{state.handler | state: updated_handler_state}
-    {:ok, %__MODULE__{state | handler: updated_handler}}
-  end
-
-  defp run_subscription_callback(
-         %Inflight.Track{type: Package.Unsubscribe, result: unsubacks},
-         state
-       ) do
-    updated_handler_state =
-      Enum.reduce(unsubacks, state.handler.state, fn topic_filter, acc ->
-        args = [:down, topic_filter, acc]
-
-        case apply(state.handler.module, :subscription, args) do
-          {:ok, state} ->
-            state
-        end
-      end)
-
-    updated_handler = %{state.handler | state: updated_handler_state}
-    {:ok, %__MODULE__{state | handler: updated_handler}}
-  end
-
-  defp run_connection_callback(status, state) do
-    args = [status, state.handler.state]
-
-    case apply(state.handler.module, :connection, args) do
-      {:ok, updated_handler_state} ->
-        updated_handler = %{state.handler | state: updated_handler_state}
-        {:ok, %State{state | handler: updated_handler}}
-    end
   end
 end

@@ -5,6 +5,8 @@ defmodule Tortoise.Connection.ControllerTest do
   alias Tortoise.Package
   alias Tortoise.Connection.{Controller, Inflight, Transmitter}
 
+  import ExUnit.CaptureLog
+
   defmodule TestHandler do
     @behaviour Tortoise.Handler
 
@@ -156,6 +158,23 @@ defmodule Tortoise.Connection.ControllerTest do
       # the server will respond with an pingresp (ping response)
       Controller.handle_incoming(context.client_id, %Package.Pingresp{})
       assert_receive {Tortoise, {:ping_response, ^ping_ref, _ping_time}}
+    end
+
+    test "send a sync ping request", context do
+      # send a ping request to the server
+      parent = self()
+
+      spawn_link(fn ->
+        {:ok, time} = Controller.ping_sync(context.client_id)
+        send(parent, {:ping_result, time})
+      end)
+
+      # assert that the server receives a ping request package
+      {:ok, package} = :gen_tcp.recv(context.server, 0, 200)
+      assert %Package.Pingreq{} = Package.decode(package)
+      # the server will respond with an pingresp (ping response)
+      Controller.handle_incoming(context.client_id, %Package.Pingresp{})
+      assert_receive {:ping_result, _time}
     end
 
     test "receive a ping request", context do
@@ -394,6 +413,46 @@ defmodule Tortoise.Connection.ControllerTest do
       assert_receive {{Tortoise, ^client_id}, ^ref, _}
       # the callback module should get the error
       assert_receive {:subscription_error, {"foo", :access_denied}}
+    end
+  end
+
+  describe "next actions" do
+    setup [:setup_controller]
+
+    test "subscribe action", context do
+      client_id = context.client_id
+      next_action = {:subscribe, "foo/bar", qos: 0}
+      send(context.controller_pid, {:next_action, next_action})
+      %{awaiting: awaiting} = Controller.info(client_id)
+      assert [{ref, ^next_action}] = Map.to_list(awaiting)
+      response = {{Tortoise, client_id}, ref, :ok}
+      send(context.controller_pid, response)
+      %{awaiting: awaiting} = Controller.info(client_id)
+      assert [] = Map.to_list(awaiting)
+    end
+
+    test "unsubscribe action", context do
+      client_id = context.client_id
+      next_action = {:unsubscribe, "foo/bar"}
+      send(context.controller_pid, {:next_action, next_action})
+      %{awaiting: awaiting} = Controller.info(client_id)
+      assert [{ref, ^next_action}] = Map.to_list(awaiting)
+      response = {{Tortoise, client_id}, ref, :ok}
+      send(context.controller_pid, response)
+      %{awaiting: awaiting} = Controller.info(client_id)
+      assert [] = Map.to_list(awaiting)
+    end
+
+    test "receiving unknown async ref", context do
+      client_id = context.client_id
+      ref = make_ref()
+
+      assert capture_log(fn ->
+               send(context.controller_pid, {{Tortoise, client_id}, ref, :ok})
+             end) =~ "Unexpected"
+
+      %{awaiting: awaiting} = Controller.info(client_id)
+      assert [] = Map.to_list(awaiting)
     end
   end
 end
