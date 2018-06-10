@@ -12,7 +12,7 @@
   actions" in the return tuple; this allow the user to specify that a
   topic should get subscribed to, or unsubscribed from, by specifying
   a return like `{:ok, new_state, [{:subscribe, "foo/bar", qos: 3},
-  {:unsubscribe, "baz/quux"}]`.
+  {:unsubscribe, "baz/quux"}]}`.
 
   This is needed as the controller must not be blocked, and the user
   defined callback module run in the context of the controller. By
