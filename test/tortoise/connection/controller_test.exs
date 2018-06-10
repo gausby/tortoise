@@ -5,6 +5,8 @@ defmodule Tortoise.Connection.ControllerTest do
   alias Tortoise.Package
   alias Tortoise.Connection.{Controller, Inflight, Transmitter}
 
+  import ExUnit.CaptureLog
+
   defmodule TestHandler do
     @behaviour Tortoise.Handler
 
@@ -437,6 +439,18 @@ defmodule Tortoise.Connection.ControllerTest do
       assert [{ref, ^next_action}] = Map.to_list(awaiting)
       response = {{Tortoise, client_id}, ref, :ok}
       send(context.controller_pid, response)
+      %{awaiting: awaiting} = Controller.info(client_id)
+      assert [] = Map.to_list(awaiting)
+    end
+
+    test "receiving unknown async ref", context do
+      client_id = context.client_id
+      ref = make_ref()
+
+      assert capture_log(fn ->
+               send(context.controller_pid, {{Tortoise, client_id}, ref, :ok})
+             end) =~ "Unexpected"
+
       %{awaiting: awaiting} = Controller.info(client_id)
       assert [] = Map.to_list(awaiting)
     end
