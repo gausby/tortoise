@@ -143,14 +143,28 @@ defmodule Tortoise.Connection do
 
   def unsubscribe(client_id, topics, opts \\ [])
 
-  def unsubscribe(client_id, topics, opts) when is_list(topics) do
+  def unsubscribe(client_id, [topic | _] = topics, opts) when is_binary(topic) do
+    caller = {_, ref} = {self(), make_ref()}
+    {identifier, opts} = Keyword.pop_first(opts, :identifier, nil)
+    unsubscribe = %Package.Unsubscribe{identifier: identifier, topics: topics}
+    GenServer.cast(via_name(client_id), {:unsubscribe, caller, unsubscribe, opts})
+    {:ok, ref}
+  end
+
+  def unsubscribe(client_id, topic, opts) when is_binary(topic) do
+    unsubscribe(client_id, [topic], opts)
+  end
+
+  def unsubscribe_sync(client_id, topics, opts \\ [])
+
+  def unsubscribe_sync(client_id, topics, opts) when is_list(topics) do
     identifier = Keyword.get(opts, :identifier, nil)
     unsubscribe = %Package.Unsubscribe{identifier: identifier, topics: topics}
     GenServer.call(via_name(client_id), {:unsubscribe, unsubscribe})
   end
 
-  def unsubscribe(client_id, topic, opts) when is_binary(topic) do
-    unsubscribe(client_id, [topic], opts)
+  def unsubscribe_sync(client_id, topic, opts) when is_binary(topic) do
+    unsubscribe_sync(client_id, [topic], opts)
   end
 
   def subscriptions(client_id) do
@@ -263,6 +277,23 @@ defmodule Tortoise.Connection do
             send(caller_pid, {{Tortoise, client_id}, ref, {:error, reasons}})
             {:stop, error, state}
         end
+    end
+  end
+
+  def handle_cast({:unsubscribe, {caller_pid, ref}, unsubscribe, opts}, state) do
+    client_id = state.connect.client_id
+    timeout = Keyword.get(opts, :timeout, 5000)
+
+    case Inflight.track_sync(client_id, {:outgoing, unsubscribe}, timeout) do
+      {:error, :timeout} = error ->
+        send(caller_pid, {{Tortoise, client_id}, ref, error})
+        {:noreply, state}
+
+      unsubbed ->
+        topics = Keyword.drop(state.subscriptions.topics, unsubbed)
+        subscriptions = %Package.Subscribe{state.subscriptions | topics: topics}
+        send(caller_pid, {{Tortoise, client_id}, ref, :ok})
+        {:noreply, %State{state | subscriptions: subscriptions}}
     end
   end
 

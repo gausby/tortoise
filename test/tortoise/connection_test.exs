@@ -297,14 +297,14 @@ defmodule Tortoise.ConnectionTest do
       assert_receive {ScriptedMqttServer, {:received, ^connect}}
 
       # now let us try to unsubscribe from foo
-      :ok = Tortoise.Connection.unsubscribe(client_id, "foo", identifier: 2)
+      :ok = Tortoise.Connection.unsubscribe_sync(client_id, "foo", identifier: 2)
       assert_receive {ScriptedMqttServer, {:received, ^unsubscribe_foo}}
 
       assert %Package.Subscribe{topics: [{"bar", 2}]} =
                Tortoise.Connection.subscriptions(client_id)
 
       # and unsubscribe from bar
-      :ok = Tortoise.Connection.unsubscribe(client_id, "bar", identifier: 3)
+      :ok = Tortoise.Connection.unsubscribe_sync(client_id, "bar", identifier: 3)
       assert_receive {ScriptedMqttServer, {:received, ^unsubscribe_bar}}
       assert %Package.Subscribe{topics: []} = Tortoise.Connection.subscriptions(client_id)
 

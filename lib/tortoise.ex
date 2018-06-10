@@ -74,5 +74,9 @@ defmodule Tortoise do
   given as strings. Multiple topic filters can be given at once by
   passing in a list of strings.
   """
-  defdelegate unsubscribe(client_id, topics, opts \\ []), to: Tortoise.Connection
+  defdelegate unsubscribe(client_id, topics, opts \\ []),
+    to: Tortoise.Connection
+
+  defdelegate unsubscribe_sync(client_id, topics, opts \\ []),
+    to: Tortoise.Connection
 end

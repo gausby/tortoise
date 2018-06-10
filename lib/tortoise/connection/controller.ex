@@ -174,6 +174,13 @@ defmodule Tortoise.Connection.Controller do
     end
   end
 
+  def handle_info({:next_action, {:unsubscribe, topic} = action}, state) do
+    case Tortoise.Connection.unsubscribe(state.client_id, topic) do
+      {:ok, ref} ->
+        updated_awaiting = Map.put_new(state.awaiting, ref, action)
+        {:noreply, %State{state | awaiting: updated_awaiting}}
+    end
+  end
 
   def handle_info({{Tortoise, client_id}, ref, result}, %{client_id: client_id} = state) do
     case {result, Map.pop(state.awaiting, ref)} do
