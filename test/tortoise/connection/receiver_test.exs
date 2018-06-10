@@ -20,7 +20,7 @@ defmodule Tortoise.Connection.ReceiverTest do
   end
 
   def setup_controller(context) do
-    Registry.register(Registry.Tortoise, {Controller, context.client_id}, self())
+    Registry.register(Tortoise.Registry, {Controller, context.client_id}, self())
     :ok
   end
 

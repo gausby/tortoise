@@ -16,14 +16,8 @@ defmodule Tortoise.Connection.Receiver do
     GenStateMachine.start_link(__MODULE__, data, name: via_name(client_id))
   end
 
-  defp via_name(pid) when is_pid(pid), do: pid
-
   defp via_name(client_id) do
-    {:via, Registry, reg_name(client_id)}
-  end
-
-  def reg_name(client_id) do
-    {Registry.Tortoise, {__MODULE__, client_id}}
+    Tortoise.Registry.via_name(__MODULE__, client_id)
   end
 
   def child_spec(opts) do
