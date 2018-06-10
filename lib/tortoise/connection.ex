@@ -98,13 +98,47 @@ defmodule Tortoise.Connection do
   def subscribe(client_id, topics, opts \\ [])
 
   def subscribe(client_id, [{_, n} | _] = topics, opts) when is_number(n) do
+    caller = {_, ref} = {self(), make_ref()}
+    {identifier, opts} = Keyword.pop_first(opts, :identifier, nil)
+    subscribe = Enum.into(topics, %Package.Subscribe{identifier: identifier})
+    GenServer.cast(via_name(client_id), {:subscribe, caller, subscribe, opts})
+    {:ok, ref}
+  end
+
+  def subscribe(client_id, {_, n} = topic, opts) when is_number(n) do
+    subscribe(client_id, [topic], opts)
+  end
+
+  def subscribe(client_id, topic, opts) when is_binary(topic) do
+    case Keyword.pop_first(opts, :qos) do
+      {nil, _opts} ->
+        throw("Please specify a quality of service for the subscription")
+
+      {qos, opts} when qos in 0..2 ->
+        subscribe(client_id, [{topic, qos}], opts)
+    end
+  end
+
+  def subscribe_sync(client_id, topics, opts \\ [])
+
+  def subscribe_sync(client_id, [{_, n} | _] = topics, opts) when is_number(n) do
     identifier = Keyword.get(opts, :identifier, nil)
     subscribe = Enum.into(topics, %Package.Subscribe{identifier: identifier})
     GenServer.call(via_name(client_id), {:subscribe, subscribe})
   end
 
-  def subscribe(client_id, {_, n} = topic, opts) when is_number(n) do
-    subscribe(client_id, [topic], opts)
+  def subscribe_sync(client_id, {_, n} = topic, opts) when is_number(n) do
+    subscribe_sync(client_id, [topic], opts)
+  end
+
+  def subscribe_sync(client_id, topic, opts) when is_binary(topic) do
+    case Keyword.pop_first(opts, :qos) do
+      {nil, _opts} ->
+        throw("Please specify a quality of service for the subscription")
+
+      {qos, opts} ->
+        subscribe_sync(client_id, [{topic, qos}], opts)
+    end
   end
 
   def unsubscribe(client_id, topics, opts \\ [])
@@ -206,6 +240,30 @@ defmodule Tortoise.Connection do
   def handle_cast(:renew_connection, state) do
     :ok = Controller.update_connection_status(state.connect.client_id, :down)
     do_attempt_reconnect(state)
+  end
+
+  # cast subscribing
+  def handle_cast({:subscribe, {caller_pid, ref}, subscribe, opts}, state) do
+    client_id = state.connect.client_id
+    timeout = Keyword.get(opts, :timeout, 5000)
+
+    case Inflight.track_sync(client_id, {:outgoing, subscribe}, timeout) do
+      {:error, :timeout} = error ->
+        send(caller_pid, {{Tortoise, client_id}, ref, error})
+        {:noreply, state}
+
+      result ->
+        case handle_suback_result(result, state) do
+          {:ok, updated_state} ->
+            send(caller_pid, {{Tortoise, client_id}, ref, :ok})
+            {:noreply, updated_state}
+
+          {:error, reasons} ->
+            error = {:unable_to_subscribe, reasons}
+            send(caller_pid, {{Tortoise, client_id}, ref, {:error, reasons}})
+            {:stop, error, state}
+        end
+    end
   end
 
   # subscribing

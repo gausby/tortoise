@@ -1,6 +1,8 @@
 defmodule Tortoise.Connection.Controller do
   @moduledoc false
 
+  require Logger
+
   alias Tortoise.Package
   alias Tortoise.Connection.{Transmitter, Inflight}
   alias Tortoise.Handler
@@ -28,6 +30,7 @@ defmodule Tortoise.Connection.Controller do
   defstruct client_id: nil,
             ping: :queue.new(),
             status: :down,
+            awaiting: %{},
             handler: %Handler{module: Handler.Default, initial_args: []}
 
   alias __MODULE__, as: State
@@ -158,6 +161,28 @@ defmodule Tortoise.Connection.Controller do
     case Handler.execute(handler, {:connection, new_status}) do
       {:ok, updated_handler} ->
         {:noreply, %State{state | handler: updated_handler, status: new_status}}
+    end
+  end
+
+  def handle_info({:next_action, {:subscribe, topic, opts} = action}, state) do
+    {qos, opts} = Keyword.pop_first(opts, :qos, 0)
+
+    case Tortoise.Connection.subscribe(state.client_id, [{topic, qos}], opts) do
+      {:ok, ref} ->
+        updated_awaiting = Map.put_new(state.awaiting, ref, action)
+        {:noreply, %State{state | awaiting: updated_awaiting}}
+    end
+  end
+
+
+  def handle_info({{Tortoise, client_id}, ref, result}, %{client_id: client_id} = state) do
+    case {result, Map.pop(state.awaiting, ref)} do
+      {_, {nil, _}} ->
+        Logger.warn("Unexpected async result")
+        {:noreply, state}
+
+      {:ok, {_action, updated_awaiting}} ->
+        {:noreply, %State{state | awaiting: updated_awaiting}}
     end
   end
 

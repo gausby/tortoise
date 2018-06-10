@@ -248,12 +248,12 @@ defmodule Tortoise.ConnectionTest do
       assert_receive {ScriptedMqttServer, {:received, ^connect}}
 
       # subscribe to a foo
-      :ok = Tortoise.Connection.subscribe(client_id, {"foo", 0}, identifier: 1)
+      :ok = Tortoise.Connection.subscribe_sync(client_id, {"foo", 0}, identifier: 1)
       assert_receive {ScriptedMqttServer, {:received, ^subscription_foo}}
       assert Enum.member?(Tortoise.Connection.subscriptions(client_id), {"foo", 0})
 
       # subscribe to a bar
-      :ok = Tortoise.Connection.subscribe(client_id, {"bar", 0}, identifier: 2)
+      :ok = Tortoise.Connection.subscribe_sync(client_id, {"bar", 0}, identifier: 2)
       assert_receive {ScriptedMqttServer, {:received, ^subscription_bar}}
       # both foo and bar should now be in the subscription list
       subscriptions = Tortoise.Connection.subscriptions(client_id)
