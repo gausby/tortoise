@@ -413,4 +413,32 @@ defmodule Tortoise.Connection.ControllerTest do
       assert_receive {:subscription_error, {"foo", :access_denied}}
     end
   end
+
+  describe "next actions" do
+    setup [:setup_controller]
+
+    test "subscribe action", context do
+      client_id = context.client_id
+      next_action = {:subscribe, "foo/bar", qos: 0}
+      send(context.controller_pid, {:next_action, next_action})
+      %{awaiting: awaiting} = Controller.info(client_id)
+      assert [{ref, ^next_action}] = Map.to_list(awaiting)
+      response = {{Tortoise, client_id}, ref, :ok}
+      send(context.controller_pid, response)
+      %{awaiting: awaiting} = Controller.info(client_id)
+      assert [] = Map.to_list(awaiting)
+    end
+
+    test "unsubscribe action", context do
+      client_id = context.client_id
+      next_action = {:unsubscribe, "foo/bar"}
+      send(context.controller_pid, {:next_action, next_action})
+      %{awaiting: awaiting} = Controller.info(client_id)
+      assert [{ref, ^next_action}] = Map.to_list(awaiting)
+      response = {{Tortoise, client_id}, ref, :ok}
+      send(context.controller_pid, response)
+      %{awaiting: awaiting} = Controller.info(client_id)
+      assert [] = Map.to_list(awaiting)
+    end
+  end
 end

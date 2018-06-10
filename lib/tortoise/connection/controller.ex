@@ -56,6 +56,10 @@ defmodule Tortoise.Connection.Controller do
     GenServer.stop(via_name(client_id))
   end
 
+  def info(client_id) do
+    GenServer.call(via_name(client_id), :info)
+  end
+
   def ping(client_id) do
     ref = make_ref()
     :ok = GenServer.cast(via_name(client_id), {:ping, {self(), ref}})
@@ -111,6 +115,10 @@ defmodule Tortoise.Connection.Controller do
   def terminate(reason, %State{handler: handler}) do
     _ignored = Handler.execute(handler, {:terminate, reason})
     :ok
+  end
+
+  def handle_call(:info, _from, state) do
+    {:reply, state, state}
   end
 
   def handle_cast({:incoming, <<package::binary>>}, state) do
