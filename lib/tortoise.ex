@@ -63,35 +63,83 @@ defmodule Tortoise do
   @doc """
   Publish a message to the MQTT broker.
 
-  The publish function takes require a `client_id` and a valid MQTT
+  The publish function requires a `client_id` and a valid MQTT
   topic. If no `payload` is set an empty zero byte message will get
   send to the broker.
 
-  Optionally an options list is accepted, which allow the user to
-  configure the publish as described in the following section.
-
-  ## Options
+  Optionally an options list can get passed to the publish, making it
+  possible to specify if the message should be retained on the server,
+  and with what quality of service the message should be published
+  with.
 
     * `retain` indicates, when set to `true`, that the broker should
       retain the message for the topic. Retained messages are
-      delivered to client when they subscribe to the topic. Only one
-      message can be retained for a given topic, so sending a new one
-      will overwrite the old. `retain` defaults to `false`.
+      delivered to clients when they subscribe to the topic. Only one
+      message at a time can be retained for a given topic, so sending
+      a new one will overwrite the old. `retain` defaults to `false`.
 
     * `qos` set the quality of service. The `qos` defaults to `0`.
 
+  Publishing a message with the payload `"hello"` to to topic
+  `"foo/bar"` with a QoS1 could look like this:
+
+      Tortoise.publish("client_id", "foo/bar", "hello", qos: 1)
+
+  Notice that if you want to send a message with an empty payload with
+  options you will have to set to payload to nil like this:
+
+      Tortoise.publish("client_id", "foo/bar", nil, retain: true)
+
+  ## Return Values
+
+  The specified Quality of Service for a given publish will alter the
+  behaviour of the return value. When publishing a message with a QoS0
+  an `:ok` will simply get returned. This is because a QoS0 is a "fire
+  and forget." There are no quality of service so no efforts are made
+  to ensure that the message end up at its destination.
+
+      :ok = Tortoise.publish("client_id", "foo/bar", nil, qos: 0)
+
+  When a message is published using either a QoS1 or QoS2, `Tortoise`
+  will ensure that the message is delivered. A unique reference will
+  get returned and eventually a message will get delivered to the
+  process mailbox, containing the result of the publish when it has
+  been handed over:
+
+      {:ok, ref} = Tortoise.publish("client_id", "foo/bar", nil, qos: 2)
+      receive do
+        {{Tortoise, "client_id"}, ^ref, result} ->
+          IO.inspect({:result, result})
+      after
+        5000 ->
+          {:error, :timeout}
+      end
+
+  Be sure to implement a `handle_info/2` in `GenServer` processes that
+  publish messages using Tortoise.publish/4. Notice that the returned
+  message has a structure:
+
+      {{Tortoise, "client_id"}, ^ref, result}
+
+  It is possible to send to multiple clients and blanket match on
+  results designated for a given client id, and the message is tagged
+  with `Tortoise` so it is easy to see where the message originated
+  from.
   """
-  defdelegate publish(client_id, topic, payload \\ nil, opts \\ []), to: Tortoise.Connection
+
+  defdelegate publish(client_id, topic, payload \\ nil, opts \\ []),
+    to: Tortoise.Connection
 
   @doc """
-  Will publish a message to the broker. This is very similar to
-  `Tortoise.publish/4` with the difference that it will block the
-  calling process until the message has been delivered; the
-  configuration options are the same with the addition of the
-  `timeout` option which specify how long we are willing to wait for a
-  reply. Per default the timeout is set to `:infinity`, it is
-  advisable to set it to a reasonable amount in milliseconds as it
-  otherwise could block forever.
+  Synchronously send a message to the MQTT broker.
+
+  This is very similar to `Tortoise.publish/4` with the difference
+  that it will block the calling process until the message has been
+  handed over to the server; the configuration options are the same
+  with the addition of the `timeout` option which specify how long we
+  are willing to wait for a reply. Per default the timeout is set to
+  `:infinity`, it is advisable to set it to a reasonable amount in
+  milliseconds as it otherwise could block forever.
 
       msg = "Hello, from the World of Tomorrow !"
       case Tortoise.publish_sync("my_client_id", "foo/bar", msg, qos: 2, timeout: 200) do
