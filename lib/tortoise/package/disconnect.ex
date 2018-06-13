@@ -1,4 +1,6 @@
 defmodule Tortoise.Package.Disconnect do
+  @moduledoc false
+
   @opcode 14
 
   alias Tortoise.Package

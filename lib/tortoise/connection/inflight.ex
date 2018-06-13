@@ -1,7 +1,5 @@
 defmodule Tortoise.Connection.Inflight do
-  @moduledoc """
-  A process keeping track of the messages in flight
-  """
+  @moduledoc false
 
   alias Tortoise.{Package, Pipe}
   alias Tortoise.Connection.{Controller, Transmitter}

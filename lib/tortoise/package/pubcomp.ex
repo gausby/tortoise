@@ -1,4 +1,6 @@
 defmodule Tortoise.Package.Pubcomp do
+  @moduledoc false
+
   @opcode 7
 
   alias Tortoise.Package

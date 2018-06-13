@@ -1,4 +1,6 @@
 defmodule Tortoise.Package.Pingreq do
+  @moduledoc false
+
   @opcode 12
 
   alias Tortoise.Package

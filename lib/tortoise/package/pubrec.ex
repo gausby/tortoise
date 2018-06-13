@@ -1,4 +1,6 @@
 defmodule Tortoise.Package.Pubrec do
+  @moduledoc false
+
   @opcode 5
 
   alias Tortoise.Package

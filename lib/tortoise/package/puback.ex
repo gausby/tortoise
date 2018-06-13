@@ -1,4 +1,6 @@
 defmodule Tortoise.Package.Puback do
+  @moduledoc false
+
   @opcode 4
 
   alias Tortoise.Package
