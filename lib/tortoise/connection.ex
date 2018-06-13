@@ -1,5 +1,10 @@
 defmodule Tortoise.Connection do
-  @moduledoc false
+  @moduledoc """
+  Establish a connection to a MQTT broker.
+
+  Todo.
+  """
+
   use GenServer
 
   require Logger
