@@ -20,11 +20,6 @@ defmodule Tortoise.Package do
   defdelegate encode(data), to: Tortoise.Encodable
   defdelegate decode(data), to: Tortoise.Decodable
 
-  def generate_random_identifier() do
-    <<identifier::big-integer-size(16)>> = :crypto.strong_rand_bytes(2)
-    identifier
-  end
-
   def length_encode(data) do
     length_prefix = <<byte_size(data)::big-integer-size(16)>>
     [length_prefix, data]
