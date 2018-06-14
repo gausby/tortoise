@@ -1,5 +1,12 @@
 defmodule Tortoise.Handler do
-  @moduledoc false
+  @moduledoc """
+  User defined callback module for handling connection life cycle events.
+
+  `Tortoise.Handler` defines a behaviour that when implemented can be
+  given to a `Tortoise.Connection`. This allow the user to implement
+  functionality for
+
+  """
 
   alias Tortoise.Package
   alias Tortoise.Connection.Inflight
@@ -7,10 +14,9 @@ defmodule Tortoise.Handler do
   @enforce_keys [:module, :initial_args]
   defstruct module: nil, state: nil, initial_args: []
 
-  @doc """
-  Helper for building a Handler struct so we can keep it as an opaque
-  type in the system.
-  """
+  # Helper for building a Handler struct so we can keep it as an
+  # opaque type in the system.
+  @doc false
   def new({module, args}) when is_atom(module) and is_list(args) do
     %__MODULE__{module: module, initial_args: args}
   end
@@ -18,19 +24,57 @@ defmodule Tortoise.Handler do
   # identity
   def new(%__MODULE__{} = handler), do: handler
 
-  @type topic() :: [binary()]
+  @type topic_list() :: [binary()]
   @type status() :: :up | :down
+  @type topic_filter() :: binary()
 
+  @type next_action() ::
+          {:subscribe, topic_filter(), topic_opts()}
+          | {:unsubscribe, topic_filter()}
+
+  @type topic_opts_list() :: [topic_opts()]
+  @type topic_opts() :: {:qos, 0..2}
+
+  @doc """
+  Invoked when the connection is started.
+
+  `args` is the argument passed in from the connection configuration.
+
+  Returning `{:ok, state}` will let the MQTT connection receive data
+  from the MQTT broker, and the value contained in `state` will be
+  used as the process state.
+  """
   @callback init(args :: term) :: {:ok, state}
             when state: any
 
-  @callback connection(status(), state :: term) :: {:ok, new_state}
+  @doc """
+  Invoked when the connection status changes.
+
+  `status` is one of `:up` or `:down`, where up means we have an open
+  connection to the MQTT broker, and down means the connection is
+  temporary down. The connection process will attempt to reestablish
+  the connection.
+
+  Returning `{:ok, new_state}` will set the state for later
+  invocations.
+
+  Returning `{:ok, new_state, next_actions}`, where `next_actions` is
+  a list of next actions such as `{:unsubscribe, "foo/bar"}` will
+  result in the state being returned and the next actions performed.
+  """
+  @callback connection(status(), state :: term) ::
+              {:ok, new_state}
+              | {:ok, new_state, [next_action()]}
             when new_state: term
 
-  @callback subscription(status(), binary(), state :: term) :: {:ok, new_state}
+  @callback subscription(status(), binary(), state :: term) ::
+              {:ok, new_state}
+              | {:ok, new_state, [next_action()]}
             when new_state: term
 
-  @callback handle_message(topic(), binary(), state :: term) :: {:ok, new_state}
+  @callback handle_message(topic_list(), binary(), state :: term) ::
+              {:ok, new_state}
+              | {:ok, new_state, [next_action()]}
             when new_state: term
 
   @callback terminate(reason, state :: term) :: term
