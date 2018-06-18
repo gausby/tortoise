@@ -33,16 +33,25 @@ defmodule Tortoise.Handler do
   messages (such as publish acknowledge messages) it is important that
   the callbacks do not call functions that will block the process,
   especially for clients that subscribe to topics with heavy
-  traffic. Technically it would be possible to run the callback module
-  in a different process than the controller process, but it has been
+  traffic.
+
+  Technically it would be possible to run the callback module in a
+  different process than the controller process, but it has been
   decided to keep it on the controller as we otherwise would have to
   copy every message evaluated by the connection to another
   process. It is much better to let the end-user handle the
   dispatching to other parts of the system while we are evaluating
-  what to do with the process anyways with the caveat that the user
-  should not block the controller and it is impossible to call the
-  (un)subscribe and publish functions, as they will block the
-  controller.
+  what to do with the process anyways with the caveats:
+
+     - The callbacks should not block the controller
+
+     - it is not possible to call the (un)subscribe and publish
+       functions from within a callback as they will block the
+       controller.
+
+  To allow for subscribes and unsubscribes the concept of *next
+  actions* as been introduced, inspired by the next actions from the
+  OTP `:gen_statem` behaviour.
 
   ## Next actions
 
@@ -55,7 +64,7 @@ defmodule Tortoise.Handler do
   one can define a set of next actions that should happen as part of
   the return value to the `handle_message/3`, `subscription/3`, and
   `connection/3` callbacks by returning a `{:ok, state, next_actions}`
-  where `next_actions` are a list of commands of:
+  where `next_actions` is a list of commands of:
 
     - `{:subscribe, topic_filter, qos: qos, timeout: 5000}` where
       `topic_filter` is a binary containing a valid MQTT topic filter,
@@ -67,6 +76,19 @@ defmodule Tortoise.Handler do
       containing the name of the subscription we want to unsubscribe
       from.
 
+  If we want to unsubscribe from the current topic when we receive a
+  message on it we could write a `handle_message/3` as follows:
+
+      def handle_message(topic, _payload, state) do
+        topic = Enum.join(topic, "/")
+        next_actions = [{:unsubscribe, topic}]
+        {:ok, state, next_actions}
+      end
+
+  Note that the `topic` is received as a list of topic levels, and
+  that the next actions has to be a list, even if there is only one
+  next action; multiple actions can be given at once. Read more about
+  this in the `handle_message/3` documentation.
   """
 
   alias Tortoise.Package
