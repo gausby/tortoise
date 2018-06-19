@@ -81,6 +81,7 @@ defmodule Tortoise.Connection do
     end
   end
 
+  @doc false
   def publish_sync(client_id, topic, payload \\ nil, opts \\ []) do
     timeout = Keyword.get(opts, :timeout, :infinity)
     qos = Keyword.get(opts, :qos, 0)
