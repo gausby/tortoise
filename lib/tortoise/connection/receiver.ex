@@ -67,7 +67,7 @@ defmodule Tortoise.Connection.Receiver do
   def handle_event(:info, {transport, socket}, _state, %{socket: socket} = data)
       when transport in [:tcp_closed, :ssl_closed] do
     # should we empty the buffer?
-    :ok = Tortoise.Connection.renew(data.client_id)
+    :ok = Tortoise.Connection.reconnect(data.client_id)
     {:next_state, :disconnected, %{data | socket: nil}}
   end
 
