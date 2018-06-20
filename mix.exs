@@ -69,7 +69,8 @@ defmodule Tortoise.MixProject do
       canonical: "http://hexdocs.pm/tortoise",
       source_url: "https://github.com/gausby/tortoise",
       extras: [
-        "docs/introduction.md"
+        "docs/introduction.md",
+        "docs/connection_supervision.md"
       ]
     ]
   end
