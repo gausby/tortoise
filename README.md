@@ -48,7 +48,7 @@ transport can be used like this:
 
 ``` elixir
 Tortoise.Supervisor.start_child(
-    client_id: "my_client_id",
+    client_id: "smart-spoon",
     handler: {Tortoise.Handler.Logger, []},
     server: {Tortoise.Transport.SSL, host: host, port: port, key: key, cert: cert},
     subscriptions: [{"foo/bar", 0}])

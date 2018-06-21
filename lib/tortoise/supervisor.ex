@@ -10,7 +10,7 @@ defmodule Tortoise.Supervisor do
 
       {:ok, pid} =
         Tortoise.Supervisor.start_child(
-          client_id: "my_client_id",
+          client_id: "T-1000",
           handler: {Tortoise.Handler.Logger, []},
           server: {Tortoise.Transport.Tcp, host: 'localhost', port: 1883},
           subscriptions: [{"foo/bar", 0}]

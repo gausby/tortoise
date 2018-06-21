@@ -29,7 +29,7 @@ To start a connection on the `Tortoise.Supervisor` one can use the
 `Tortoise.Supervisor.start_child/1` function.
 
     Tortoise.Supervisor.start_child(
-        client_id: "my_client_id",
+        client_id: "heart-of-gold",
         handler: {Tortoise.Handler.Logger, []},
         server: {Tortoise.Transport.Tcp, host: 'localhost', port: 1883}
     )
