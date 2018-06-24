@@ -53,16 +53,13 @@ defmodule Tortoise.Supervisor do
   directly, or attach the `Tortoise.Connection` to a supervision tree
   if the connection should live with other parts of the system.
   """
-  def start_child(name \\ __MODULE__, opts) do
+  def start_child(supervisor \\ __MODULE__, opts) do
     spec = {Tortoise.Connection, opts}
-    DynamicSupervisor.start_child(name, spec)
+    DynamicSupervisor.start_child(supervisor, spec)
   end
 
   @impl true
-  def init(opts) do
-    DynamicSupervisor.init(
-      strategy: :one_for_one,
-      extra_arguments: [opts]
-    )
+  def init(_opts) do
+    DynamicSupervisor.init(strategy: :one_for_one)
   end
 end
