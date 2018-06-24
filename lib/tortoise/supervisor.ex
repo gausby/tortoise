@@ -10,7 +10,7 @@ defmodule Tortoise.Supervisor do
 
       {:ok, pid} =
         Tortoise.Supervisor.start_child(
-          client_id: "T-1000",
+          client_id: T1000,
           handler: {Tortoise.Handler.Logger, []},
           server: {Tortoise.Transport.Tcp, host: 'localhost', port: 1883},
           subscriptions: [{"foo/bar", 0}]
@@ -25,17 +25,31 @@ defmodule Tortoise.Supervisor do
   `Tortoise.Supervisor` as part of ones application if it require more
   than one connection.
 
-  See the Connection Supervision article in the project documentation
-  for more information on connection supervision.
-
+  See the *Connection Supervision* article in the project
+  documentation for more information on connection supervision.
   """
 
   use DynamicSupervisor
 
+  @doc """
+  Start a dynamic supervisor that can hold connection processes.
+
+  The `:name` option can also be given in order to register a supervisor
+  name, the supported values are described in the "Name registration"
+  section in the `GenServer` module docs.
+  """
   def start_link(opts) do
     DynamicSupervisor.start_link(__MODULE__, opts, name: opts[:name])
   end
 
+  @doc """
+  Returns a specification to start this module under a supervisor.
+
+  The supervisor is registered under the name given as `name`-option
+  will. The default is `Tortoise.Supervisor`.
+
+  See the documentation for `Supervisor` for configuration options.
+  """
   def child_spec(opts) do
     opts = Keyword.put_new(opts, :name, __MODULE__)
     DynamicSupervisor.child_spec(opts)
@@ -44,14 +58,8 @@ defmodule Tortoise.Supervisor do
   @doc """
   Start a connection as a child of the `Tortoise.Supervisor`.
 
-  *Todo, rephrase this.*
-
-  The parent of the connection will be the `Tortoise.Supervisor` so
-  the process that call the `start_child/2` function will not get
-  linked to the connection; the supervisor will. One need to monitor
-  the connection, or use the `Tortoise.Connection.start_link/2`
-  directly, or attach the `Tortoise.Connection` to a supervision tree
-  if the connection should live with other parts of the system.
+  `supervisor` is the name of the supervisor the child should be
+  started on, and it defaults to `Tortoise.Supervisor`.
   """
   def start_child(supervisor \\ __MODULE__, opts) do
     spec = {Tortoise.Connection, opts}
