@@ -211,6 +211,9 @@ defmodule Tortoise.Connection do
       %Connack{status: {:refused, reason}} ->
         {:stop, {:connection_failed, reason}}
 
+      {:error, {:nxdomain, host, port}} ->
+        {:stop, {:nxdomain, host, port}}
+
       {:error, {:protocol_violation, violation}} ->
         Logger.error("Protocol violation: #{inspect(violation)}")
         {:stop, :protocol_violation}
@@ -354,6 +357,9 @@ defmodule Tortoise.Connection do
     else
       {:error, :econnrefused} ->
         {:error, {:connection_refused, host, port}}
+
+      {:error, :nxdomain} ->
+        {:error, {:nxdomain, host, port}}
     end
   end
 

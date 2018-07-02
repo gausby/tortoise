@@ -1,10 +1,12 @@
 Code.require_file("../support/scripted_mqtt_server.exs", __DIR__)
+Code.require_file("../support/scripted_transport.exs", __DIR__)
 
 defmodule Tortoise.ConnectionTest do
   use ExUnit.Case, async: true
   doctest Tortoise.Connection
 
   alias Tortoise.Integration.ScriptedMqttServer
+  alias Tortoise.Integration.ScriptedTransport
   alias Tortoise.Connection
   alias Tortoise.Package
 
@@ -407,6 +409,25 @@ defmodule Tortoise.ConnectionTest do
       # Need to pass :cacerts/:cacerts_file option, or set :verify to
       # :verify_none to opt out of server cert verification
       assert {:error, _reason} = Connection.start_link(opts)
+    end
+  end
+
+  describe "Connection failures" do
+    test "nxdomain", context do
+      Process.flag(:trap_exit, true)
+
+      script = [
+        {:refute_connection, {:error, :nxdomain}}
+      ]
+
+      {:ok, _} = ScriptedTransport.start_link({'localhost', 1883}, script: script)
+
+      assert {:error, {:nxdomain, 'localhost', 1883}} =
+               Tortoise.Connection.start_link(
+                 client_id: context.client_id,
+                 server: {ScriptedTransport, host: 'localhost', port: 1883},
+                 handler: {Tortoise.Handler.Logger, []}
+               )
     end
   end
 end
