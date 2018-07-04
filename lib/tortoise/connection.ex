@@ -4,7 +4,7 @@ defmodule Tortoise.Connection do
 
   require Logger
 
-  defstruct [:connect, :server, :session, :subscriptions, :keep_alive]
+  defstruct [:connect, :server, :session, :subscriptions, :keep_alive, :opts]
   alias __MODULE__, as: State
 
   @type client_id() :: binary() | atom()
@@ -191,32 +191,35 @@ defmodule Tortoise.Connection do
 
   # Callbacks
   def init({transport, %Connect{} = connect, subscriptions, opts}) do
+    state = %State{server: transport, connect: connect, subscriptions: subscriptions, opts: opts}
+    # eventually, switch to handle_continue
+    send(self(), :connect)
+    {:ok, state}
+  end
+
+  def handle_info(:connect, state) do
     expected_connack = %Connack{status: :accepted, session_present: false}
 
-    with {^expected_connack, socket} <- do_connect(transport, connect),
-         {:ok, pid} = Connection.Supervisor.start_link(opts),
-         :ok = Receiver.handle_socket(connect.client_id, {transport.type, socket}),
-         :ok = Controller.update_connection_status(connect.client_id, :up) do
-      if not Enum.empty?(subscriptions), do: send(self(), :subscribe)
+    with {^expected_connack, socket} <- do_connect(state.server, state.connect),
+         {:ok, _pid} = Connection.Supervisor.start_link(state.opts),
+         :ok = Receiver.handle_socket(state.connect.client_id, {state.server.type, socket}),
+         :ok = Controller.update_connection_status(state.connect.client_id, :up) do
+      if not Enum.empty?(state.subscriptions), do: send(self(), :subscribe)
 
-      result = %State{
-        session: pid,
-        server: transport,
-        connect: connect,
-        subscriptions: subscriptions
-      }
-
-      {:ok, reset_keep_alive(result)}
+      {:noreply, reset_keep_alive(state)}
     else
       %Connack{status: {:refused, reason}} ->
-        {:stop, {:connection_failed, reason}}
+        {:stop, {:connection_failed, reason}, state}
 
       {:error, {:nxdomain, host, port}} ->
-        {:stop, {:nxdomain, host, port}}
+        {:stop, {:nxdomain, host, port}, state}
+
+      {:error, :no_cacartfile_specified} ->
+        {:stop, :no_cacartfile_specified, state}
 
       {:error, {:protocol_violation, violation}} ->
         Logger.error("Protocol violation: #{inspect(violation)}")
-        {:stop, :protocol_violation}
+        {:stop, :protocol_violation, state}
     end
   end
 
@@ -360,6 +363,9 @@ defmodule Tortoise.Connection do
 
       {:error, :nxdomain} ->
         {:error, {:nxdomain, host, port}}
+
+      {:error, {:options, {:cacertfile, []}}} ->
+        {:error, :no_cacartfile_specified}
     end
   end
 

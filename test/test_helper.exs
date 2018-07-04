@@ -260,4 +260,4 @@ end
 
 {:ok, _} = Tortoise.Integration.TestTCPTunnel.start_link()
 
-ExUnit.start()
+ExUnit.start(capture_log: true)
