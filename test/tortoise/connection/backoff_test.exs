@@ -29,4 +29,10 @@ defmodule Tortoise.Connection.BackoffTest do
     assert %Backoff{} = backoff = Backoff.reset(backoff)
     assert ^snapshot = Backoff.next(backoff)
   end
+
+  test "get current timeout value" do
+    backoff = Backoff.new(min_interval: 10)
+    assert %Backoff{value: timeout} = backoff = Backoff.next(backoff)
+    assert ^timeout = Backoff.timeout(backoff)
+  end
 end
