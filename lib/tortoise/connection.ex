@@ -197,11 +197,21 @@ defmodule Tortoise.Connection do
     {:ok, state}
   end
 
+  defp start_supervisor(opts) do
+    case Connection.Supervisor.start_link(opts) do
+      {:ok, _pid} ->
+        :ok
+
+      {:error, {:already_started, _pid}} ->
+        :ok
+    end
+  end
+
   def handle_info(:connect, state) do
     expected_connack = %Connack{status: :accepted, session_present: false}
 
     with {^expected_connack, socket} <- do_connect(state.server, state.connect),
-         {:ok, _pid} = Connection.Supervisor.start_link(state.opts),
+         :ok = start_supervisor(state.opts),
          :ok = Receiver.handle_socket(state.connect.client_id, {state.server.type, socket}),
          :ok = Controller.update_connection_status(state.connect.client_id, :up) do
       if not Enum.empty?(state.subscriptions), do: send(self(), :subscribe)
@@ -373,6 +383,7 @@ defmodule Tortoise.Connection do
     connect = %Connect{state.connect | clean_session: false}
 
     with {%Connack{status: :accepted} = connack, socket} <- do_connect(transport, connect),
+         :ok = start_supervisor(state.opts),
          :ok = Receiver.handle_socket(connect.client_id, {transport.type, socket}),
          :ok = Controller.update_connection_status(connect.client_id, :up) do
       case connack do
