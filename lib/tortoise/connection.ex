@@ -186,7 +186,13 @@ defmodule Tortoise.Connection do
   @doc false
   @spec renew(client_id()) :: :ok
   def renew(client_id) do
-    GenServer.cast(via_name(client_id), :renew_connection)
+    case GenServer.whereis(via_name(client_id)) do
+      pid when is_pid(pid) ->
+        send(pid, :connect)
+
+      nil ->
+        {:error, :unknown_connection}
+    end
   end
 
   # Callbacks
@@ -198,9 +204,23 @@ defmodule Tortoise.Connection do
   end
 
   def handle_info(:connect, state) do
-    case connect(state) do
-      {:ok, state} ->
-        {:noreply, state}
+    :ok = Controller.update_connection_status(state.connect.client_id, :down)
+
+    with {%Connack{status: :accepted} = connack, socket} <-
+           do_connect(state.server, state.connect),
+         {:ok, state} = init_connection(socket, state) do
+      case connack do
+        %Connack{session_present: true} ->
+          {:noreply, reset_keep_alive(state)}
+
+        %Connack{session_present: false} ->
+          # delete inflight state ?
+          if not Enum.empty?(state.subscriptions), do: send(self(), :subscribe)
+          {:noreply, reset_keep_alive(state)}
+      end
+    else
+      %Connack{status: {:refused, reason}} ->
+        {:stop, {:connection_failed, reason}, state}
 
       {:error, reason} ->
         {:stop, reason, state}
@@ -255,11 +275,6 @@ defmodule Tortoise.Connection do
 
   def handle_call(:subscriptions, _from, state) do
     {:reply, state.subscriptions, state}
-  end
-
-  def handle_cast(:renew_connection, state) do
-    send(self(), :connect)
-    {:noreply, state}
   end
 
   def handle_cast({:subscribe, {caller_pid, ref}, subscribe, opts}, state) do
@@ -324,30 +339,6 @@ defmodule Tortoise.Connection do
     %State{state | keep_alive: ref}
   end
 
-  defp connect(state) do
-    :ok = Controller.update_connection_status(state.connect.client_id, :down)
-
-    with {%Connack{status: :accepted} = connack, socket} <-
-           do_connect(state.server, state.connect),
-         {:ok, state} = init_connection(socket, state) do
-      case connack do
-        %Connack{session_present: true} ->
-          {:ok, reset_keep_alive(state)}
-
-        %Connack{session_present: false} ->
-          # delete inflight state ?
-          if not Enum.empty?(state.subscriptions), do: send(self(), :subscribe)
-          {:ok, reset_keep_alive(state)}
-      end
-    else
-      %Connack{status: {:refused, reason}} ->
-        {:error, {:connection_failed, reason}}
-
-      {:error, reason} ->
-        {:error, reason}
-    end
-  end
-
   defp do_connect(server, %Connect{} = connect) do
     %Transport{type: transport, host: host, port: port, opts: opts} = server
 
@@ -378,6 +369,14 @@ defmodule Tortoise.Connection do
   end
 
   defp init_connection(socket, %State{opts: opts, server: transport, connect: connect} = state) do
+    :ok = start_connection_supervisor(opts)
+    :ok = Receiver.handle_socket(connect.client_id, {transport.type, socket})
+    :ok = Controller.update_connection_status(connect.client_id, :up)
+    connect = %Connect{connect | clean_session: false}
+    {:ok, %State{state | connect: connect}}
+  end
+
+  defp start_connection_supervisor(opts) do
     case Connection.Supervisor.start_link(opts) do
       {:ok, _pid} ->
         :ok
@@ -385,10 +384,5 @@ defmodule Tortoise.Connection do
       {:error, {:already_started, _pid}} ->
         :ok
     end
-
-    :ok = Receiver.handle_socket(connect.client_id, {transport.type, socket})
-    :ok = Controller.update_connection_status(connect.client_id, :up)
-    connect = %Connect{connect | clean_session: false}
-    {:ok, %State{state | connect: connect}}
   end
 end
