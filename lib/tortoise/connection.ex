@@ -4,7 +4,7 @@ defmodule Tortoise.Connection do
 
   require Logger
 
-  defstruct [:connect, :server, :session, :subscriptions, :keep_alive, :opts]
+  defstruct [:connect, :server, :subscriptions, :keep_alive, :opts]
   alias __MODULE__, as: State
 
   @type client_id() :: binary() | atom()
@@ -197,39 +197,13 @@ defmodule Tortoise.Connection do
     {:ok, state}
   end
 
-  defp start_supervisor(opts) do
-    case Connection.Supervisor.start_link(opts) do
-      {:ok, _pid} ->
-        :ok
-
-      {:error, {:already_started, _pid}} ->
-        :ok
-    end
-  end
-
   def handle_info(:connect, state) do
-    expected_connack = %Connack{status: :accepted, session_present: false}
+    case connect(state) do
+      {:ok, state} ->
+        {:noreply, state}
 
-    with {^expected_connack, socket} <- do_connect(state.server, state.connect),
-         :ok = start_supervisor(state.opts),
-         :ok = Receiver.handle_socket(state.connect.client_id, {state.server.type, socket}),
-         :ok = Controller.update_connection_status(state.connect.client_id, :up) do
-      if not Enum.empty?(state.subscriptions), do: send(self(), :subscribe)
-
-      {:noreply, reset_keep_alive(state)}
-    else
-      %Connack{status: {:refused, reason}} ->
-        {:stop, {:connection_failed, reason}, state}
-
-      {:error, {:nxdomain, host, port}} ->
-        {:stop, {:nxdomain, host, port}, state}
-
-      {:error, :no_cacartfile_specified} ->
-        {:stop, :no_cacartfile_specified, state}
-
-      {:error, {:protocol_violation, violation}} ->
-        Logger.error("Protocol violation: #{inspect(violation)}")
-        {:stop, :protocol_violation, state}
+      {:error, reason} ->
+        {:stop, reason, state}
     end
   end
 
@@ -275,8 +249,8 @@ defmodule Tortoise.Connection do
   # dropping connection
   def handle_info({transport, _socket}, state) when transport in [:tcp_closed, :ssl_closed] do
     Logger.error("Socket closed before we handed it to the receiver")
-    :ok = Controller.update_connection_status(state.connect.client_id, :down)
-    do_attempt_reconnect(state)
+    send(self(), :connect)
+    {:noreply, state}
   end
 
   def handle_call(:subscriptions, _from, state) do
@@ -284,8 +258,8 @@ defmodule Tortoise.Connection do
   end
 
   def handle_cast(:renew_connection, state) do
-    :ok = Controller.update_connection_status(state.connect.client_id, :down)
-    do_attempt_reconnect(state)
+    send(self(), :connect)
+    {:noreply, state}
   end
 
   def handle_cast({:subscribe, {caller_pid, ref}, subscribe, opts}, state) do
@@ -350,6 +324,30 @@ defmodule Tortoise.Connection do
     %State{state | keep_alive: ref}
   end
 
+  defp connect(state) do
+    :ok = Controller.update_connection_status(state.connect.client_id, :down)
+
+    with {%Connack{status: :accepted} = connack, socket} <-
+           do_connect(state.server, state.connect),
+         {:ok, state} = init_connection(socket, state) do
+      case connack do
+        %Connack{session_present: true} ->
+          {:ok, reset_keep_alive(state)}
+
+        %Connack{session_present: false} ->
+          # delete inflight state ?
+          if not Enum.empty?(state.subscriptions), do: send(self(), :subscribe)
+          {:ok, reset_keep_alive(state)}
+      end
+    else
+      %Connack{status: {:refused, reason}} ->
+        {:error, {:connection_failed, reason}}
+
+      {:error, reason} ->
+        {:error, reason}
+    end
+  end
+
   defp do_connect(server, %Connect{} = connect) do
     %Transport{type: transport, host: host, port: port, opts: opts} = server
 
@@ -379,31 +377,18 @@ defmodule Tortoise.Connection do
     end
   end
 
-  defp do_attempt_reconnect(%State{server: transport} = state) do
-    connect = %Connect{state.connect | clean_session: false}
+  defp init_connection(socket, %State{opts: opts, server: transport, connect: connect} = state) do
+    case Connection.Supervisor.start_link(opts) do
+      {:ok, _pid} ->
+        :ok
 
-    with {%Connack{status: :accepted} = connack, socket} <- do_connect(transport, connect),
-         :ok = start_supervisor(state.opts),
-         :ok = Receiver.handle_socket(connect.client_id, {transport.type, socket}),
-         :ok = Controller.update_connection_status(connect.client_id, :up) do
-      case connack do
-        %Connack{session_present: true} ->
-          result = %State{state | connect: connect}
-          {:noreply, reset_keep_alive(result)}
-
-        %Connack{session_present: false} ->
-          # delete inflight state ?
-          if not Enum.empty?(state.subscriptions), do: send(self(), :subscribe)
-          result = %State{state | connect: connect}
-          {:noreply, reset_keep_alive(result)}
-      end
-    else
-      %Connack{status: {:refused, reason}} ->
-        {:stop, {:connection_failed, reason}}
-
-      {:error, {:protocol_violation, violation}} ->
-        Logger.error("Protocol violation: #{inspect(violation)}")
-        {:stop, :protocol_violation}
+      {:error, {:already_started, _pid}} ->
+        :ok
     end
+
+    :ok = Receiver.handle_socket(connect.client_id, {transport.type, socket})
+    :ok = Controller.update_connection_status(connect.client_id, :up)
+    connect = %Connect{connect | clean_session: false}
+    {:ok, %State{state | connect: connect}}
   end
 end
