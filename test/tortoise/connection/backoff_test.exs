@@ -4,7 +4,7 @@ defmodule Tortoise.Connection.BackoffTest do
 
   alias Tortoise.Connection.Backoff
 
-  test "should next exceed maximum interval time" do
+  test "should not exceed maximum interval time" do
     min = 100
     max = 300
     backoff = Backoff.new(min_interval: 100, max_interval: 300)
