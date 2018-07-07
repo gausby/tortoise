@@ -422,22 +422,35 @@ defmodule Tortoise.ConnectionTest do
 
   describe "Connection failures" do
     test "nxdomain", context do
-      Process.flag(:trap_exit, true)
+      client_id = context.client_id
 
-      script = [
-        {:refute_connection, {:error, :nxdomain}}
-      ]
+      connect = %Package.Connect{client_id: client_id, clean_session: true}
+      expected_connack = %Package.Connack{status: :accepted, session_present: false}
+      refusal = {:error, :nxdomain}
 
-      {:ok, _} = ScriptedTransport.start_link({'localhost', 1883}, script: script)
+      {:ok, _} =
+        ScriptedTransport.start_link(
+          {'localhost', 1883},
+          script: [
+            {:refute_connection, refusal},
+            {:refute_connection, refusal},
+            {:expect, connect},
+            {:dispatch, expected_connack}
+          ]
+        )
 
-      assert {:ok, pid} =
+      assert {:ok, _pid} =
                Tortoise.Connection.start_link(
-                 client_id: context.client_id,
+                 client_id: client_id,
                  server: {ScriptedTransport, host: 'localhost', port: 1883},
+                 backoff: [min_interval: 1],
                  handler: {Tortoise.Handler.Logger, []}
                )
 
-      assert_receive {:EXIT, ^pid, {:nxdomain, 'localhost', 1883}}
+      assert_receive {ScriptedTransport, {:refute_connection, ^refusal}}
+      assert_receive {ScriptedTransport, {:refute_connection, ^refusal}}
+      assert_receive {ScriptedTransport, :connected}
+      assert_receive {ScriptedTransport, {:received, ^connect}}
     end
   end
 end

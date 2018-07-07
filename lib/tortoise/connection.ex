@@ -27,7 +27,7 @@ defmodule Tortoise.Connection do
       clean_session: true
     }
 
-    backoff = Backoff.new(Keyword.get(opts, :backoff, []))
+    backoff = Keyword.get(opts, :backoff, [])
 
     subscriptions =
       case Keyword.get(opts, :subscriptions, []) do
@@ -198,11 +198,11 @@ defmodule Tortoise.Connection do
   end
 
   # Callbacks
-  def init({transport, %Connect{} = connect, backoff, subscriptions, opts}) do
+  def init({transport, %Connect{} = connect, backoff_opts, subscriptions, opts}) do
     state = %State{
       server: transport,
       connect: connect,
-      backoff: backoff,
+      backoff: Backoff.new(backoff_opts),
       subscriptions: subscriptions,
       opts: opts
     }
@@ -235,8 +235,14 @@ defmodule Tortoise.Connection do
         {:stop, {:connection_failed, reason}, state}
 
       {:error, reason} ->
+        {timeout, state} = Map.get_and_update(state, :backoff, &Backoff.next/1)
+
         case categorize_error(reason) do
-          _categorization ->
+          :connectivity ->
+            Process.send_after(self(), :connect, timeout)
+            {:noreply, state}
+
+          :other ->
             {:stop, reason, state}
         end
     end
@@ -404,7 +410,8 @@ defmodule Tortoise.Connection do
   defp categorize_error({:nxdomain, _host, _port}) do
     :connectivity
   end
-  defp categorize_error(other) do
-    other
+
+  defp categorize_error(_other) do
+    :other
   end
 end

@@ -47,6 +47,7 @@ defmodule Tortoise.Integration.ScriptedTransport do
   @enforce_keys [:script]
   defstruct [
     :script,
+    :test_process,
     :client,
     :host,
     :port,
@@ -67,6 +68,7 @@ defmodule Tortoise.Integration.ScriptedTransport do
       host: host,
       port: port,
       buffer: "",
+      test_process: self(),
       stats: []
     ]
 
@@ -181,11 +183,14 @@ defmodule Tortoise.Integration.ScriptedTransport do
         _,
         %State{client: nil, script: [{:refute_connection, reason} | remaining]} = state
       ) do
+    Kernel.send(state.test_process, {__MODULE__, {:refute_connection, reason}})
     {:reply, reason, %State{state | script: remaining}}
   end
 
   def handle_call({:connect, opts, _timeout}, {client_pid, _ref}, %State{client: nil} = state) do
-    {:reply, {:ok, self()}, %State{state | client: client_pid, status: :open, opts: opts}}
+    state = %State{state | client: client_pid, status: :open, opts: opts}
+    Kernel.send(state.test_process, {__MODULE__, :connected})
+    {:reply, {:ok, self()}, setup_next(state)}
   end
 
   def handle_call({:connect, _, _}, _from, state) do
@@ -209,6 +214,7 @@ defmodule Tortoise.Integration.ScriptedTransport do
   def handle_call({:send, packet}, _, %State{script: [{:expect, expected} | remaining]} = state) do
     case Tortoise.Package.decode(packet) do
       ^expected ->
+        Kernel.send(state.test_process, {__MODULE__, {:received, expected}})
         {:reply, :ok, setup_next(%State{state | script: remaining})}
 
       unexpected ->
@@ -261,5 +267,9 @@ defmodule Tortoise.Integration.ScriptedTransport do
     data = IO.iodata_to_binary(Tortoise.Package.encode(package))
     buffer = state.buffer <> data
     %State{state | script: remaining, buffer: buffer}
+  end
+
+  defp setup_next(%State{script: [{:expect, _} | _]} = state) do
+    state
   end
 end
