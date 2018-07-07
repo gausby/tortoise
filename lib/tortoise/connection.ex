@@ -4,13 +4,13 @@ defmodule Tortoise.Connection do
 
   require Logger
 
-  defstruct [:connect, :server, :subscriptions, :keep_alive, :opts]
+  defstruct [:connect, :server, :backoff, :subscriptions, :keep_alive, :opts]
   alias __MODULE__, as: State
 
   @type client_id() :: binary() | atom()
 
   alias Tortoise.{Transport, Connection, Package}
-  alias Tortoise.Connection.{Inflight, Controller, Receiver, Transmitter}
+  alias Tortoise.Connection.{Inflight, Controller, Receiver, Transmitter, Backoff}
   alias Tortoise.Package.{Connect, Connack}
 
   def start_link(opts) do
@@ -27,6 +27,8 @@ defmodule Tortoise.Connection do
       clean_session: true
     }
 
+    backoff = Backoff.new(Keyword.get(opts, :backoff, []))
+
     subscriptions =
       case Keyword.get(opts, :subscriptions, []) do
         topics when is_list(topics) ->
@@ -38,7 +40,7 @@ defmodule Tortoise.Connection do
 
     # @todo, validate that the handler is valid
     opts = Keyword.take(opts, [:client_id, :handler])
-    initial = {server, connect, subscriptions, opts}
+    initial = {server, connect, backoff, subscriptions, opts}
     GenServer.start_link(__MODULE__, initial, name: via_name(client_id))
   end
 
@@ -196,8 +198,15 @@ defmodule Tortoise.Connection do
   end
 
   # Callbacks
-  def init({transport, %Connect{} = connect, subscriptions, opts}) do
-    state = %State{server: transport, connect: connect, subscriptions: subscriptions, opts: opts}
+  def init({transport, %Connect{} = connect, backoff, subscriptions, opts}) do
+    state = %State{
+      server: transport,
+      connect: connect,
+      backoff: backoff,
+      subscriptions: subscriptions,
+      opts: opts
+    }
+
     # eventually, switch to handle_continue
     send(self(), :connect)
     {:ok, state}
@@ -209,6 +218,9 @@ defmodule Tortoise.Connection do
     with {%Connack{status: :accepted} = connack, socket} <-
            do_connect(state.server, state.connect),
          {:ok, state} = init_connection(socket, state) do
+      # we are connected; reset backoff state
+      state = %State{state | backoff: Backoff.reset(state.backoff)}
+
       case connack do
         %Connack{session_present: true} ->
           {:noreply, reset_keep_alive(state)}
@@ -223,7 +235,10 @@ defmodule Tortoise.Connection do
         {:stop, {:connection_failed, reason}, state}
 
       {:error, reason} ->
-        {:stop, reason, state}
+        case categorize_error(reason) do
+          _categorization ->
+            {:stop, reason, state}
+        end
     end
   end
 
@@ -384,5 +399,12 @@ defmodule Tortoise.Connection do
       {:error, {:already_started, _pid}} ->
         :ok
     end
+  end
+
+  defp categorize_error({:nxdomain, _host, _port}) do
+    :connectivity
+  end
+  defp categorize_error(other) do
+    other
   end
 end
