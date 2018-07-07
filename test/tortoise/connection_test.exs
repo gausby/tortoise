@@ -452,5 +452,32 @@ defmodule Tortoise.ConnectionTest do
       assert_receive {ScriptedTransport, :connected}
       assert_receive {ScriptedTransport, {:received, ^connect}}
     end
+
+    test "server protocol violation", context do
+      Process.flag(:trap_exit, true)
+      client_id = context.client_id
+
+      connect = %Package.Connect{client_id: client_id, clean_session: true}
+
+      {:ok, _pid} =
+        ScriptedTransport.start_link(
+          {'localhost', 1883},
+          script: [
+            {:expect, connect},
+            {:dispatch, %Package.Publish{topic: "foo/bar"}}
+          ]
+        )
+
+      assert {:ok, pid} =
+               Tortoise.Connection.start_link(
+                 client_id: client_id,
+                 server: {ScriptedTransport, host: 'localhost', port: 1883},
+                 handler: {Tortoise.Handler.Logger, []}
+               )
+
+      assert_receive {ScriptedTransport, :connected}
+      assert_receive {:EXIT, ^pid, {:protocol_violation, violation}}
+      assert %{expected: Tortoise.Package.Connect, got: _} = violation
+    end
   end
 end

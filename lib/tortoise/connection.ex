@@ -366,15 +366,17 @@ defmodule Tortoise.Connection do
     with {:ok, socket} <- transport.connect(host, port, opts, 10000),
          :ok = transport.send(socket, Package.encode(connect)),
          {:ok, packet} <- transport.recv(socket, 4, 5000) do
-      case Package.decode(packet) do
-        %Connack{status: :accepted} = connack ->
-          {connack, socket}
+      try do
+        case Package.decode(packet) do
+          %Connack{status: :accepted} = connack ->
+            {connack, socket}
 
-        %Connack{status: {:refused, _reason}} = connack ->
-          connack
-
-        other ->
-          violation = %{expected: Connect, got: other}
+          %Connack{status: {:refused, _reason}} = connack ->
+            connack
+        end
+      catch
+        :error, {:badmatch, _unexpected} ->
+          violation = %{expected: Connect, got: packet}
           {:error, {:protocol_violation, violation}}
       end
     else
