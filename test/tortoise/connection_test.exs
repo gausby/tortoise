@@ -1,10 +1,12 @@
 Code.require_file("../support/scripted_mqtt_server.exs", __DIR__)
+Code.require_file("../support/scripted_transport.exs", __DIR__)
 
 defmodule Tortoise.ConnectionTest do
   use ExUnit.Case, async: true
   doctest Tortoise.Connection
 
   alias Tortoise.Integration.ScriptedMqttServer
+  alias Tortoise.Integration.ScriptedTransport
   alias Tortoise.Connection
   alias Tortoise.Package
 
@@ -120,11 +122,11 @@ defmodule Tortoise.ConnectionTest do
         handler: {Tortoise.Handler.Default, []}
       ]
 
-      assert {:error, {:connection_failed, :unacceptable_protocol_version}} ==
-               Connection.start_link(opts)
+      assert {:ok, pid} = Connection.start_link(opts)
 
       assert_receive {ScriptedMqttServer, {:received, ^connect}}
       assert_receive {ScriptedMqttServer, :completed}
+      assert_receive {:EXIT, ^pid, {:connection_failed, :unacceptable_protocol_version}}
     end
 
     test "identifier rejected", context do
@@ -143,9 +145,10 @@ defmodule Tortoise.ConnectionTest do
         handler: {Tortoise.Handler.Default, []}
       ]
 
-      assert {:error, {:connection_failed, :identifier_rejected}} == Connection.start_link(opts)
+      assert {:ok, pid} = Connection.start_link(opts)
       assert_receive {ScriptedMqttServer, {:received, ^connect}}
       assert_receive {ScriptedMqttServer, :completed}
+      assert_receive {:EXIT, ^pid, {:connection_failed, :identifier_rejected}}
     end
 
     test "server unavailable", context do
@@ -164,9 +167,10 @@ defmodule Tortoise.ConnectionTest do
         handler: {Tortoise.Handler.Default, []}
       ]
 
-      assert {:error, {:connection_failed, :server_unavailable}} == Connection.start_link(opts)
+      assert {:ok, pid} = Connection.start_link(opts)
       assert_receive {ScriptedMqttServer, {:received, ^connect}}
       assert_receive {ScriptedMqttServer, :completed}
+      assert_receive {:EXIT, ^pid, {:connection_failed, :server_unavailable}}
     end
 
     test "bad user name or password", context do
@@ -185,11 +189,10 @@ defmodule Tortoise.ConnectionTest do
         handler: {Tortoise.Handler.Default, []}
       ]
 
-      assert {:error, {:connection_failed, :bad_user_name_or_password}} ==
-               Connection.start_link(opts)
-
+      assert {:ok, pid} = Connection.start_link(opts)
       assert_receive {ScriptedMqttServer, {:received, ^connect}}
       assert_receive {ScriptedMqttServer, :completed}
+      assert_receive {:EXIT, ^pid, {:connection_failed, :bad_user_name_or_password}}
     end
 
     test "not authorized", context do
@@ -208,9 +211,11 @@ defmodule Tortoise.ConnectionTest do
         handler: {Tortoise.Handler.Default, []}
       ]
 
-      assert {:error, {:connection_failed, :not_authorized}} == Connection.start_link(opts)
+      assert {:ok, pid} = Connection.start_link(opts)
       assert_receive {ScriptedMqttServer, {:received, ^connect}}
       assert_receive {ScriptedMqttServer, :completed}
+
+      assert_receive {:EXIT, ^pid, {:connection_failed, :not_authorized}}
     end
   end
 
@@ -297,15 +302,19 @@ defmodule Tortoise.ConnectionTest do
 
       {:ok, {ip, port}} = ScriptedMqttServer.enact(context.scripted_mqtt_server, script)
 
+      subscribe = %Package.Subscribe{topics: [{"foo", 0}, {"bar", 2}], identifier: 1}
+
       opts = [
         client_id: client_id,
         server: {Tortoise.Transport.Tcp, [host: ip, port: port]},
         handler: {Tortoise.Handler.Default, []},
-        subscriptions: %Package.Subscribe{topics: [{"foo", 0}, {"bar", 2}], identifier: 1}
+        subscriptions: subscribe
       ]
 
       assert {:ok, _pid} = Connection.start_link(opts)
       assert_receive {ScriptedMqttServer, {:received, ^connect}}
+
+      assert_receive {ScriptedMqttServer, {:received, ^subscribe}}
 
       # now let us try to unsubscribe from foo
       :ok = Tortoise.Connection.unsubscribe_sync(client_id, "foo", identifier: 2)
@@ -406,7 +415,69 @@ defmodule Tortoise.ConnectionTest do
 
       # Need to pass :cacerts/:cacerts_file option, or set :verify to
       # :verify_none to opt out of server cert verification
-      assert {:error, _reason} = Connection.start_link(opts)
+      assert {:ok, pid} = Connection.start_link(opts)
+      assert_receive {:EXIT, ^pid, :no_cacartfile_specified}
+    end
+  end
+
+  describe "Connection failures" do
+    test "nxdomain", context do
+      client_id = context.client_id
+
+      connect = %Package.Connect{client_id: client_id, clean_session: true}
+      expected_connack = %Package.Connack{status: :accepted, session_present: false}
+      refusal = {:error, :nxdomain}
+
+      {:ok, _} =
+        ScriptedTransport.start_link(
+          {'localhost', 1883},
+          script: [
+            {:refute_connection, refusal},
+            {:refute_connection, refusal},
+            {:expect, connect},
+            {:dispatch, expected_connack}
+          ]
+        )
+
+      assert {:ok, _pid} =
+               Tortoise.Connection.start_link(
+                 client_id: client_id,
+                 server: {ScriptedTransport, host: 'localhost', port: 1883},
+                 backoff: [min_interval: 1],
+                 handler: {Tortoise.Handler.Logger, []}
+               )
+
+      assert_receive {ScriptedTransport, {:refute_connection, ^refusal}}
+      assert_receive {ScriptedTransport, {:refute_connection, ^refusal}}
+      assert_receive {ScriptedTransport, :connected}
+      assert_receive {ScriptedTransport, {:received, ^connect}}
+    end
+
+    test "server protocol violation", context do
+      Process.flag(:trap_exit, true)
+      client_id = context.client_id
+
+      connect = %Package.Connect{client_id: client_id, clean_session: true}
+
+      {:ok, _pid} =
+        ScriptedTransport.start_link(
+          {'localhost', 1883},
+          script: [
+            {:expect, connect},
+            {:dispatch, %Package.Publish{topic: "foo/bar"}}
+          ]
+        )
+
+      assert {:ok, pid} =
+               Tortoise.Connection.start_link(
+                 client_id: client_id,
+                 server: {ScriptedTransport, host: 'localhost', port: 1883},
+                 handler: {Tortoise.Handler.Logger, []}
+               )
+
+      assert_receive {ScriptedTransport, :connected}
+      assert_receive {:EXIT, ^pid, {:protocol_violation, violation}}
+      assert %{expected: Tortoise.Package.Connect, got: _} = violation
     end
   end
 end
