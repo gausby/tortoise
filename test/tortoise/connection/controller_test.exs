@@ -1,5 +1,5 @@
 defmodule Tortoise.Connection.ControllerTest do
-  use ExUnit.Case, async: true
+  use ExUnit.Case
   doctest Tortoise.Connection.Controller
 
   alias Tortoise.Package
