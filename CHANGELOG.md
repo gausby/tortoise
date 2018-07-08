@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.4.2 - 2018-07-08
+
+### Changed
+
+- The `Tortoise.Connection.renew/1` will now return `:ok` on success;
+  allowing the `Torotise.Connection.Receiver` to not crash on its
+  assertion when it request a reconnect.
+
 ## 0.4.1 - 2018-07-08
 
 ### Changed

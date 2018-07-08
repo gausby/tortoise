@@ -191,6 +191,7 @@ defmodule Tortoise.Connection do
     case GenServer.whereis(via_name(client_id)) do
       pid when is_pid(pid) ->
         send(pid, :connect)
+        :ok
 
       nil ->
         {:error, :unknown_connection}
