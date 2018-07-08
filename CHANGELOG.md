@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.4.1 - 2018-07-08
+
+### Changed
+
+- Tortoise should now survive the server it is connected to being
+  restarted. `{:error, :econnrefused}` and `{:error, :closed}` has
+  been added to the errors that make tortoise attempt a reconnect.
+
 ## 0.4.0 - 2018-07-08
 
 ### Added

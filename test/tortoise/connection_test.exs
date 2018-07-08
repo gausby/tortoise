@@ -453,6 +453,52 @@ defmodule Tortoise.ConnectionTest do
       assert_receive {ScriptedTransport, {:received, ^connect}}
     end
 
+    test "server rebooting", context do
+      # This test tries to mimic the observed behavior of a vernemq
+      # server rebooting while we are connected to it: First it will
+      # send an `{:error, :close}`, then it will refute the connection
+      # with `{:error, :econnrefused}`, and then it will finally start
+      # accepting connections
+      Process.flag(:trap_exit, true)
+      client_id = context.client_id
+
+      connect = %Package.Connect{client_id: client_id, clean_session: true}
+      expected_connack = %Package.Connack{status: :accepted, session_present: false}
+      refusal = {:error, :econnrefused}
+
+      {:ok, _pid} =
+        ScriptedTransport.start_link(
+          {'localhost', 1883},
+          script: [
+            # first connect
+            {:expect, connect},
+            {:dispatch, expected_connack},
+            # then close the connection, refuse the connection
+            {:close_connection, 0},
+            {:refute_connection, refusal},
+            {:refute_connection, refusal},
+            # finally start accepting connections again
+            {:expect, %Package.Connect{connect | clean_session: false}},
+            {:dispatch, expected_connack}
+          ]
+        )
+
+      assert {:ok, _pid} =
+               Tortoise.Connection.start_link(
+                 client_id: client_id,
+                 server: {ScriptedTransport, host: 'localhost', port: 1883},
+                 backoff: [min_interval: 0],
+                 handler: {Tortoise.Handler.Logger, []}
+               )
+
+      assert_receive {ScriptedTransport, :connected}
+      assert_receive {ScriptedTransport, :closed_connection}
+      assert_receive {ScriptedTransport, {:refute_connection, ^refusal}}
+      assert_receive {ScriptedTransport, {:refute_connection, ^refusal}}
+      assert_receive {ScriptedTransport, :connected}
+      assert_receive {ScriptedTransport, :completed}
+    end
+
     test "server protocol violation", context do
       Process.flag(:trap_exit, true)
       client_id = context.client_id
@@ -476,8 +522,10 @@ defmodule Tortoise.ConnectionTest do
                )
 
       assert_receive {ScriptedTransport, :connected}
+      assert_receive {ScriptedTransport, {:received, %Package.Connect{}}}
       assert_receive {:EXIT, ^pid, {:protocol_violation, violation}}
       assert %{expected: Tortoise.Package.Connect, got: _} = violation
+      assert_receive {ScriptedTransport, :completed}
     end
   end
 end
