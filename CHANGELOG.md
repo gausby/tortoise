@@ -1,5 +1,47 @@
 # Changelog
 
+## 0.4.0 - 2018-07-08
+
+### Added
+
+- Incremental backoff has been added to the connector, allowing us to
+  retry reconnecting to the broker if the initial (or later reconnect)
+  attempt fails. The backoff will per default start retrying after 100
+  ms and it will increment in multiples of 2 up until 30 seconds, at
+  which point it will flip back to 100 ms and start over. This should
+  ensure that we will be able to connect fairly quickly if it is a
+  network fluke (or the network devise is not ready yet), and still
+  not try *too often* or *too quickly*.
+
+  The backoff can be configured by passing `backoff` containing a
+  keyword list to the connection specification. Example `backoff:
+  [min_interval: 100, max_interval: 30_000]`. Both times are in
+  milliseconds.
+
+### Changed
+
+- The code for establishing a connection and eventually reconnecting
+  has been combined into one. This makes it easier to test and verify,
+  and it will make it easier to handle connection errors.
+
+  Because the initial connection is happening outside of the `init/1`
+  function the possible return values of the
+  `Tortoise.Connection.start_link/1`-function has changed a bit. A
+  fatal error will cause the connection process to exit instead
+  because the init will always return `{:ok, state}`. This might break
+  some implementation using Tortoise.
+
+  For now it is only `{:error, :nxdomain}` that is handled with
+  connection retries. Error categorization has been planned so we can
+  error out if it is a non-recoverable error reason (such as no cacert
+  files specified), instead of retrying the connection. In the near
+  future more error reasons will be handled with reconnect attempts.
+
+- A protocol violation from the server during connection will be
+  handled better; previously it would error with a decoding error,
+  because it would attempt to decode 4 random bytes. The error message
+  should be obvious now.
+
 ## 0.3.0 - 2018-06-10
 
 ### Added
