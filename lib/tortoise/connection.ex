@@ -388,6 +388,9 @@ defmodule Tortoise.Connection do
 
       {:error, {:options, {:cacertfile, []}}} ->
         {:error, :no_cacartfile_specified}
+
+      {:error, :closed} ->
+        {:error, :server_closed_connection}
     end
   end
 
@@ -410,6 +413,14 @@ defmodule Tortoise.Connection do
   end
 
   defp categorize_error({:nxdomain, _host, _port}) do
+    :connectivity
+  end
+
+  defp categorize_error({:connection_refused, _host, _port}) do
+    :connectivity
+  end
+
+  defp categorize_error(:server_closed_connection) do
     :connectivity
   end
 

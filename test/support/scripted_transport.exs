@@ -229,7 +229,7 @@ defmodule Tortoise.Integration.ScriptedTransport do
       )
       when byte_size(buffer) >= length do
     <<msg::binary-size(length), remaining::binary>> = buffer
-    {:reply, {:ok, msg}, %State{state | buffer: remaining}}
+    {:reply, {:ok, msg}, setup_next(%State{state | buffer: remaining})}
   end
 
   def handle_call({:recv, _length, _timeout}, {other, _ref}, %State{client: client} = state)
@@ -263,6 +263,11 @@ defmodule Tortoise.Integration.ScriptedTransport do
     {:reply, Keyword.take(state.stats, opts), state}
   end
 
+  defp setup_next(%State{script: []} = state) do
+    Kernel.send(state.test_process, {__MODULE__, :completed})
+    state
+  end
+
   defp setup_next(%State{script: [{:dispatch, package} | remaining]} = state) do
     data = IO.iodata_to_binary(Tortoise.Package.encode(package))
     buffer = state.buffer <> data
@@ -271,5 +276,14 @@ defmodule Tortoise.Integration.ScriptedTransport do
 
   defp setup_next(%State{script: [{:expect, _} | _]} = state) do
     state
+  end
+
+  defp setup_next(
+         %State{client: client, script: [{:close_connection, timeout} | remaining]} = state
+       )
+       when is_pid(client) do
+    Process.send_after(client, {:tcp_closed, self()}, timeout)
+    Kernel.send(state.test_process, {__MODULE__, :closed_connection})
+    %State{state | client: nil, script: remaining}
   end
 end
