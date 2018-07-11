@@ -72,6 +72,7 @@ defmodule Tortoise.MixProject do
         "docs/introduction.md",
         "docs/connecting_to_a_mqtt_broker.md",
         "docs/connection_supervision.md",
+        "docs/publishing_messages.md"
       ]
     ]
   end
