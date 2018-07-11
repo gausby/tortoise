@@ -70,7 +70,8 @@ defmodule Tortoise.MixProject do
       source_url: "https://github.com/gausby/tortoise",
       extras: [
         "docs/introduction.md",
-        "docs/connection_supervision.md"
+        "docs/connecting_to_a_mqtt_broker.md",
+        "docs/connection_supervision.md",
       ]
     ]
   end
