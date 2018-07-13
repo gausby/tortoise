@@ -9,8 +9,16 @@ defmodule Tortoise.Transport.Tcp do
   def new(opts) do
     {host, opts} = Keyword.pop(opts, :host)
     {port, opts} = Keyword.pop(opts, :port, 1883)
+    host = coerce_host(host)
     opts = [:binary, {:packet, :raw}, {:active, false} | opts]
     %Transport{type: __MODULE__, host: host, port: port, opts: opts}
+  end
+
+  defp coerce_host(host) when is_binary(host) do
+    String.to_charlist(host)
+  end
+  defp coerce_host(otherwise) do
+    otherwise
   end
 
   @impl true

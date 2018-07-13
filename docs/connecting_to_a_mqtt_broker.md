@@ -12,7 +12,7 @@ A minimal connection specification looks like this:
 {ok, _pid} =
   Tortoise.Connection.start_link(
     client_id: HelloWorld,
-    server: {Tortoise.Transport.Tcp, host: 'localhost', port: 1883},
+    server: {Tortoise.Transport.Tcp, host: "localhost", port: 1883},
     handler: {Tortoise.Handler.Logger, []}
   )
 ```
