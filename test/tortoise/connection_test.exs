@@ -362,8 +362,8 @@ defmodule Tortoise.ConnectionTest do
       ]
 
       assert {:ok, _pid} = Connection.start_link(opts)
-      assert_receive {ScriptedMqttServer, {:received, ^connect}}
-      assert_receive {ScriptedMqttServer, :completed}
+      assert_receive {ScriptedMqttServer, {:received, ^connect}}, 2000
+      assert_receive {ScriptedMqttServer, :completed}, 2000
     end
 
     test "successful connect (no certificate verification)", context do

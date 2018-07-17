@@ -17,6 +17,7 @@ defmodule Tortoise.Transport.Tcp do
   defp coerce_host(host) when is_binary(host) do
     String.to_charlist(host)
   end
+
   defp coerce_host(otherwise) do
     otherwise
   end
