@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.4.3 - 2018-07-17
+
+### Changed
+
+- The wrong field was pulled out of the configuration options when the
+  last will message was set, so it was impossible to configure a last
+  will message. The last will message can now be set by passing in a
+  `%Tortoise.Package.Publish{}` struct as the `:will` when starting a
+  connection.
+
 ## 0.4.2 - 2018-07-08
 
 ### Changed
