@@ -94,7 +94,7 @@ defmodule Tortoise.TestGenerators do
   Generate a valid connect message
   """
   def gen_connect() do
-    let last_will <-
+    let will <-
           oneof([
             nil,
             %Package.Publish{
@@ -120,7 +120,7 @@ defmodule Tortoise.TestGenerators do
             password: oneof([nil, utf8()]),
             clean_session: bool(),
             keep_alive: choose(0, 65535),
-            will: last_will
+            will: will
           } do
         connect
       end

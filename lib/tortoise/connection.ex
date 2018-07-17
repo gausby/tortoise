@@ -22,7 +22,7 @@ defmodule Tortoise.Connection do
       user_name: Keyword.get(opts, :user_name),
       password: Keyword.get(opts, :password),
       keep_alive: Keyword.get(opts, :keep_alive, 60),
-      will: Keyword.get(opts, :last_will),
+      will: Keyword.get(opts, :will),
       # if we re-spawn from here it means our state is gone
       clean_session: true
     }
