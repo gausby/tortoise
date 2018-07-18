@@ -175,13 +175,28 @@ unspecified behavior it is advised to use a keep alive value.
 
 ## Last will message
 
-*[todo, test last will messages, for some reason I cannot get it to
-work with my VerneMQ session]*
-
 It is possible to specify a message which should be dispatched by the
 broker if the client is disconnected from the broker abruptly. This
-message is known as the last will message. This allow for other
+message is known as the last will message, and allow for other
 connected clients to act on other clients leaving the broker.
 
 The last will message is specified as part of the connection, and for
-tortoise [todo].
+Tortoise it is possible to configure a last will message by passing in
+a `Tortoise.Package.Publish` struct to the *will* connection
+configuration field.
+
+``` elixir
+{:ok, pid} =
+  Tortoise.Connection.start_link(
+    client_id: William,
+    server: {Tortoise.Transport.Tcp, host: 'localhost', port: 1883},
+    handler: {Tortoise.Handler.Logger, []},
+    will: %Tortoise.Package.Publish{topic: "foo/bar", payload: "goodbye"}
+  )
+```
+
+If we have another client connected to the broker, subscribing to
+*foo/bar*, we should now receive a message containing the message
+*goodbye* on that topic, should the client called *William* disconnect
+abruptly from the broker. We can simulate this by terminating the *pid*
+using `Process.exit(pid, :ouch)`.
