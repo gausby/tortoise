@@ -49,9 +49,10 @@ defmodule Tortoise.Handler do
        functions from within a callback as they will block the
        controller.
 
-  To allow for subscribes and unsubscribes the concept of *next
-  actions* as been introduced, inspired by the next actions from the
-  OTP `:gen_statem` behaviour.
+  While it is not possible to subscribe and unsubscribe in the handler
+  process using the `Tortoise.subscribe/3` and
+  `Tortoise.unsubscribe/3` it is possible to make changes to the
+  subscription list via `:gen_statem` inspired *next_actions*.
 
   ## Next actions
 
