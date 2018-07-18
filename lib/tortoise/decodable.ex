@@ -1,4 +1,6 @@
 defprotocol Tortoise.Decodable do
+  @moduledoc false
+
   def decode(data)
 end
 

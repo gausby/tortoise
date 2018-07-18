@@ -1,4 +1,6 @@
 defmodule Tortoise.Package.Unsuback do
+  @moduledoc false
+
   @opcode 11
 
   alias Tortoise.Package

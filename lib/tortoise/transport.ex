@@ -33,7 +33,7 @@ defmodule Tortoise.Transport do
   @type opts() :: any()
   @type stats() :: any()
 
-  @callback new(opts()) :: Transport.t()
+  @callback new(opts()) :: Tortoise.Transport.t()
 
   @callback listen(opts()) :: {:ok, socket()} | {:error, atom()}
 

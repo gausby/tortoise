@@ -1,5 +1,7 @@
 defmodule Tortoise.Pipe do
   @moduledoc """
+  Experimental. This feature is under development.
+
   The transmitter "pipe", for lack of a better word, is an opaque data
   type that can be given to a process. It contains amongst other
   things a socket.
@@ -14,7 +16,8 @@ defmodule Tortoise.Pipe do
 
     pipe = Tortoise.Pipe.publish(pipe, "foo/bar", "bonjour !")
 
-  @todo, document this stuff, and document it better.
+  This is all experimental, and efforts to document this better will
+  be made when the design and implementation has stabilized.
   """
 
   alias Tortoise.{Package, Pipe}
@@ -40,6 +43,9 @@ defmodule Tortoise.Pipe do
     pending: []
   ])
 
+  @doc """
+  Create a new publisher pipe.
+  """
   def new(client_id, opts \\ []) do
     active = Keyword.get(opts, :active, false)
     timeout = Keyword.get(opts, :timeout, 5000)
@@ -55,6 +61,9 @@ defmodule Tortoise.Pipe do
     end
   end
 
+  @doc """
+  Publish a message using a pipe.
+  """
   def publish(%Pipe{} = pipe, topic, payload \\ nil, opts \\ []) do
     publish = %Package.Publish{
       topic: topic,

@@ -1,4 +1,6 @@
 defmodule Tortoise.Package.Subscribe do
+  @moduledoc false
+
   @opcode 8
 
   alias Tortoise.Package

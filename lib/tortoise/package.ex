@@ -1,4 +1,6 @@
 defmodule Tortoise.Package do
+  @moduledoc false
+
   alias Tortoise.Package
 
   @opaque message ::
@@ -20,16 +22,13 @@ defmodule Tortoise.Package do
   defdelegate encode(data), to: Tortoise.Encodable
   defdelegate decode(data), to: Tortoise.Decodable
 
-  def generate_random_identifier() do
-    <<identifier::big-integer-size(16)>> = :crypto.strong_rand_bytes(2)
-    identifier
-  end
-
+  @doc false
   def length_encode(data) do
     length_prefix = <<byte_size(data)::big-integer-size(16)>>
     [length_prefix, data]
   end
 
+  @doc false
   def variable_length_encode(data) when is_list(data) do
     length_prefix = data |> IO.iodata_length() |> remaining_length()
     length_prefix ++ data

@@ -1,7 +1,7 @@
 defmodule Tortoise.MixProject do
   use Mix.Project
 
-  @version "0.4.3"
+  @version "0.5.0"
 
   def project do
     [
@@ -69,7 +69,10 @@ defmodule Tortoise.MixProject do
       canonical: "http://hexdocs.pm/tortoise",
       source_url: "https://github.com/gausby/tortoise",
       extras: [
-        "docs/introduction.md"
+        "docs/introduction.md",
+        "docs/connecting_to_a_mqtt_broker.md",
+        "docs/connection_supervision.md",
+        "docs/publishing_messages.md"
       ]
     ]
   end

@@ -1,27 +1,27 @@
 defmodule Tortoise.Connection.Inflight.Track do
-  @moduledoc """
-  A data structure implementing state machines tracking the state of a
-  message in flight.
+  @moduledoc false
 
-  Messages can have two polarities, positive and negative, describing
-  what direction they are going. A positive polarity is messages
-  coming from the server to the client (us), a negative polarity is
-  messages send from the client (us) to the server.
+  # A data structure implementing state machines tracking the state of a
+  # message in flight.
 
-  For now we care about tracking the state of a handful of message
-  kinds: the publish control packages with a quality of service above
-  0 and subscribe and unsubscribe control packages. We do not track
-  the in-flight state of a QoS 0 control packet because there is no
-  state to track.
+  # Messages can have two polarities, positive and negative, describing
+  # what direction they are going. A positive polarity is messages
+  # coming from the server to the client (us), a negative polarity is
+  # messages send from the client (us) to the server.
 
-  For negative polarity we need to track the caller, which is the
-  process that instantiated the publish control package. This process
-  will wait for a message to get passed to it when the ownership of
-  the control package has been transferred to the server. Messages
-  with a positive polarity will get passed to the callback module
-  attached to the Controller module, so in that case there will be no
-  caller.
-  """
+  # For now we care about tracking the state of a handful of message
+  # kinds: the publish control packages with a quality of service above
+  # 0 and subscribe and unsubscribe control packages. We do not track
+  # the in-flight state of a QoS 0 control packet because there is no
+  # state to track.
+
+  # For negative polarity we need to track the caller, which is the
+  # process that instantiated the publish control package. This process
+  # will wait for a message to get passed to it when the ownership of
+  # the control package has been transferred to the server. Messages
+  # with a positive polarity will get passed to the callback module
+  # attached to the Controller module, so in that case there will be no
+  # caller.
 
   @type package_identifier :: 0x0001..0xFFFF
   @type package :: Package.Publish | Package.Subscribe | Package.Unsubscribe

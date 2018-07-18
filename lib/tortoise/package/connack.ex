@@ -1,4 +1,6 @@
 defmodule Tortoise.Package.Connack do
+  @moduledoc false
+
   @opcode 2
 
   alias Tortoise.Package

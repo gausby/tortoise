@@ -9,13 +9,13 @@ A MQTT Client application that keep connections to one or more MQTT
 brokers, handles subscriptions, and expose a publisher for publishing
 messages to the broker.
 
-This is work in progress. The documentation sure needs improvements,
-and while the user interface is stabilizing there might be some
-changes in the future. Amongst other things the client supports:
+Amongst other things Tortoise supports:
 
   - Keeping a connection to a MQTT server (version 3.1.1 for now)
+  - Retry connecting with incremental back-off
   - Publishing and subscribing to topics of QoS 0, 1, and 2
-  - Connecting via TCP and SSL (experimental)
+  - Connections support last will message
+  - Connecting via TCP and SSL
   - The fundamentals are there, but some of the API's might change in
     the near future
 
@@ -26,10 +26,9 @@ your own issues if something is confusing or broken.
 
 I would love to get some feedback and help building this thing.
 
-
 ## Example
 
-Just to get people started:
+A supervised connection can be started like this:
 
 ``` elixir
 # connect to the server and subscribe to foo/bar with QoS 0
@@ -48,7 +47,7 @@ transport can be used like this:
 
 ``` elixir
 Tortoise.Supervisor.start_child(
-    client_id: "my_client_id",
+    client_id: "smart-spoon",
     handler: {Tortoise.Handler.Logger, []},
     server: {Tortoise.Transport.SSL, host: host, port: port, key: key, cert: cert},
     subscriptions: [{"foo/bar", 0}])
@@ -58,21 +57,19 @@ Look at the `connection_test.exs`-file for an example.
 
 ## Installation
 
-Tortoise is [available in Hex](https://hex.pm/docs/publish), the
-package can be installed by adding `tortoise` to your list of
+Tortoise can be installed by adding `tortoise` to your list of
 dependencies in `mix.exs`:
 
 ```elixir
 def deps do
   [
-    {:tortoise, "~> 0.4.3"}
+    {:tortoise, "~> 0.5.0"}
   ]
 end
 ```
 
-Documentation can be generated with [ExDoc](https://github.com/elixir-lang/ex_doc)
-and published on [HexDocs](https://hexdocs.pm). Once published, the docs can
-be found at [https://hexdocs.pm/tortoise](https://hexdocs.pm/tortoise).
+Documentation should be available at
+[https://hexdocs.pm/tortoise](https://hexdocs.pm/tortoise).
 
 ## Building documentation
 
@@ -84,8 +81,7 @@ MIX_ENV=docs mix docs
 
 This will build the documentation in place them in the *doc*-folder in
 the root of the project. These docs will also find their way to the
-Hexdocs website when they project has been published on Hex in the
-future.
+Hexdocs website when the project is published on Hex.
 
 ## License
 

@@ -1,4 +1,6 @@
 defmodule Tortoise.Package.Suback do
+  @moduledoc false
+
   @opcode 9
 
   alias Tortoise.Package

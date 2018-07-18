@@ -1,5 +1,24 @@
 # Changelog
 
+## 0.5.0 - 2018-07-18
+
+### Added
+
+- Documentation. Lot's of documentation. It might be a bit wordy, and
+  it might repeat itself here and there, but it is a start that can be
+  improved upon and good enough for a 0.4.4 release.
+
+- Added some articles that describe usage of Tortoise and MQTT.
+
+### Changed
+
+- rename `renew/1` to `reconnect/1` on `Tortoise.Connection`-module.
+
+- Some type specs has been altered to better fit reality.
+
+- The `Tortoise.Transport.Tcp` transport will now accept a binary as a
+  host name. Internally it will cast it to a char list.
+
 ## 0.4.3 - 2018-07-17
 
 ### Changed

@@ -57,12 +57,13 @@ following:
     ensuring a message will only get delivered once to the receiver,
     referred to as **exactly once delivery**.
 
-The varying kinds of quality of services require more messages to be
-transmitted on the network, so depending on the configuration on a
-broker a message can be refused if the client is not allowed to send
-using the specified QoS, or a subscription can be accepted with a
-lower QoS than requested. This can be expensive on the bandwidth,
-especially for subscriptions made to topics that are high traffic.
+The higher quality of service specified the more expensive a publish
+or a subscription will be bandwidth wise, as a higher QoS will require
+more protocol messages to fulfill network exchange. That is why some
+brokers administrators choose to configure their broker to refuse
+higher quality of services for some topics, or some subscriptions. In
+the case of subscriptions it can happen that a lower QoS than the one
+requested is accepted.
 
 **Notice**: Placing a subscription with QoS=2 does not mean that the
 client will receive messages received as QoS=2, it will receive all

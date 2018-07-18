@@ -1,4 +1,6 @@
 defmodule Tortoise.Package.Connect do
+  @moduledoc false
+
   @opcode 1
 
   alias Tortoise.Package
