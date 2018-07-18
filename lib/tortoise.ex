@@ -78,10 +78,11 @@ defmodule Tortoise do
       message at a time can be retained for a given topic, so sending
       a new one will overwrite the old. `retain` defaults to `false`.
 
-    * `qos` set the quality of service. The `qos` defaults to `0`.
+    * `qos` set the quality of service, and integer of 0, 1, or 2. The
+      `qos` defaults to `0`.
 
-  Publishing a message with the payload `"hello"` to to topic
-  `"foo/bar"` with a QoS1 could look like this:
+  Publishing a message with the payload *hello* to to topic *foo/bar*
+  with a *QoS1* could look like this:
 
       Tortoise.publish("client_id", "foo/bar", "hello", qos: 1)
 
@@ -96,11 +97,12 @@ defmodule Tortoise do
   behaviour of the return value. When publishing a message with a QoS0
   an `:ok` will simply get returned. This is because a QoS0 is a "fire
   and forget." There are no quality of service so no efforts are made
-  to ensure that the message end up at its destination.
+  to ensure that the message will reach its destination (though it very
+  likely will).
 
       :ok = Tortoise.publish("client_id", "foo/bar", nil, qos: 0)
 
-  When a message is published using either a QoS1 or QoS2, `Tortoise`
+  When a message is published using either a QoS1 or QoS2, Tortoise
   will ensure that the message is delivered. A unique reference will
   get returned and eventually a message will get delivered to the
   process mailbox, containing the result of the publish when it has
@@ -136,9 +138,9 @@ defmodule Tortoise do
   This is very similar to `Tortoise.publish/4` with the difference
   that it will block the calling process until the message has been
   handed over to the server; the configuration options are the same
-  with the addition of the `timeout` option which specify how long we
-  are willing to wait for a reply. Per default the timeout is set to
-  `:infinity`, it is advisable to set it to a reasonable amount in
+  with the addition of the `timeout` option which specifies how long
+  we are willing to wait for a reply. Per default the timeout is set
+  to `:infinity`, it is advisable to set it to a reasonable amount in
   milliseconds as it otherwise could block forever.
 
       msg = "Hello, from the World of Tomorrow !"
@@ -167,10 +169,33 @@ defmodule Tortoise do
   integer value 0 through 2.
 
   Multiple topics can be given as a list.
+
+  The subscribe function is asynchronous, so it will return `{:ok,
+  ref}`. Eventually a response will get delivered to the process
+  mailbox, tagged with the reference stored in `ref`. It will take the
+  form of:
+
+      {{Tortoise, ^client_id}, ^ref, ^result}
+
+  Where the `result` can be one of `:ok`, or `{:error, reason}`.
+
+  Read the documentation for `Tortoise.subscribe_sync/3` for a
+  blocking version of this call.
   """
   defdelegate subscribe(client_id, topics, opts \\ []),
     to: Tortoise.Connection
 
+  @doc """
+  Subscribe to topics and block until the server acknowledges.
+
+  This is a synchronous version of the `Tortoise.subscribe/3`. In fact
+  it calls into `Tortoise.subscribe/3` but will handle the selective
+  receive loop, making it much easier to work with. Also, this
+  function can be used to block a process that cannot continue before
+  it has a subscription to the given topics.
+
+  See `Tortoise.subscribe/3` for configuration options.
+  """
   defdelegate subscribe_sync(client_id, topics, opts \\ []),
     to: Tortoise.Connection
 
@@ -178,10 +203,23 @@ defmodule Tortoise do
   Unsubscribe from one of more topic filters. The topic filters are
   given as strings. Multiple topic filters can be given at once by
   passing in a list of strings.
+
+      Tortoise.unsubscribe(client_id, ["foo/bar", "quux"])
+
+  This operation is asynchronous. When the operation is done a message
+  will be received in mailbox of the originating process.
   """
   defdelegate unsubscribe(client_id, topics, opts \\ []),
     to: Tortoise.Connection
 
+  @doc """
+  Unsubscribe from topics and block until the server acknowledges.
+
+  This is a synchronous version of `Tortoise.unsubscribe/3`. It will
+  block until the server has send the acknowledge message.
+
+  See `Tortoise.unsubscribe/3` for configuration options.
+  """
   defdelegate unsubscribe_sync(client_id, topics, opts \\ []),
     to: Tortoise.Connection
 end
