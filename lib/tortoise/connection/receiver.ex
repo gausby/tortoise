@@ -188,7 +188,7 @@ defmodule Tortoise.Connection.Receiver do
     {:ok, length + 5}
   end
 
-  defp parse_fixed_header(<<_::8, _::binary>>) do
+  defp parse_fixed_header(header) when byte_size(header) > 5 do
     {:error, :invalid_header_length}
   end
 

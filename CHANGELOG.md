@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.5.1 - 2018-07-23
+
+### Fixed
+
+- The receiver could report an invalid header length protocol
+  violation when the server send too few bytes, and thus taking too
+  long sending the complete package header. This patch will ensure we
+  only report invalid header length when we have pulled more than 40
+  bits in.
+
 ## 0.5.0 - 2018-07-18
 
 ### Added
