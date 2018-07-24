@@ -7,7 +7,7 @@ defmodule Tortoise.MixProject do
     [
       app: :tortoise,
       version: @version,
-      elixir: "~> 1.6.5",
+      elixir: "~> 1.6",
       start_permanent: Mix.env() == :prod,
       description: description(),
       package: package(),

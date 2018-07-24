@@ -15,7 +15,7 @@ defmodule Tortoise.Connection do
   @type client_id() :: binary() | atom()
 
   alias Tortoise.{Transport, Connection, Package}
-  alias Tortoise.Connection.{Inflight, Controller, Receiver, Transmitter, Backoff}
+  alias Tortoise.Connection.{Inflight, Controller, Receiver, Backoff}
   alias Tortoise.Package.{Connect, Connack}
 
   @doc """
@@ -69,7 +69,8 @@ defmodule Tortoise.Connection do
     GenServer.start_link(__MODULE__, initial, opts)
   end
 
-  defp via_name(client_id) do
+  @doc false
+  def via_name(client_id) do
     Tortoise.Registry.via_name(__MODULE__, client_id)
   end
 
@@ -104,47 +105,6 @@ defmodule Tortoise.Connection do
   @spec subscriptions(client_id()) :: Tortoise.Package.Subscribe.t()
   def subscriptions(client_id) do
     GenServer.call(via_name(client_id), :subscriptions)
-  end
-
-  @doc false
-  def publish(client_id, topic, payload \\ nil, opts \\ []) do
-    qos = Keyword.get(opts, :qos, 0)
-
-    publish = %Package.Publish{
-      topic: topic,
-      qos: qos,
-      payload: payload,
-      retain: Keyword.get(opts, :retain, false)
-    }
-
-    case publish do
-      %Package.Publish{qos: 0} ->
-        Transmitter.cast(client_id, publish)
-
-      %Package.Publish{qos: qos} when qos in [1, 2] ->
-        Inflight.track(client_id, {:outgoing, publish})
-    end
-  end
-
-  @doc false
-  def publish_sync(client_id, topic, payload \\ nil, opts \\ []) do
-    timeout = Keyword.get(opts, :timeout, :infinity)
-    qos = Keyword.get(opts, :qos, 0)
-
-    publish = %Package.Publish{
-      topic: topic,
-      qos: qos,
-      payload: payload,
-      retain: Keyword.get(opts, :retain, false)
-    }
-
-    case publish do
-      %Package.Publish{qos: 0} ->
-        Transmitter.cast(client_id, publish)
-
-      %Package.Publish{qos: qos} when qos in [1, 2] ->
-        Inflight.track_sync(client_id, {:outgoing, publish}, timeout)
-    end
   end
 
   @doc false
@@ -248,6 +208,18 @@ defmodule Tortoise.Connection do
     end
   end
 
+  @doc false
+  @spec connection(client_id()) :: {:ok, {module(), term()}} | {:error, :unknown_connection}
+  def connection(client_id) do
+    case Tortoise.Registry.meta(via_name(client_id)) do
+      {:ok, {_transport, _socket} = connection} ->
+        {:ok, connection}
+
+      :error ->
+        {:error, :unknown_connection}
+    end
+  end
+
   # Callbacks
   @impl true
   def init({transport, %Connect{} = connect, backoff_opts, subscriptions, opts}) do
@@ -265,7 +237,14 @@ defmodule Tortoise.Connection do
   end
 
   @impl true
+  def terminate(_reason, state) do
+    :ok = Tortoise.Registry.delete_meta(via_name(state.connect.client_id))
+    :ok
+  end
+
+  @impl true
   def handle_info(:connect, state) do
+    :ok = Tortoise.Registry.put_meta(via_name(state.connect.client_id), nil)
     :ok = Controller.update_connection_status(state.connect.client_id, :down)
 
     with {%Connack{status: :accepted} = connack, socket} <-
@@ -273,6 +252,9 @@ defmodule Tortoise.Connection do
          {:ok, state} = init_connection(socket, state) do
       # we are connected; reset backoff state
       state = %State{state | backoff: Backoff.reset(state.backoff)}
+
+      :ok =
+        Tortoise.Registry.put_meta(via_name(state.connect.client_id), {state.server.type, socket})
 
       case connack do
         %Connack{session_present: true} ->
