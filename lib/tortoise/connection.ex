@@ -9,7 +9,7 @@ defmodule Tortoise.Connection do
 
   require Logger
 
-  defstruct [:connect, :server, :backoff, :subscriptions, :keep_alive, :opts]
+  defstruct [:connect, :server, :backoff, :subscriptions, :keep_alive, :awaiting_socket, :opts]
   alias __MODULE__, as: State
 
   @type client_id() :: binary() | atom()
@@ -209,11 +209,26 @@ defmodule Tortoise.Connection do
   end
 
   @doc false
-  @spec connection(client_id()) :: {:ok, {module(), term()}} | {:error, :unknown_connection}
-  def connection(client_id) do
+  @spec connection(client_id(), [opts]) ::
+          {:ok, {module(), term()}} | {:error, :unknown_connection} | {:error, :timeout}
+        when opts: {:timeout, non_neg_integer()}
+  def connection(client_id, opts \\ []) do
     case Tortoise.Registry.meta(via_name(client_id)) do
       {:ok, {_transport, _socket} = connection} ->
         {:ok, connection}
+
+      {:ok, :connecting} ->
+        timeout = Keyword.get(opts, :timeout, :infinity)
+
+        :ok = GenServer.cast(via_name(client_id), {:get_socket, self()})
+
+        receive do
+          {{Tortoise, ^client_id}, :socket, {transport, socket}} ->
+            {:ok, {transport, socket}}
+        after
+          timeout ->
+            {:error, :timeout}
+        end
 
       :error ->
         {:error, :unknown_connection}
@@ -228,8 +243,11 @@ defmodule Tortoise.Connection do
       connect: connect,
       backoff: Backoff.new(backoff_opts),
       subscriptions: subscriptions,
+      awaiting_socket: [],
       opts: opts
     }
+
+    Tortoise.Registry.put_meta(via_name(connect.client_id), :connecting)
 
     # eventually, switch to handle_continue
     send(self(), :connect)
@@ -244,7 +262,6 @@ defmodule Tortoise.Connection do
 
   @impl true
   def handle_info(:connect, state) do
-    :ok = Tortoise.Registry.put_meta(via_name(state.connect.client_id), nil)
     :ok = Controller.update_connection_status(state.connect.client_id, :down)
 
     with {%Connack{status: :accepted} = connack, socket} <-
@@ -253,8 +270,9 @@ defmodule Tortoise.Connection do
       # we are connected; reset backoff state
       state = %State{state | backoff: Backoff.reset(state.backoff)}
 
-      :ok =
-        Tortoise.Registry.put_meta(via_name(state.connect.client_id), {state.server.type, socket})
+      connection = {state.server.type, socket}
+      :ok = Tortoise.Registry.put_meta(via_name(state.connect.client_id), connection)
+      state = reply_pending_connections(connection, state)
 
       case connack do
         %Connack{session_present: true} ->
@@ -375,6 +393,23 @@ defmodule Tortoise.Connection do
     end
   end
 
+  def handle_cast({:get_socket, pid}, state) do
+    client_id = state.connect.client_id
+
+    case Tortoise.Registry.meta(via_name(client_id)) do
+      {:ok, {transport, socket}} ->
+        send(pid, {{Tortoise, client_id}, :socket, {transport, socket}})
+        {:noreply, state}
+
+      {:ok, :connecting} ->
+        {:noreply, %{state | awaiting_socket: [pid | state.awaiting_socket]}}
+
+      :error ->
+        send(pid, {:error, :unknown_connection})
+        {:noreply, state}
+    end
+  end
+
   # Helpers
   defp handle_suback_result(%{:error => []} = results, %State{} = state) do
     subscriptions = Enum.into(results[:ok], state.subscriptions)
@@ -447,6 +482,22 @@ defmodule Tortoise.Connection do
       {:error, {:already_started, _pid}} ->
         :ok
     end
+  end
+
+  # Reply to the processes who are waiting for a connection; they get
+  # added to the `awaiting_socket` field on the state; this is
+  # actually very unlikely they will end up there, because the
+  # connection process will enter the connection loop fairly quickly
+  # after it has initialized, but in theory it can happen as the
+  # connection process is a named process
+  defp reply_pending_connections(connection, %State{} = state) do
+    client_id = state.connect.client_id
+
+    for awaiting <- state.awaiting_socket do
+      GenServer.reply(awaiting, {{Tortoise, client_id}, :socket, connection})
+    end
+
+    %State{state | awaiting_socket: []}
   end
 
   defp categorize_error({:nxdomain, _host, _port}) do

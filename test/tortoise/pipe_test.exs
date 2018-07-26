@@ -9,21 +9,26 @@ defmodule Tortoise.PipeTest do
     {:ok, %{client_id: context.test}}
   end
 
-  def setup_inflight(context) do
+  def setup_inflight_and_transmitter(context) do
     opts = [client_id: context.client_id]
-    {:ok, pid} = Inflight.start_link(opts)
-    {:ok, %{inflight_pid: pid}}
+    {:ok, inflight_pid} = Inflight.start_link(opts)
+    {:ok, transmitter_pid} = Transmitter.start_link(opts)
+    connection = {Tortoise.Transport.Tcp, context.client}
+    :ok = Transmitter.handle_socket(context.client_id, connection)
+    {:ok, %{inflight_pid: inflight_pid, transmitter_pid: transmitter_pid}}
   end
 
-  def setup_transmitter(context) do
-    opts = [client_id: context.test]
-    {:ok, pid} = Transmitter.start_link(opts)
-    {:ok, %{transmitter_pid: pid}}
+  def setup_registry(context) do
+    key = Tortoise.Registry.via_name(Tortoise.Connection, context.client_id)
+    Tortoise.Registry.put_meta(key, :connecting)
+    {:ok, context}
   end
 
   def setup_connection(context) do
     {:ok, client_socket, server_socket} = Tortoise.Integration.TestTCPTunnel.new()
-    :ok = Transmitter.handle_socket(context.test, {Tortoise.Transport.Tcp, client_socket})
+    connection = {Tortoise.Transport.Tcp, client_socket}
+    key = Tortoise.Registry.via_name(Tortoise.Connection, context.client_id)
+    Tortoise.Registry.put_meta(key, connection)
     {:ok, %{client: client_socket, server: server_socket}}
   end
 
@@ -40,30 +45,34 @@ defmodule Tortoise.PipeTest do
   end
 
   describe "new/2" do
-    setup [:setup_transmitter]
+    setup [:setup_registry]
 
-    test "generate a pipe when transmitter is online", context do
+    test "generating a pipe when the connection is up", context do
       context = run_setup(context, :setup_connection)
-      assert %Pipe{} = Pipe.new(context.test)
+      assert %Pipe{} = Pipe.new(context.client_id)
     end
 
-    test "generate a pipe when transmitter is offline", context do
+    test "generating a pipe while the connection is in connecting state", context do
       parent = self()
-      client_id = context.test
+      client_id = context.client_id
 
-      spawn_link(fn ->
-        result = Pipe.new(client_id)
-        send(parent, {:result, result})
-      end)
+      client =
+        spawn_link(fn ->
+          result = Pipe.new(client_id, timeout: 1000)
+          send(parent, {:result, result})
+        end)
 
-      :timer.sleep(200)
-      _ = run_setup(context, :setup_connection)
-      assert_receive {:result, %Pipe{client_id: ^client_id}}
+      # sleep a bit, open a socket and reply to the client
+      :timer.sleep(50)
+      context = run_setup(context, :setup_connection)
+      send(client, {{Tortoise, client_id}, :socket, {Tortoise.Transport.Tcp, context.client}})
+      socket = context.client
+      assert_receive {:result, %Pipe{client_id: ^client_id, socket: ^socket}}
     end
   end
 
   describe "publish/4" do
-    setup [:setup_transmitter, :setup_connection]
+    setup [:setup_registry, :setup_connection]
 
     test "publish a message", context do
       pipe = Pipe.new(context.test)
@@ -71,18 +80,18 @@ defmodule Tortoise.PipeTest do
       payload = "my message"
 
       assert %Pipe{} = Pipe.publish(pipe, topic, payload)
-      {:ok, package} = :gen_tcp.recv(context.server, 0)
+      {:ok, package} = :gen_tcp.recv(context.server, 0, 500)
       assert %Package.Publish{topic: ^topic, payload: ^payload} = Package.decode(package)
     end
 
     test "replace pipe during a publish if the socket is closed (active:false)", context do
-      client_id = context.test
+      client_id = context.client_id
       parent = self()
       publish = %Package.Publish{topic: "foo"}
 
       subscriber =
         spawn_link(fn ->
-          pipe = Pipe.new(client_id)
+          pipe = %Pipe{} = Pipe.new(client_id, timeout: 500)
           send(parent, {:subscriber_pipe, pipe})
           pipe = Pipe.publish(pipe, "foo")
           # Now the parent will close the socket belonging to the pipe
@@ -91,20 +100,24 @@ defmodule Tortoise.PipeTest do
           receive do
             :retry_publish ->
               # this publish should receive the new pipe
-              pipe = Pipe.publish(pipe, "foo")
+              pipe = %Pipe{} = Pipe.publish(pipe, "foo")
               send(parent, {:subscriber_pipe, pipe})
           end
         end)
 
       assert_receive {:subscriber_pipe, %Pipe{socket: original_socket}}
-      {:ok, package} = :gen_tcp.recv(context.server, 0)
+      {:ok, package} = :gen_tcp.recv(context.server, 0, 500)
       assert Package.decode(package) == publish
       :ok = :gen_tcp.close(context.client)
+      context = run_setup(context, :setup_registry)
 
       send(subscriber, :retry_publish)
+      :timer.sleep(40)
       context = run_setup(context, :setup_connection)
+      connection = {Tortoise.Transport.Tcp, context.client}
+      send(subscriber, {{Tortoise, client_id}, :socket, connection})
 
-      {:ok, package} = :gen_tcp.recv(context.server, 0)
+      {:ok, package} = :gen_tcp.recv(context.server, 0, 500)
       assert Package.decode(package) == publish
       assert_receive {:subscriber_pipe, %Pipe{socket: new_socket}}
       # the new socket should be different than the original socket
@@ -113,7 +126,7 @@ defmodule Tortoise.PipeTest do
   end
 
   describe "await/1" do
-    setup [:setup_inflight, :setup_transmitter, :setup_connection]
+    setup [:setup_registry, :setup_connection, :setup_inflight_and_transmitter]
 
     test "awaiting an empty pending list should complete instantly", context do
       pipe = Pipe.new(context.client_id)
@@ -132,24 +145,24 @@ defmodule Tortoise.PipeTest do
 
       child =
         spawn_link(fn ->
-          pipe = Pipe.new(client_id)
-          pipe = Pipe.publish(pipe, "foo/bar", nil, qos: 1)
+          pipe = %Pipe{} = Pipe.new(client_id, timeout: 500)
+          pipe = %Pipe{} = Pipe.publish(pipe, "foo/bar", nil, qos: 1)
 
           receive do
             :continue ->
-              pipe = Pipe.publish(pipe, "foo/baz", nil, qos: 1)
-              result = Pipe.await(pipe, 5000)
+              pipe = %Pipe{} = Pipe.publish(pipe, "foo/baz", nil, qos: 1)
+              result = Pipe.await(pipe, 500)
               send(parent, {:result, result})
           end
         end)
 
       # receive the publish so we can get the id and acknowledge it
-      {:ok, package} = :gen_tcp.recv(context.server, 0)
+      {:ok, package} = :gen_tcp.recv(context.server, 0, 500)
       assert %Package.Publish{identifier: id} = Package.decode(package)
       Inflight.update(client_id, {:received, %Package.Puback{identifier: id}})
 
       send(child, :continue)
-      {:ok, package} = :gen_tcp.recv(context.server, 0)
+      {:ok, package} = :gen_tcp.recv(context.server, 0, 500)
       assert %Package.Publish{identifier: id} = Package.decode(package)
       Inflight.update(client_id, {:received, %Package.Puback{identifier: id}})
 
