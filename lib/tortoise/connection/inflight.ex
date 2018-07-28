@@ -2,7 +2,8 @@ defmodule Tortoise.Connection.Inflight do
   @moduledoc false
 
   alias Tortoise.{Package, Pipe}
-  alias Tortoise.Connection.{Controller, Transmitter}
+  alias Tortoise.Connection
+  alias Tortoise.Connection.Controller
   alias Tortoise.Connection.Inflight.Track
 
   use GenServer
@@ -118,10 +119,15 @@ defmodule Tortoise.Connection.Inflight do
   # helpers
 
   defp execute(%Track{pending: [{:dispatch, package} | _]}, state) do
-    :ok = Transmitter.cast(state.client_id, package)
-    update = {:dispatched, package}
-    {:ok, next_action, state} = progress_track_state(update, state)
-    execute(next_action, state)
+    with {:ok, {transport, socket}} <- Connection.connection(state.client_id) do
+      apply(transport, :send, [socket, Package.encode(package)])
+      update = {:dispatched, package}
+      {:ok, next_action, state} = progress_track_state(update, state)
+      execute(next_action, state)
+    else
+      {:error, :unknown_connection} ->
+        {:stop, :unknown_connection, state}
+    end
   end
 
   defp execute(%Track{pending: [{:expect, _package} | _]}, state) do

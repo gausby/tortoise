@@ -3,9 +3,8 @@ defmodule Tortoise.Connection.Controller do
 
   require Logger
 
-  alias Tortoise.Package
-  alias Tortoise.Connection.{Transmitter, Inflight}
-  alias Tortoise.Handler
+  alias Tortoise.{Package, Connection, Handler}
+  alias Tortoise.Connection.Inflight
 
   alias Tortoise.Package.{
     Connect,
@@ -135,10 +134,15 @@ defmodule Tortoise.Connection.Controller do
   end
 
   def handle_cast({:ping, caller}, state) do
-    time = System.monotonic_time(:microsecond)
-    :ok = Transmitter.cast(state.client_id, %Package.Pingreq{})
-    ping = :queue.in({caller, time}, state.ping)
-    {:noreply, %State{state | ping: ping}}
+    with {:ok, {transport, socket}} <- Connection.connection(state.client_id) do
+      time = System.monotonic_time(:microsecond)
+      apply(transport, :send, [socket, Package.encode(%Package.Pingreq{})])
+      ping = :queue.in({caller, time}, state.ping)
+      {:noreply, %State{state | ping: ping}}
+    else
+      {:error, :unknown_connection} ->
+        {:stop, :unknown_connection, state}
+    end
   end
 
   def handle_cast(
@@ -307,10 +311,8 @@ defmodule Tortoise.Connection.Controller do
 
   # response -----------------------------------------------------------
   defp handle_package(%Pingreq{}, state) do
-    pingresp = %Package.Pingresp{}
-    :ok = Transmitter.cast(state.client_id, pingresp)
-
-    {:noreply, state}
+    # not a server!
+    {:stop, {:protocol_violation, :ping_request_from_server}, state}
   end
 
   # CONNECTING =========================================================

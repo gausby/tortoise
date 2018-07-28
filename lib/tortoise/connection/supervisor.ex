@@ -3,7 +3,7 @@ defmodule Tortoise.Connection.Supervisor do
 
   use Supervisor
 
-  alias Tortoise.Connection.{Transmitter, Receiver, Controller, Inflight}
+  alias Tortoise.Connection.{Receiver, Controller, Inflight}
 
   def start_link(opts) do
     client_id = Keyword.fetch!(opts, :client_id)
@@ -17,7 +17,6 @@ defmodule Tortoise.Connection.Supervisor do
   def init(opts) do
     children = [
       {Inflight, Keyword.take(opts, [:client_id])},
-      {Transmitter, Keyword.take(opts, [:client_id])},
       {Receiver, Keyword.take(opts, [:client_id])},
       {Controller, Keyword.take(opts, [:client_id, :handler])}
     ]

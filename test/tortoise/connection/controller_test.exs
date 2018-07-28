@@ -3,7 +3,7 @@ defmodule Tortoise.Connection.ControllerTest do
   doctest Tortoise.Connection.Controller
 
   alias Tortoise.Package
-  alias Tortoise.Connection.{Controller, Inflight, Transmitter}
+  alias Tortoise.Connection.{Controller, Inflight}
 
   import ExUnit.CaptureLog
 
@@ -100,19 +100,17 @@ defmodule Tortoise.Connection.ControllerTest do
     {:ok, %{controller_pid: pid}}
   end
 
+  def setup_connection(context) do
+    {:ok, client_socket, server_socket} = Tortoise.Integration.TestTCPTunnel.new()
+    name = Tortoise.Connection.via_name(context.client_id)
+    :ok = Tortoise.Registry.put_meta(name, {Tortoise.Transport.Tcp, client_socket})
+    {:ok, %{client: client_socket, server: server_socket}}
+  end
+
   def setup_inflight(context) do
     opts = [client_id: context.client_id]
     {:ok, pid} = Inflight.start_link(opts)
     {:ok, %{inflight_pid: pid}}
-  end
-
-  def setup_transmitter(context) do
-    opts = [client_id: context.client_id]
-    {:ok, _} = Transmitter.start_link(opts)
-    {:ok, client_socket, server_socket} = Tortoise.Integration.TestTCPTunnel.new()
-    Transmitter.handle_socket(context.test, {Tortoise.Transport.Tcp, client_socket})
-
-    {:ok, %{client: client_socket, server: server_socket}}
   end
 
   # tests --------------------------------------------------------------
@@ -147,7 +145,7 @@ defmodule Tortoise.Connection.ControllerTest do
   end
 
   describe "Ping Control Packets" do
-    setup [:setup_controller, :setup_transmitter]
+    setup [:setup_connection, :setup_controller]
 
     test "send a ping request", context do
       # send a ping request to the server
@@ -177,13 +175,11 @@ defmodule Tortoise.Connection.ControllerTest do
       assert_receive {:ping_result, _time}
     end
 
-    test "receive a ping request", context do
-      # receiving a ping request from the server
+    test "receiving a ping request", %{controller_pid: pid} = context do
+      Process.flag(:trap_exit, true)
+      # receiving a ping request from the server is a protocol violation
       Controller.handle_incoming(context.client_id, %Package.Pingreq{})
-
-      # assert that we send a ping response back to the server
-      {:ok, package} = :gen_tcp.recv(context.server, 0, 200)
-      assert %Package.Pingresp{} = Package.decode(package)
+      assert_receive {:EXIT, ^pid, {:protocol_violation, :ping_request_from_server}}
     end
 
     test "ping request reports are sent in the correct order", context do
@@ -227,7 +223,7 @@ defmodule Tortoise.Connection.ControllerTest do
   end
 
   describe "Publish Control Packets with Quality of Service level 1" do
-    setup [:setup_controller, :setup_inflight, :setup_transmitter]
+    setup [:setup_connection, :setup_controller, :setup_inflight]
 
     test "incoming publish with qos 1", context do
       # receive a publish message with a qos of 1
@@ -277,7 +273,7 @@ defmodule Tortoise.Connection.ControllerTest do
   end
 
   describe "Publish Quality of Service level 2" do
-    setup [:setup_controller, :setup_inflight, :setup_transmitter]
+    setup [:setup_connection, :setup_controller, :setup_inflight]
 
     test "incoming publish with qos 2", context do
       client_id = context.client_id
@@ -317,7 +313,7 @@ defmodule Tortoise.Connection.ControllerTest do
   end
 
   describe "Subscription" do
-    setup [:setup_controller, :setup_inflight, :setup_transmitter]
+    setup [:setup_connection, :setup_controller, :setup_inflight]
 
     test "Subscribe to multiple topics", context do
       client_id = context.client_id

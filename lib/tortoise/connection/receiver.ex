@@ -3,7 +3,7 @@ defmodule Tortoise.Connection.Receiver do
 
   use GenStateMachine
 
-  alias Tortoise.Connection.{Transmitter, Controller}
+  alias Tortoise.Connection.Controller
 
   defstruct client_id: nil, transport: nil, socket: nil, buffer: <<>>
   alias __MODULE__, as: State
@@ -150,7 +150,6 @@ defmodule Tortoise.Connection.Receiver do
 
     next_actions = [
       {:reply, from, {:ok, self()}},
-      {:next_event, :internal, :pass_socket_to_transmitter},
       {:next_event, :internal, :activate_socket},
       {:next_event, :internal, :consume_buffer}
     ]
@@ -159,11 +158,6 @@ defmodule Tortoise.Connection.Receiver do
     new_data = %State{data | transport: transport, socket: socket, buffer: <<>>}
 
     {:next_state, new_state, new_data, next_actions}
-  end
-
-  def handle_event(:internal, :pass_socket_to_transmitter, {:connected, _}, data) do
-    :ok = Transmitter.handle_socket(data.client_id, {data.transport, data.socket})
-    :keep_state_and_data
   end
 
   defp parse_fixed_header(<<_::8, 0::1, length::7, _::binary>>) do

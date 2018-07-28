@@ -3,7 +3,7 @@ defmodule TortoiseTest do
   doctest Tortoise
 
   alias Tortoise.Package
-  alias Tortoise.Connection.{Inflight, Transmitter}
+  alias Tortoise.Connection.Inflight
 
   setup context do
     {:ok, %{client_id: context.test, transport: Tortoise.Transport.Tcp}}
@@ -22,15 +22,8 @@ defmodule TortoiseTest do
     {:ok, %{inflight_pid: pid}}
   end
 
-  def setup_transmitter(context) do
-    opts = [client_id: context.test]
-    {:ok, pid} = Transmitter.start_link(opts)
-    :ok = Transmitter.handle_socket(context.client_id, {context.transport, context.client})
-    {:ok, %{transmitter_pid: pid}}
-  end
-
   describe "publish/4" do
-    setup [:setup_connection, :setup_inflight, :setup_transmitter]
+    setup [:setup_connection, :setup_inflight]
 
     test "publish qos=0", context do
       assert :ok = Tortoise.publish(context.client_id, "foo/bar")
@@ -52,7 +45,7 @@ defmodule TortoiseTest do
   end
 
   describe "publish_sync/4" do
-    setup [:setup_connection, :setup_inflight, :setup_transmitter]
+    setup [:setup_connection, :setup_inflight]
 
     test "publish qos=0", context do
       assert :ok = Tortoise.publish_sync(context.client_id, "foo/bar")

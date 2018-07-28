@@ -3,19 +3,16 @@ defmodule Tortoise.PipeTest do
   doctest Tortoise.Pipe
 
   alias Tortoise.{Pipe, Package}
-  alias Tortoise.Connection.{Transmitter, Inflight}
+  alias Tortoise.Connection.Inflight
 
   setup context do
     {:ok, %{client_id: context.test}}
   end
 
-  def setup_inflight_and_transmitter(context) do
+  def setup_inflight(context) do
     opts = [client_id: context.client_id]
     {:ok, inflight_pid} = Inflight.start_link(opts)
-    {:ok, transmitter_pid} = Transmitter.start_link(opts)
-    connection = {Tortoise.Transport.Tcp, context.client}
-    :ok = Transmitter.handle_socket(context.client_id, connection)
-    {:ok, %{inflight_pid: inflight_pid, transmitter_pid: transmitter_pid}}
+    {:ok, %{inflight_pid: inflight_pid}}
   end
 
   def setup_registry(context) do
@@ -126,7 +123,7 @@ defmodule Tortoise.PipeTest do
   end
 
   describe "await/1" do
-    setup [:setup_registry, :setup_connection, :setup_inflight_and_transmitter]
+    setup [:setup_registry, :setup_connection, :setup_inflight]
 
     test "awaiting an empty pending list should complete instantly", context do
       pipe = Pipe.new(context.client_id)
