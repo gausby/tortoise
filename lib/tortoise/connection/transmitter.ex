@@ -68,8 +68,6 @@ defmodule Tortoise.Connection.Transmitter do
     {:keep_state_and_data, :postpone}
   end
 
-  # receiving sockets and dispatching to processes holding pipes
-  # configured as "active"
   def handle_event({:call, from}, {:handle_socket, {transport, socket}}, _, data) do
     new_state = {:connected, transport, socket}
     next_actions = [{:reply, from, :ok}]
