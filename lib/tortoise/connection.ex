@@ -9,7 +9,7 @@ defmodule Tortoise.Connection do
 
   require Logger
 
-  defstruct [:connect, :server, :backoff, :subscriptions, :keep_alive, :awaiting_socket, :opts]
+  defstruct [:connect, :server, :backoff, :subscriptions, :keep_alive, :opts]
   alias __MODULE__, as: State
 
   @type client_id() :: binary() | atom()
@@ -211,19 +211,22 @@ defmodule Tortoise.Connection do
   @doc false
   @spec connection(client_id(), [opts]) ::
           {:ok, {module(), term()}} | {:error, :unknown_connection} | {:error, :timeout}
-        when opts: {:timeout, non_neg_integer()}
-  def connection(client_id, opts \\ []) do
+        when opts: {:timeout, non_neg_integer()} | {:active, boolean()}
+  def connection(client_id, opts \\ [active: false]) do
+    active = Keyword.get(opts, :active, false)
+
     case Tortoise.Registry.meta(via_name(client_id)) do
       {:ok, {_transport, _socket} = connection} ->
+        if active, do: Tortoise.Events.register(client_id, :socket)
         {:ok, connection}
 
       {:ok, :connecting} ->
         timeout = Keyword.get(opts, :timeout, :infinity)
-
-        :ok = GenServer.cast(via_name(client_id), {:get_socket, self()})
+        {:ok, _} = Tortoise.Events.register(client_id, :socket)
 
         receive do
           {{Tortoise, ^client_id}, :socket, {transport, socket}} ->
+            unless active, do: Tortoise.Events.unregister(client_id, :socket)
             {:ok, {transport, socket}}
         after
           timeout ->
@@ -243,7 +246,6 @@ defmodule Tortoise.Connection do
       connect: connect,
       backoff: Backoff.new(backoff_opts),
       subscriptions: subscriptions,
-      awaiting_socket: [],
       opts: opts
     }
 
@@ -272,7 +274,7 @@ defmodule Tortoise.Connection do
 
       connection = {state.server.type, socket}
       :ok = Tortoise.Registry.put_meta(via_name(state.connect.client_id), connection)
-      state = reply_pending_connections(connection, state)
+      :ok = Tortoise.Events.dispatch(state.connect.client_id, :socket, connection)
 
       case connack do
         %Connack{session_present: true} ->
@@ -393,23 +395,6 @@ defmodule Tortoise.Connection do
     end
   end
 
-  def handle_cast({:get_socket, pid}, state) do
-    client_id = state.connect.client_id
-
-    case Tortoise.Registry.meta(via_name(client_id)) do
-      {:ok, {transport, socket}} ->
-        send(pid, {{Tortoise, client_id}, :socket, {transport, socket}})
-        {:noreply, state}
-
-      {:ok, :connecting} ->
-        {:noreply, %{state | awaiting_socket: [pid | state.awaiting_socket]}}
-
-      :error ->
-        send(pid, {:error, :unknown_connection})
-        {:noreply, state}
-    end
-  end
-
   # Helpers
   defp handle_suback_result(%{:error => []} = results, %State{} = state) do
     subscriptions = Enum.into(results[:ok], state.subscriptions)
@@ -482,22 +467,6 @@ defmodule Tortoise.Connection do
       {:error, {:already_started, _pid}} ->
         :ok
     end
-  end
-
-  # Reply to the processes who are waiting for a connection; they get
-  # added to the `awaiting_socket` field on the state; this is
-  # actually very unlikely they will end up there, because the
-  # connection process will enter the connection loop fairly quickly
-  # after it has initialized, but in theory it can happen as the
-  # connection process is a named process
-  defp reply_pending_connections(connection, %State{} = state) do
-    client_id = state.connect.client_id
-
-    for awaiting <- state.awaiting_socket do
-      GenServer.reply(awaiting, {{Tortoise, client_id}, :socket, connection})
-    end
-
-    %State{state | awaiting_socket: []}
   end
 
   defp categorize_error({:nxdomain, _host, _port}) do
