@@ -1,8 +1,7 @@
 defmodule Tortoise.Connection.Inflight do
   @moduledoc false
 
-  alias Tortoise.{Package, Pipe}
-  alias Tortoise.Connection
+  alias Tortoise.{Package, Connection}
   alias Tortoise.Connection.Controller
   alias Tortoise.Connection.Inflight.Track
 
@@ -30,23 +29,6 @@ defmodule Tortoise.Connection.Inflight do
   def track(client_id, {:incoming, %Package.Publish{qos: qos, dup: false} = publish})
       when qos in 1..2 do
     :ok = GenServer.cast(via_name(client_id), {:incoming, publish})
-  end
-
-  def track(%Pipe{client_id: client_id} = pipe, {:outgoing, package}) do
-    caller = {_, ref} = {self(), make_ref()}
-
-    case package do
-      %Package.Publish{qos: qos} when qos in 1..2 ->
-        :ok = GenServer.cast(via_name(client_id), {:outgoing, caller, package})
-
-      %Package.Subscribe{} ->
-        :ok = GenServer.cast(via_name(client_id), {:outgoing, caller, package})
-
-      %Package.Unsubscribe{} ->
-        :ok = GenServer.cast(via_name(client_id), {:outgoing, caller, package})
-    end
-
-    %Pipe{pipe | pending: [ref | pipe.pending]}
   end
 
   def track(client_id, {:outgoing, package}) do

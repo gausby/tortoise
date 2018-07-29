@@ -147,21 +147,23 @@ defmodule Tortoise.PipeTest do
 
           receive do
             :continue ->
-              pipe = %Pipe{} = Pipe.publish(pipe, "foo/baz", nil, qos: 1)
+              pipe = %Pipe{} = Pipe.publish(pipe, "foo/baz", nil, qos: 2)
               result = Pipe.await(pipe, 500)
               send(parent, {:result, result})
           end
         end)
 
-      # receive the publish so we can get the id and acknowledge it
+      # receive the QoS=1 publish so we can get the id and acknowledge it
       {:ok, package} = :gen_tcp.recv(context.server, 0, 500)
       assert %Package.Publish{identifier: id} = Package.decode(package)
       Inflight.update(client_id, {:received, %Package.Puback{identifier: id}})
 
       send(child, :continue)
+      # receive and acknowledge the QoS=2 publish
       {:ok, package} = :gen_tcp.recv(context.server, 0, 500)
       assert %Package.Publish{identifier: id} = Package.decode(package)
-      Inflight.update(client_id, {:received, %Package.Puback{identifier: id}})
+      Inflight.update(client_id, {:received, %Package.Pubrec{identifier: id}})
+      Inflight.update(client_id, {:received, %Package.Pubcomp{identifier: id}})
 
       # both messages should be acknowledged by now
       assert_receive {:result, result}
