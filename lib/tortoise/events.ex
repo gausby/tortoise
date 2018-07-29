@@ -15,7 +15,7 @@ defmodule Tortoise.Events do
   def dispatch(client_id, type, msg) when type in @types do
     :ok =
       Registry.dispatch(__MODULE__, {client_id, type}, fn subscribers ->
-        for {pid, value} <- subscribers do
+        for {pid, _value} <- subscribers do
           Kernel.send(pid, {{Tortoise, client_id}, type, msg})
         end
       end)
