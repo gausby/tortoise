@@ -104,6 +104,7 @@ defmodule Tortoise.Connection.Controller do
   end
 
   # Server callbacks
+  @impl true
   def init(%State{handler: handler} = opts) do
     case Handler.execute(handler, :init) do
       {:ok, %Handler{} = updated_handler} ->
@@ -111,15 +112,18 @@ defmodule Tortoise.Connection.Controller do
     end
   end
 
+  @impl true
   def terminate(reason, %State{handler: handler}) do
     _ignored = Handler.execute(handler, {:terminate, reason})
     :ok
   end
 
+  @impl true
   def handle_call(:info, _from, state) do
     {:reply, state, state}
   end
 
+  @impl true
   def handle_cast({:incoming, <<package::binary>>}, state) do
     package
     |> Package.decode()
@@ -176,6 +180,7 @@ defmodule Tortoise.Connection.Controller do
     end
   end
 
+  @impl true
   def handle_info({:next_action, {:subscribe, topic, opts} = action}, state) do
     {qos, opts} = Keyword.pop_first(opts, :qos, 0)
 

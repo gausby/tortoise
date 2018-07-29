@@ -43,10 +43,12 @@ defmodule Tortoise.Connection.Receiver do
     end
   end
 
+  @impl true
   def init(%State{} = data) do
     {:ok, :disconnected, data}
   end
 
+  @impl true
   # receiving data on the network connection
   def handle_event(:info, {transport, socket, tcp_data}, _, %{socket: socket} = data)
       when transport in [:tcp, :ssl] do

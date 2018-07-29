@@ -65,6 +65,7 @@ defmodule Tortoise.Connection.Inflight do
   end
 
   # Server callbacks
+  @impl true
   def init(opts) do
     client_id = Keyword.fetch!(opts, :client_id)
     initial_state = %State{client_id: client_id}
@@ -73,6 +74,7 @@ defmodule Tortoise.Connection.Inflight do
     {:ok, initial_state}
   end
 
+  @impl true
   def handle_info(:post_init, state) do
     case Connection.connection(state.client_id, active: true) do
       {:ok, {_transport, _socket} = connection} ->
@@ -93,6 +95,7 @@ defmodule Tortoise.Connection.Inflight do
     {:noreply, %State{state | connection: {transport, socket}}}
   end
 
+  @impl true
   def handle_cast({:incoming, package}, %{pending: pending} = state) do
     track = Track.create(:positive, package)
     updated_pending = Map.put_new(pending, track.identifier, track)

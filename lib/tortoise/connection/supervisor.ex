@@ -14,6 +14,7 @@ defmodule Tortoise.Connection.Supervisor do
     Tortoise.Registry.via_name(__MODULE__, client_id)
   end
 
+  @impl true
   def init(opts) do
     children = [
       {Inflight, Keyword.take(opts, [:client_id])},

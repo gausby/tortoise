@@ -3,9 +3,7 @@ defmodule Tortoise.App do
 
   use Application
 
-  @doc """
-  Start the application supervisor
-  """
+  @impl true
   def start(_type, _args) do
     # read configuration and start connections
     # start with client_id, and handler from config
