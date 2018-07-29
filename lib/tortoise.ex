@@ -60,6 +60,10 @@ defmodule Tortoise do
   approach should be fast and efficient.
   """
 
+  alias Tortoise.Package
+  alias Tortoise.Connection
+  alias Tortoise.Connection.Inflight
+
   @doc """
   Publish a message to the MQTT broker.
 
@@ -128,9 +132,30 @@ defmodule Tortoise do
   with `Tortoise` so it is easy to see where the message originated
   from.
   """
+  def publish(client_id, topic, payload \\ nil, opts \\ []) do
+    qos = Keyword.get(opts, :qos, 0)
 
-  defdelegate publish(client_id, topic, payload \\ nil, opts \\ []),
-    to: Tortoise.Connection
+    publish = %Package.Publish{
+      topic: topic,
+      qos: qos,
+      payload: payload,
+      retain: Keyword.get(opts, :retain, false)
+    }
+
+    with {:ok, {transport, socket}} <- Connection.connection(client_id) do
+      case publish do
+        %Package.Publish{qos: 0} ->
+          encoded_publish = Package.encode(publish)
+          apply(transport, :send, [socket, encoded_publish])
+
+        %Package.Publish{qos: qos} when qos in [1, 2] ->
+          Inflight.track(client_id, {:outgoing, publish})
+      end
+    else
+      {:error, :unknown_connection} ->
+        {:error, :unknown_connection}
+    end
+  end
 
   @doc """
   Synchronously send a message to the MQTT broker.
@@ -158,8 +183,31 @@ defmodule Tortoise do
 
   See the documentation for `Tortoise.publish/4` for configuration.
   """
-  defdelegate publish_sync(client_id, topic, payload \\ nil, opts \\ []),
-    to: Tortoise.Connection
+  def publish_sync(client_id, topic, payload \\ nil, opts \\ []) do
+    timeout = Keyword.get(opts, :timeout, :infinity)
+    qos = Keyword.get(opts, :qos, 0)
+
+    publish = %Package.Publish{
+      topic: topic,
+      qos: qos,
+      payload: payload,
+      retain: Keyword.get(opts, :retain, false)
+    }
+
+    with {:ok, {transport, socket}} <- Connection.connection(client_id) do
+      case publish do
+        %Package.Publish{qos: 0} ->
+          encoded_publish = Package.encode(publish)
+          apply(transport, :send, [socket, encoded_publish])
+
+        %Package.Publish{qos: qos} when qos in [1, 2] ->
+          Inflight.track_sync(client_id, {:outgoing, publish}, timeout)
+      end
+    else
+      {:error, :unknown_connection} ->
+        {:error, :unknown_connection}
+    end
+  end
 
   @doc """
   Subscribe to one or more topics using topic filters on `client_id`

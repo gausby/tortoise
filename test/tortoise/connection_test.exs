@@ -528,4 +528,62 @@ defmodule Tortoise.ConnectionTest do
       assert_receive {ScriptedTransport, :completed}
     end
   end
+
+  describe "socket subscription" do
+    setup [:setup_scripted_mqtt_server]
+
+    test "return error if asking for a connection on an non-existent connection", context do
+      assert {:error, :unknown_connection} = Connection.connection(context.client_id)
+    end
+
+    test "receive a socket from a connection", context do
+      client_id = context.client_id
+
+      connect = %Package.Connect{client_id: client_id, clean_session: true}
+      expected_connack = %Package.Connack{status: :accepted, session_present: false}
+
+      script = [{:receive, connect}, {:send, expected_connack}]
+
+      {:ok, {ip, port}} = ScriptedMqttServer.enact(context.scripted_mqtt_server, script)
+
+      opts = [
+        client_id: client_id,
+        server: {Tortoise.Transport.Tcp, [host: ip, port: port]},
+        handler: {Tortoise.Handler.Default, []}
+      ]
+
+      assert {:ok, _pid} = Connection.start_link(opts)
+      assert_receive {ScriptedMqttServer, {:received, ^connect}}
+
+      assert {:ok, {Tortoise.Transport.Tcp, socket}} =
+               Connection.connection(client_id, timeout: 500)
+
+      assert_receive {ScriptedMqttServer, :completed}
+    end
+
+    test "timeout on a socket from a connection", context do
+      client_id = context.client_id
+
+      connect = %Package.Connect{client_id: client_id, clean_session: true}
+
+      script = [{:receive, connect}, :pause]
+
+      {:ok, {ip, port}} = ScriptedMqttServer.enact(context.scripted_mqtt_server, script)
+
+      opts = [
+        client_id: client_id,
+        server: {Tortoise.Transport.Tcp, [host: ip, port: port]},
+        handler: {Tortoise.Handler.Default, []}
+      ]
+
+      assert {:ok, _pid} = Connection.start_link(opts)
+      assert_receive {ScriptedMqttServer, {:received, ^connect}}
+      assert_receive {ScriptedMqttServer, :paused}
+
+      assert {:error, :timeout} = Connection.connection(client_id, timeout: 5)
+
+      send(context.scripted_mqtt_server, :continue)
+      assert_receive {ScriptedMqttServer, :completed}
+    end
+  end
 end

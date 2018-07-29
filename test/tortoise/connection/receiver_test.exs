@@ -4,7 +4,7 @@ defmodule Tortoise.Connection.ReceiverTest do
   doctest Tortoise.Connection.Controller
 
   alias Tortoise.Package
-  alias Tortoise.Connection.{Receiver, Transmitter, Controller}
+  alias Tortoise.Connection.{Receiver, Controller}
 
   setup context do
     {:ok, %{client_id: context.test}}
@@ -14,7 +14,6 @@ defmodule Tortoise.Connection.ReceiverTest do
     opts = [client_id: context.client_id]
     {:ok, client_socket, server_socket} = Tortoise.Integration.TestTCPTunnel.new()
     {:ok, receiver_pid} = Receiver.start_link(opts)
-    {:ok, _pid} = Transmitter.start_link(opts)
     :ok = Receiver.handle_socket(context.client_id, {Tortoise.Transport.Tcp, client_socket})
     {:ok, %{receiver_pid: receiver_pid, client: client_socket, server: server_socket}}
   end

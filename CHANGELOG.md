@@ -1,5 +1,57 @@
 # Changelog
 
+## 0.6.0 - 2018-07-29
+
+### Changed
+
+- Keep the active connection in a ETS based registry, allowing
+  processes that publish messages to the wire, using either
+  `Tortoise.publish/4` or `Tortoise.Pipe.publish/4` to obtain the
+  network connection and shoot the message directly on the network
+  socket. With this change we can also error out if a process tries to
+  send on a non-existing connection.
+
+- The implementation for `Tortoise.publish/4` and
+  `Tortoise.publish_sync/4` has been moved to the `Tortoise` module
+  itself and is therefore no longer delegated to the
+  `Tortoise.Connection` module. This changes the interface a bit but
+  makes for a cleaner interface.
+
+### Added
+
+- This release introduces a `Tortoise.Events` module that implements a
+  `Registry` based PubSub. Tortoise will use this to dispatch system
+  events to listeners. For now it is used to dispatch new network
+  connections, which is currently used by `Tortoise.publish`, the
+  `Tortoise.Connection.Inflight` process, and the `Tortoise.Pipe`s. In
+  the future we might add more message types to `Tortoise.Events`.
+
+- Tests for `Tortoise.publish/4` and `Tortoise.publish_sync/4`
+
+### Removed
+
+- The `Tortoise.Connection.Transmitter` process is no longer needed,
+  so it has been removed.
+
+- Some dead code in the `Tortoise.Connection.Inflight` module has been
+  removed. This should not change anything user facing.
+
+### Fixed
+
+- A server sending a ping request to a client is now considered a
+  protocol violation, as specified by both the MQTT 3.1.1 and MQTT 5
+  specifications.
+
+- The connection process will now cancel the keep alive timer if it
+  goes offline. Previously it would terminate itself because it would
+  not get the ping response from the server.
+
+- Regression: The receiver will no longer crash on an assertion when
+  it request a reconnect from the `Tortoise.Connection` process.
+
+- The specified Elixir version in the mix.exs file should now allow
+  more versions of Elixir without warnings.
+
 ## 0.5.1 - 2018-07-23
 
 ### Fixed

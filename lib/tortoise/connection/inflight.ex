@@ -1,20 +1,21 @@
 defmodule Tortoise.Connection.Inflight do
   @moduledoc false
 
-  alias Tortoise.{Package, Pipe}
-  alias Tortoise.Connection.{Controller, Transmitter}
+  alias Tortoise.{Package, Connection}
+  alias Tortoise.Connection.Controller
   alias Tortoise.Connection.Inflight.Track
 
   use GenServer
 
   @enforce_keys [:client_id]
-  defstruct pending: %{}, client_id: nil
+  defstruct pending: %{}, connection: nil, client_id: nil
+
+  alias __MODULE__, as: State
 
   # Client API
   def start_link(opts) do
     client_id = Keyword.fetch!(opts, :client_id)
-    initial_state = %__MODULE__{client_id: client_id}
-    GenServer.start_link(__MODULE__, initial_state, name: via_name(client_id))
+    GenServer.start_link(__MODULE__, opts, name: via_name(client_id))
   end
 
   defp via_name(client_id) do
@@ -28,23 +29,6 @@ defmodule Tortoise.Connection.Inflight do
   def track(client_id, {:incoming, %Package.Publish{qos: qos, dup: false} = publish})
       when qos in 1..2 do
     :ok = GenServer.cast(via_name(client_id), {:incoming, publish})
-  end
-
-  def track(%Pipe{client_id: client_id} = pipe, {:outgoing, package}) do
-    caller = {_, ref} = {self(), make_ref()}
-
-    case package do
-      %Package.Publish{qos: qos} when qos in 1..2 ->
-        :ok = GenServer.cast(via_name(client_id), {:outgoing, caller, package})
-
-      %Package.Subscribe{} ->
-        :ok = GenServer.cast(via_name(client_id), {:outgoing, caller, package})
-
-      %Package.Unsubscribe{} ->
-        :ok = GenServer.cast(via_name(client_id), {:outgoing, caller, package})
-    end
-
-    %Pipe{pipe | pending: [ref | pipe.pending]}
   end
 
   def track(client_id, {:outgoing, package}) do
@@ -81,15 +65,42 @@ defmodule Tortoise.Connection.Inflight do
   end
 
   # Server callbacks
-  def init(state) do
-    {:ok, state}
+  @impl true
+  def init(opts) do
+    client_id = Keyword.fetch!(opts, :client_id)
+    initial_state = %State{client_id: client_id}
+
+    send(self(), :post_init)
+    {:ok, initial_state}
   end
 
+  @impl true
+  def handle_info(:post_init, state) do
+    case Connection.connection(state.client_id, active: true) do
+      {:ok, {_transport, _socket} = connection} ->
+        {:noreply, %State{state | connection: connection}}
+
+      {:error, :timeout} ->
+        {:stop, :connection_timeout, state}
+
+      {:error, :unknown_connection} ->
+        {:stop, :unknown_connection, state}
+    end
+  end
+
+  def handle_info(
+        {{Tortoise, client_id}, :connection, {transport, socket}},
+        %State{client_id: client_id} = state
+      ) do
+    {:noreply, %State{state | connection: {transport, socket}}}
+  end
+
+  @impl true
   def handle_cast({:incoming, package}, %{pending: pending} = state) do
     track = Track.create(:positive, package)
     updated_pending = Map.put_new(pending, track.identifier, track)
 
-    case execute(track, %__MODULE__{state | pending: updated_pending}) do
+    case execute(track, %State{state | pending: updated_pending}) do
       {:ok, state} ->
         {:noreply, state}
     end
@@ -100,7 +111,7 @@ defmodule Tortoise.Connection.Inflight do
     track = Track.create({:negative, caller}, package)
     updated_pending = Map.put_new(pending, track.identifier, track)
 
-    case execute(track, %__MODULE__{state | pending: updated_pending}) do
+    case execute(track, %State{state | pending: updated_pending}) do
       {:ok, state} ->
         {:noreply, state}
     end
@@ -117,11 +128,16 @@ defmodule Tortoise.Connection.Inflight do
 
   # helpers
 
-  defp execute(%Track{pending: [{:dispatch, package} | _]}, state) do
-    :ok = Transmitter.cast(state.client_id, package)
-    update = {:dispatched, package}
-    {:ok, next_action, state} = progress_track_state(update, state)
-    execute(next_action, state)
+  defp execute(
+         %Track{pending: [{:dispatch, package} | _]},
+         %State{connection: {transport, socket}} = state
+       ) do
+    case apply(transport, :send, [socket, Package.encode(package)]) do
+      :ok ->
+        update = {:dispatched, package}
+        {:ok, next_action, state} = progress_track_state(update, state)
+        execute(next_action, state)
+    end
   end
 
   defp execute(%Track{pending: [{:expect, _package} | _]}, state) do
@@ -132,10 +148,10 @@ defmodule Tortoise.Connection.Inflight do
   defp execute(%Track{pending: []} = track, state) do
     :ok = Controller.handle_result(state.client_id, track)
     pending = Map.delete(state.pending, track.identifier)
-    {:ok, %__MODULE__{state | pending: pending}}
+    {:ok, %State{state | pending: pending}}
   end
 
-  defp progress_track_state({_, package} = input, %__MODULE__{} = state) do
+  defp progress_track_state({_, package} = input, %State{} = state) do
     # todo, handle possible error
     {next_action, updated_pending} =
       Map.get_and_update!(state.pending, package.identifier, fn track ->
@@ -143,7 +159,7 @@ defmodule Tortoise.Connection.Inflight do
         {updated_track, updated_track}
       end)
 
-    {:ok, next_action, %__MODULE__{state | pending: updated_pending}}
+    {:ok, next_action, %State{state | pending: updated_pending}}
   end
 
   # Assign a random identifier to the tracked package; this will make

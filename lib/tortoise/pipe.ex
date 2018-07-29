@@ -21,7 +21,7 @@ defmodule Tortoise.Pipe do
   """
 
   alias Tortoise.{Package, Pipe}
-  alias Tortoise.Connection.{Transmitter, Inflight}
+  alias Tortoise.Connection.Inflight
 
   @opaque t :: %__MODULE__{
             client_id: binary(),
@@ -52,12 +52,12 @@ defmodule Tortoise.Pipe do
 
     opts = [timeout: timeout, active: active]
 
-    case Transmitter.get_socket(client_id, opts) do
+    case Tortoise.Connection.connection(client_id, opts) do
       {:ok, {transport, socket}} ->
         %Pipe{client_id: client_id, transport: transport, socket: socket, active: active}
 
-      {:error, :timeout} ->
-        {:error, :timeout}
+      {:error, :unknown_connection} ->
+        {:error, :unknown_connection}
     end
   end
 
@@ -110,7 +110,7 @@ defmodule Tortoise.Pipe do
 
   defp refresh(%Pipe{active: true, client_id: client_id} = pipe) do
     receive do
-      {{Tortoise, ^client_id}, :socket, {transport, socket}} ->
+      {{Tortoise, ^client_id}, :connection, {transport, socket}} ->
         %Pipe{pipe | transport: transport, socket: socket}
     after
       pipe.timeout ->
@@ -121,7 +121,7 @@ defmodule Tortoise.Pipe do
   defp refresh(%Pipe{active: false} = pipe) do
     opts = [timeout: pipe.timeout, active: false]
 
-    case Transmitter.get_socket(pipe.client_id, opts) do
+    case Tortoise.Connection.connection(pipe.client_id, opts) do
       {:ok, {transport, socket}} ->
         %Pipe{pipe | transport: transport, socket: socket}
 

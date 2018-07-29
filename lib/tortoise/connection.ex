@@ -15,7 +15,7 @@ defmodule Tortoise.Connection do
   @type client_id() :: binary() | atom()
 
   alias Tortoise.{Transport, Connection, Package}
-  alias Tortoise.Connection.{Inflight, Controller, Receiver, Transmitter, Backoff}
+  alias Tortoise.Connection.{Inflight, Controller, Receiver, Backoff}
   alias Tortoise.Package.{Connect, Connack}
 
   @doc """
@@ -69,7 +69,8 @@ defmodule Tortoise.Connection do
     GenServer.start_link(__MODULE__, initial, opts)
   end
 
-  defp via_name(client_id) do
+  @doc false
+  def via_name(client_id) do
     Tortoise.Registry.via_name(__MODULE__, client_id)
   end
 
@@ -89,6 +90,7 @@ defmodule Tortoise.Connection do
     case GenServer.whereis(via_name(client_id)) do
       pid when is_pid(pid) ->
         send(pid, :connect)
+        :ok
 
       nil ->
         {:error, :unknown_connection}
@@ -104,47 +106,6 @@ defmodule Tortoise.Connection do
   @spec subscriptions(client_id()) :: Tortoise.Package.Subscribe.t()
   def subscriptions(client_id) do
     GenServer.call(via_name(client_id), :subscriptions)
-  end
-
-  @doc false
-  def publish(client_id, topic, payload \\ nil, opts \\ []) do
-    qos = Keyword.get(opts, :qos, 0)
-
-    publish = %Package.Publish{
-      topic: topic,
-      qos: qos,
-      payload: payload,
-      retain: Keyword.get(opts, :retain, false)
-    }
-
-    case publish do
-      %Package.Publish{qos: 0} ->
-        Transmitter.cast(client_id, publish)
-
-      %Package.Publish{qos: qos} when qos in [1, 2] ->
-        Inflight.track(client_id, {:outgoing, publish})
-    end
-  end
-
-  @doc false
-  def publish_sync(client_id, topic, payload \\ nil, opts \\ []) do
-    timeout = Keyword.get(opts, :timeout, :infinity)
-    qos = Keyword.get(opts, :qos, 0)
-
-    publish = %Package.Publish{
-      topic: topic,
-      qos: qos,
-      payload: payload,
-      retain: Keyword.get(opts, :retain, false)
-    }
-
-    case publish do
-      %Package.Publish{qos: 0} ->
-        Transmitter.cast(client_id, publish)
-
-      %Package.Publish{qos: qos} when qos in [1, 2] ->
-        Inflight.track_sync(client_id, {:outgoing, publish}, timeout)
-    end
   end
 
   @doc false
@@ -236,14 +197,31 @@ defmodule Tortoise.Connection do
   end
 
   @doc false
-  @spec renew(client_id()) :: :ok
-  def renew(client_id) do
-    case GenServer.whereis(via_name(client_id)) do
-      pid when is_pid(pid) ->
-        send(pid, :connect)
-        :ok
+  @spec connection(client_id(), [opts]) ::
+          {:ok, {module(), term()}} | {:error, :unknown_connection} | {:error, :timeout}
+        when opts: {:timeout, non_neg_integer()} | {:active, boolean()}
+  def connection(client_id, opts \\ [active: false]) do
+    active = Keyword.get(opts, :active, false)
 
-      nil ->
+    case Tortoise.Registry.meta(via_name(client_id)) do
+      {:ok, {_transport, _socket} = connection} ->
+        if active, do: Tortoise.Events.register(client_id, :connection)
+        {:ok, connection}
+
+      {:ok, :connecting} ->
+        timeout = Keyword.get(opts, :timeout, :infinity)
+        {:ok, _} = Tortoise.Events.register(client_id, :connection)
+
+        receive do
+          {{Tortoise, ^client_id}, :connection, {transport, socket}} ->
+            unless active, do: Tortoise.Events.unregister(client_id, :connection)
+            {:ok, {transport, socket}}
+        after
+          timeout ->
+            {:error, :timeout}
+        end
+
+      :error ->
         {:error, :unknown_connection}
     end
   end
@@ -259,20 +237,35 @@ defmodule Tortoise.Connection do
       opts: opts
     }
 
+    Tortoise.Registry.put_meta(via_name(connect.client_id), :connecting)
+
     # eventually, switch to handle_continue
     send(self(), :connect)
     {:ok, state}
   end
 
   @impl true
+  def terminate(_reason, state) do
+    :ok = Tortoise.Registry.delete_meta(via_name(state.connect.client_id))
+    :ok
+  end
+
+  @impl true
   def handle_info(:connect, state) do
     :ok = Controller.update_connection_status(state.connect.client_id, :down)
+    # make sure we will not fall for a keep alive timeout while we are
+    # trying to reconnect
+    state = cancel_keep_alive(state)
 
     with {%Connack{status: :accepted} = connack, socket} <-
            do_connect(state.server, state.connect),
          {:ok, state} = init_connection(socket, state) do
       # we are connected; reset backoff state
       state = %State{state | backoff: Backoff.reset(state.backoff)}
+
+      connection = {state.server.type, socket}
+      :ok = Tortoise.Registry.put_meta(via_name(state.connect.client_id), connection)
+      :ok = Tortoise.Events.dispatch(state.connect.client_id, :connection, connection)
 
       case connack do
         %Connack{session_present: true} ->
@@ -413,6 +406,15 @@ defmodule Tortoise.Connection do
     _ = Process.cancel_timer(previous_ref)
     ref = Process.send_after(self(), :ping, state.connect.keep_alive * 1000)
     %State{state | keep_alive: ref}
+  end
+
+  defp cancel_keep_alive(%State{keep_alive: nil} = state) do
+    state
+  end
+
+  defp cancel_keep_alive(%State{keep_alive: keep_alive_ref} = state) do
+    _ = Process.cancel_timer(keep_alive_ref)
+    %State{state | keep_alive: nil}
   end
 
   defp do_connect(server, %Connect{} = connect) do

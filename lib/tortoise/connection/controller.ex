@@ -3,9 +3,8 @@ defmodule Tortoise.Connection.Controller do
 
   require Logger
 
-  alias Tortoise.Package
-  alias Tortoise.Connection.{Transmitter, Inflight}
-  alias Tortoise.Handler
+  alias Tortoise.{Package, Connection, Handler}
+  alias Tortoise.Connection.Inflight
 
   alias Tortoise.Package.{
     Connect,
@@ -105,6 +104,7 @@ defmodule Tortoise.Connection.Controller do
   end
 
   # Server callbacks
+  @impl true
   def init(%State{handler: handler} = opts) do
     case Handler.execute(handler, :init) do
       {:ok, %Handler{} = updated_handler} ->
@@ -112,15 +112,18 @@ defmodule Tortoise.Connection.Controller do
     end
   end
 
+  @impl true
   def terminate(reason, %State{handler: handler}) do
     _ignored = Handler.execute(handler, {:terminate, reason})
     :ok
   end
 
+  @impl true
   def handle_call(:info, _from, state) do
     {:reply, state, state}
   end
 
+  @impl true
   def handle_cast({:incoming, <<package::binary>>}, state) do
     package
     |> Package.decode()
@@ -135,10 +138,15 @@ defmodule Tortoise.Connection.Controller do
   end
 
   def handle_cast({:ping, caller}, state) do
-    time = System.monotonic_time(:microsecond)
-    :ok = Transmitter.cast(state.client_id, %Package.Pingreq{})
-    ping = :queue.in({caller, time}, state.ping)
-    {:noreply, %State{state | ping: ping}}
+    with {:ok, {transport, socket}} <- Connection.connection(state.client_id) do
+      time = System.monotonic_time(:microsecond)
+      apply(transport, :send, [socket, Package.encode(%Package.Pingreq{})])
+      ping = :queue.in({caller, time}, state.ping)
+      {:noreply, %State{state | ping: ping}}
+    else
+      {:error, :unknown_connection} ->
+        {:stop, :unknown_connection, state}
+    end
   end
 
   def handle_cast(
@@ -172,6 +180,7 @@ defmodule Tortoise.Connection.Controller do
     end
   end
 
+  @impl true
   def handle_info({:next_action, {:subscribe, topic, opts} = action}, state) do
     {qos, opts} = Keyword.pop_first(opts, :qos, 0)
 
@@ -307,10 +316,8 @@ defmodule Tortoise.Connection.Controller do
 
   # response -----------------------------------------------------------
   defp handle_package(%Pingreq{}, state) do
-    pingresp = %Package.Pingresp{}
-    :ok = Transmitter.cast(state.client_id, pingresp)
-
-    {:noreply, state}
+    # not a server!
+    {:stop, {:protocol_violation, :ping_request_from_server}, state}
   end
 
   # CONNECTING =========================================================

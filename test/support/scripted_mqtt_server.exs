@@ -106,6 +106,15 @@ defmodule Tortoise.Integration.ScriptedMqttServer do
     next_action(%State{state | script: remaining, client: client})
   end
 
+  defp next_action(%State{script: [:pause | remaining]} = state) do
+    send(state.client_pid, {__MODULE__, :paused})
+
+    receive do
+      :continue ->
+        next_action(%State{state | script: remaining})
+    end
+  end
+
   defp next_action(%State{script: []} = state) do
     send(state.client_pid, {__MODULE__, :completed})
     {:noreply, state}
