@@ -266,6 +266,9 @@ defmodule Tortoise.Connection do
   @impl true
   def handle_info(:connect, state) do
     :ok = Controller.update_connection_status(state.connect.client_id, :down)
+    # make sure we will not fall for a keep alive timeout while we are
+    # trying to reconnect
+    state = cancel_keep_alive(state)
 
     with {%Connack{status: :accepted} = connack, socket} <-
            do_connect(state.server, state.connect),
@@ -416,6 +419,15 @@ defmodule Tortoise.Connection do
     _ = Process.cancel_timer(previous_ref)
     ref = Process.send_after(self(), :ping, state.connect.keep_alive * 1000)
     %State{state | keep_alive: ref}
+  end
+
+  defp cancel_keep_alive(%State{keep_alive: nil} = state) do
+    state
+  end
+
+  defp cancel_keep_alive(%State{keep_alive: keep_alive_ref} = state) do
+    _ = Process.cancel_timer(keep_alive_ref)
+    %State{state | keep_alive: nil}
   end
 
   defp do_connect(server, %Connect{} = connect) do
