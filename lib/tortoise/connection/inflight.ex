@@ -89,7 +89,7 @@ defmodule Tortoise.Connection.Inflight do
   end
 
   def handle_info(
-        {{Tortoise, client_id}, :socket, {transport, socket}},
+        {{Tortoise, client_id}, :connection, {transport, socket}},
         %State{client_id: client_id} = state
       ) do
     {:noreply, %State{state | connection: {transport, socket}}}

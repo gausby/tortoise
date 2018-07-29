@@ -21,7 +21,7 @@ defmodule Tortoise.Pipe do
   """
 
   alias Tortoise.{Package, Pipe}
-  alias Tortoise.Connection.{Transmitter, Inflight}
+  alias Tortoise.Connection.Inflight
 
   @opaque t :: %__MODULE__{
             client_id: binary(),
@@ -110,7 +110,7 @@ defmodule Tortoise.Pipe do
 
   defp refresh(%Pipe{active: true, client_id: client_id} = pipe) do
     receive do
-      {{Tortoise, ^client_id}, :socket, {transport, socket}} ->
+      {{Tortoise, ^client_id}, :connection, {transport, socket}} ->
         %Pipe{pipe | transport: transport, socket: socket}
     after
       pipe.timeout ->

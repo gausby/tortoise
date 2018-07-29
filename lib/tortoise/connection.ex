@@ -218,16 +218,16 @@ defmodule Tortoise.Connection do
 
     case Tortoise.Registry.meta(via_name(client_id)) do
       {:ok, {_transport, _socket} = connection} ->
-        if active, do: Tortoise.Events.register(client_id, :socket)
+        if active, do: Tortoise.Events.register(client_id, :connection)
         {:ok, connection}
 
       {:ok, :connecting} ->
         timeout = Keyword.get(opts, :timeout, :infinity)
-        {:ok, _} = Tortoise.Events.register(client_id, :socket)
+        {:ok, _} = Tortoise.Events.register(client_id, :connection)
 
         receive do
-          {{Tortoise, ^client_id}, :socket, {transport, socket}} ->
-            unless active, do: Tortoise.Events.unregister(client_id, :socket)
+          {{Tortoise, ^client_id}, :connection, {transport, socket}} ->
+            unless active, do: Tortoise.Events.unregister(client_id, :connection)
             {:ok, {transport, socket}}
         after
           timeout ->
@@ -275,7 +275,7 @@ defmodule Tortoise.Connection do
 
       connection = {state.server.type, socket}
       :ok = Tortoise.Registry.put_meta(via_name(state.connect.client_id), connection)
-      :ok = Tortoise.Events.dispatch(state.connect.client_id, :socket, connection)
+      :ok = Tortoise.Events.dispatch(state.connect.client_id, :connection, connection)
 
       case connack do
         %Connack{session_present: true} ->

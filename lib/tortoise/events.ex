@@ -1,8 +1,7 @@
 defmodule Tortoise.Events do
   @moduledoc false
 
-  # todo, rename :socket -> :connection
-  @types [:socket]
+  @types [:connection]
 
   def register(client_id, type, value \\ nil) when type in @types do
     {:ok, _pid} = Registry.register(__MODULE__, {client_id, type}, value)

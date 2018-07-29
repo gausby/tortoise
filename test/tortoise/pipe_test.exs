@@ -62,7 +62,7 @@ defmodule Tortoise.PipeTest do
       # sleep a bit, open a socket and reply to the client
       :timer.sleep(50)
       context = run_setup(context, :setup_connection)
-      send(client, {{Tortoise, client_id}, :socket, {Tortoise.Transport.Tcp, context.client}})
+      send(client, {{Tortoise, client_id}, :connection, {Tortoise.Transport.Tcp, context.client}})
       socket = context.client
       assert_receive {:result, %Pipe{client_id: ^client_id, socket: ^socket}}
     end
@@ -112,7 +112,7 @@ defmodule Tortoise.PipeTest do
       :timer.sleep(40)
       context = run_setup(context, :setup_connection)
       connection = {Tortoise.Transport.Tcp, context.client}
-      send(subscriber, {{Tortoise, client_id}, :socket, connection})
+      send(subscriber, {{Tortoise, client_id}, :connection, connection})
 
       {:ok, package} = :gen_tcp.recv(context.server, 0, 500)
       assert Package.decode(package) == publish
