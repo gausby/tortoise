@@ -42,14 +42,6 @@ defmodule Tortoise.Supervisor do
     DynamicSupervisor.start_link(__MODULE__, opts, name: opts[:name])
   end
 
-  @doc """
-  Returns a specification to start this module under a supervisor.
-
-  The supervisor is registered under the name given as `name`-option
-  will. The default is `Tortoise.Supervisor`.
-
-  See the documentation for `Supervisor` for configuration options.
-  """
   def child_spec(opts) do
     opts = Keyword.put_new(opts, :name, __MODULE__)
     DynamicSupervisor.child_spec(opts)
