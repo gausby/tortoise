@@ -197,19 +197,6 @@ defmodule Tortoise.Connection do
   end
 
   @doc false
-  @spec renew(client_id()) :: :ok
-  def renew(client_id) do
-    case GenServer.whereis(via_name(client_id)) do
-      pid when is_pid(pid) ->
-        send(pid, :connect)
-        :ok
-
-      nil ->
-        {:error, :unknown_connection}
-    end
-  end
-
-  @doc false
   @spec connection(client_id(), [opts]) ::
           {:ok, {module(), term()}} | {:error, :unknown_connection} | {:error, :timeout}
         when opts: {:timeout, non_neg_integer()} | {:active, boolean()}
