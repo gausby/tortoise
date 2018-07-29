@@ -144,6 +144,45 @@ defmodule Tortoise.Connection.ControllerTest do
     end
   end
 
+  describe "Connection Control Packets" do
+    setup [:setup_controller]
+
+    test "receiving a connect from the server is a protocol violation",
+         %{controller_pid: pid} = context do
+      Process.flag(:trap_exit, true)
+      # receiving a connect from the server is a protocol violation
+      connect = %Package.Connect{client_id: "foo"}
+      Controller.handle_incoming(context.client_id, connect)
+
+      assert_receive {:EXIT, ^pid,
+                      {:protocol_violation, {:unexpected_package_from_remote, ^connect}}}
+    end
+
+    test "receiving a connack at this point is a protocol violation",
+         %{controller_pid: pid} = context do
+      Process.flag(:trap_exit, true)
+      # receiving a connack from the server *after* the connection has
+      # been acknowledged is a protocol violation
+      connack = %Package.Connack{status: :accepted}
+      Controller.handle_incoming(context.client_id, connack)
+
+      assert_receive {:EXIT, ^pid,
+                      {:protocol_violation, {:unexpected_package_from_remote, ^connack}}}
+    end
+
+    test "receiving a disconnect from the server is a protocol violation",
+         %{controller_pid: pid} = context do
+      Process.flag(:trap_exit, true)
+      # receiving a disconnect request from the server is a (3.1.1)
+      # protocol violation
+      disconnect = %Package.Disconnect{}
+      Controller.handle_incoming(context.client_id, disconnect)
+
+      assert_receive {:EXIT, ^pid,
+                      {:protocol_violation, {:unexpected_package_from_remote, ^disconnect}}}
+    end
+  end
+
   describe "Ping Control Packets" do
     setup [:setup_connection, :setup_controller]
 
@@ -178,8 +217,11 @@ defmodule Tortoise.Connection.ControllerTest do
     test "receiving a ping request", %{controller_pid: pid} = context do
       Process.flag(:trap_exit, true)
       # receiving a ping request from the server is a protocol violation
-      Controller.handle_incoming(context.client_id, %Package.Pingreq{})
-      assert_receive {:EXIT, ^pid, {:protocol_violation, :ping_request_from_server}}
+      pingreq = %Package.Pingreq{}
+      Controller.handle_incoming(context.client_id, pingreq)
+
+      assert_receive {:EXIT, ^pid,
+                      {:protocol_violation, {:unexpected_package_from_remote, ^pingreq}}}
     end
 
     test "ping request reports are sent in the correct order", context do
@@ -409,6 +451,36 @@ defmodule Tortoise.Connection.ControllerTest do
       assert_receive {{Tortoise, ^client_id}, ^ref, _}
       # the callback module should get the error
       assert_receive {:subscription_error, {"foo", :access_denied}}
+    end
+
+    test "Receiving a subscribe package is a protocol violation",
+         %{controller_pid: pid} = context do
+      Process.flag(:trap_exit, true)
+      # receiving a subscribe from the server is a protocol violation
+      subscribe = %Package.Subscribe{
+        identifier: 1,
+        topics: [{"foo/bar", 0}]
+      }
+
+      Controller.handle_incoming(context.client_id, subscribe)
+
+      assert_receive {:EXIT, ^pid,
+                      {:protocol_violation, {:unexpected_package_from_remote, ^subscribe}}}
+    end
+
+    test "Receiving an unsubscribe package is a protocol violation",
+         %{controller_pid: pid} = context do
+      Process.flag(:trap_exit, true)
+      # receiving an unsubscribe from the server is a protocol violation
+      unsubscribe = %Package.Unsubscribe{
+        identifier: 1,
+        topics: ["foo/bar"]
+      }
+
+      Controller.handle_incoming(context.client_id, unsubscribe)
+
+      assert_receive {:EXIT, ^pid,
+                      {:protocol_violation, {:unexpected_package_from_remote, ^unsubscribe}}}
     end
   end
 

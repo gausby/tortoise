@@ -276,9 +276,9 @@ defmodule Tortoise.Connection.Controller do
 
   # SUBSCRIBING ========================================================
   # command ------------------------------------------------------------
-  defp handle_package(%Subscribe{}, state) do
+  defp handle_package(%Subscribe{} = subscribe, state) do
     # not a server! (yet)
-    {:noreply, state}
+    {:stop, {:protocol_violation, {:unexpected_package_from_remote, subscribe}}, state}
   end
 
   # response -----------------------------------------------------------
@@ -289,9 +289,9 @@ defmodule Tortoise.Connection.Controller do
 
   # UNSUBSCRIBING ======================================================
   # command ------------------------------------------------------------
-  defp handle_package(%Unsubscribe{}, state) do
+  defp handle_package(%Unsubscribe{} = unsubscribe, state) do
     # not a server
-    {:noreply, state}
+    {:stop, {:protocol_violation, {:unexpected_package_from_remote, unsubscribe}}, state}
   end
 
   # response -----------------------------------------------------------
@@ -315,28 +315,29 @@ defmodule Tortoise.Connection.Controller do
   end
 
   # response -----------------------------------------------------------
-  defp handle_package(%Pingreq{}, state) do
+  defp handle_package(%Pingreq{} = pingreq, state) do
     # not a server!
-    {:stop, {:protocol_violation, :ping_request_from_server}, state}
+    {:stop, {:protocol_violation, {:unexpected_package_from_remote, pingreq}}, state}
   end
 
   # CONNECTING =========================================================
   # command ------------------------------------------------------------
-  defp handle_package(%Connect{}, state) do
+  defp handle_package(%Connect{} = connect, state) do
     # not a server!
-    {:noreply, state}
+    {:stop, {:protocol_violation, {:unexpected_package_from_remote, connect}}, state}
   end
 
   # response -----------------------------------------------------------
-  defp handle_package(%Connack{} = _connack, state) do
+  defp handle_package(%Connack{} = connack, state) do
     # receiving a connack at this point would be a protocol violation
-    {:noreply, state}
+    {:stop, {:protocol_violation, {:unexpected_package_from_remote, connack}}, state}
   end
 
   # DISCONNECTING ======================================================
   # command ------------------------------------------------------------
-  defp handle_package(%Disconnect{}, state) do
-    # not a server
-    {:noreply, state}
+  defp handle_package(%Disconnect{} = disconnect, state) do
+    # This should be allowed when we implement MQTT 5. Remember there
+    # is a test that assert this as a protocol violation!
+    {:stop, {:protocol_violation, {:unexpected_package_from_remote, disconnect}}, state}
   end
 end
