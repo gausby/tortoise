@@ -1,5 +1,15 @@
 # Changelog
 
+## [Unreleased]
+
+### Changed
+
+- The controller will stop with an `{:protocol_violation,
+  {:unexpected_package_from_remote, package}}` if the server send a
+  package of the type `package`. This is the right thing to do because
+  servers should implement the protocol proper, and clients should not
+  accept unexpected packages.
+
 ## 0.6.0 - 2018-07-29
 
 ### Changed
