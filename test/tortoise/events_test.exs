@@ -32,7 +32,6 @@ defmodule Tortoise.EventsTest do
     setup [:setup_connection]
 
     test "get connection", context do
-      client_id = context.client_id
       parent = self()
 
       child =
@@ -46,7 +45,7 @@ defmodule Tortoise.EventsTest do
       # make sure the child process is ready and assert if it has
       # registered itself for a connection
       assert_receive :ready
-      assert [{^client_id, :connection}] = Registry.keys(Tortoise.Events, child)
+      assert [:connection] = Registry.keys(Tortoise.Events, child)
 
       # dispatch the connection
       connection = {context.transport, context.client}
@@ -85,7 +84,7 @@ defmodule Tortoise.EventsTest do
       # make sure the child process is ready and assert if it has
       # registered itself for a connection
       assert_receive :ready
-      assert [{^client_id, :connection}] = Registry.keys(Tortoise.Events, child)
+      assert [:connection] = Registry.keys(Tortoise.Events, child)
 
       # dispatch the connection
       connection = {context.transport, context.client}
@@ -94,13 +93,13 @@ defmodule Tortoise.EventsTest do
       # the subscriber should receive the connection and it should
       # still be registered for new connections
       assert_receive {:received, ^connection}
-      assert [{^client_id, :connection}] = Registry.keys(Tortoise.Events, child)
+      assert [:connection] = Registry.keys(Tortoise.Events, child)
 
       context = run_setup(context, :setup_connection)
       new_connection = {context.transport, context.client}
       :ok = Tortoise.Events.dispatch(context.client_id, :connection, new_connection)
       assert_receive {:received, ^new_connection}
-      assert [{^client_id, :connection}] = Registry.keys(Tortoise.Events, child)
+      assert [:connection] = Registry.keys(Tortoise.Events, child)
     end
   end
 end

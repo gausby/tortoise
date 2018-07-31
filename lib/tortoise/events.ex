@@ -1,22 +1,24 @@
 defmodule Tortoise.Events do
-  @moduledoc false
+  @moduledoc """
 
-  @types [:connection]
+  """
 
-  def register(client_id, type, value \\ nil) when type in @types do
-    {:ok, _pid} = Registry.register(__MODULE__, {client_id, type}, value)
+  @types [:connection, :ping_response]
+
+  def register(client_id, type) when type in @types do
+    {:ok, _pid} = Registry.register(__MODULE__, type, client_id)
   end
 
   def unregister(client_id, type) when type in @types do
-    :ok = Registry.unregister(__MODULE__, {client_id, type})
+    :ok = Registry.unregister_match(__MODULE__, type, client_id)
   end
 
   @doc false
-  def dispatch(client_id, type, msg) when type in @types do
+  def dispatch(client_id, type, value) when type in @types do
     :ok =
-      Registry.dispatch(__MODULE__, {client_id, type}, fn subscribers ->
-        for {pid, _value} <- subscribers do
-          Kernel.send(pid, {{Tortoise, client_id}, type, msg})
+      Registry.dispatch(__MODULE__, type, fn subscribers ->
+        for {pid, ^client_id} <- subscribers do
+          Kernel.send(pid, {{Tortoise, client_id}, type, value})
         end
       end)
   end
