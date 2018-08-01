@@ -133,5 +133,19 @@ defmodule Tortoise.EventsTest do
       refute_receive {{Tortoise, ^client_id2}, :ping_response, 500}
       assert_receive {{Tortoise, ^client_id3}, :ping_response, 500}
     end
+
+    test "Subscribing to all clients", context do
+      client_id1 = Atom.to_string(context.client_id)
+      client_id2 = client_id1 <> "2"
+
+      # :_ means every client id
+      Tortoise.Events.register(:_, :ping_response)
+
+      Tortoise.Events.dispatch(client_id1, :ping_response, 123)
+      Tortoise.Events.dispatch(client_id2, :ping_response, 234)
+
+      assert_receive {{Tortoise, ^client_id2}, :ping_response, 234}
+      assert_receive {{Tortoise, ^client_id1}, :ping_response, 123}
+    end
   end
 end
