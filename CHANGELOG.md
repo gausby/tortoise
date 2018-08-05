@@ -10,6 +10,11 @@
   servers should implement the protocol proper, and clients should not
   accept unexpected packages.
 
+- Instead of using the Logger module to log the ping response times
+  from the connection keep alive messages the ping response times are
+  not dispatched using a the ETS based PubSub. This will allow the
+  user to log, or do whatever they want with the ping response time.
+
 ## 0.6.0 - 2018-07-29
 
 ### Changed
