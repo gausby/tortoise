@@ -14,7 +14,7 @@ defmodule Tortoise.Connection do
 
   @type client_id() :: binary() | atom()
 
-  alias Tortoise.{Transport, Connection, Package}
+  alias Tortoise.{Transport, Connection, Package, Events}
   alias Tortoise.Connection.{Inflight, Controller, Receiver, Backoff}
   alias Tortoise.Package.{Connect, Connack}
 
@@ -205,16 +205,16 @@ defmodule Tortoise.Connection do
 
     case Tortoise.Registry.meta(via_name(client_id)) do
       {:ok, {_transport, _socket} = connection} ->
-        if active, do: Tortoise.Events.register(client_id, :connection)
+        if active, do: Events.register(client_id, :connection)
         {:ok, connection}
 
       {:ok, :connecting} ->
         timeout = Keyword.get(opts, :timeout, :infinity)
-        {:ok, _} = Tortoise.Events.register(client_id, :connection)
+        {:ok, _} = Events.register(client_id, :connection)
 
         receive do
           {{Tortoise, ^client_id}, :connection, {transport, socket}} ->
-            unless active, do: Tortoise.Events.unregister(client_id, :connection)
+            unless active, do: Events.unregister(client_id, :connection)
             {:ok, {transport, socket}}
         after
           timeout ->
@@ -265,7 +265,7 @@ defmodule Tortoise.Connection do
 
       connection = {state.server.type, socket}
       :ok = Tortoise.Registry.put_meta(via_name(state.connect.client_id), connection)
-      :ok = Tortoise.Events.dispatch(state.connect.client_id, :connection, connection)
+      :ok = Events.dispatch(state.connect.client_id, :connection, connection)
 
       case connack do
         %Connack{session_present: true} ->
@@ -324,7 +324,7 @@ defmodule Tortoise.Connection do
   def handle_info(:ping, %State{} = state) do
     case Controller.ping_sync(state.connect.client_id, 5000) do
       {:ok, round_trip_time} ->
-        Logger.debug("Ping: #{round_trip_time} μs")
+        Events.dispatch(state.connect.client_id, :ping_response, round_trip_time)
         state = reset_keep_alive(state)
         {:noreply, state}
 

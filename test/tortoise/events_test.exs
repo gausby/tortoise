@@ -32,7 +32,6 @@ defmodule Tortoise.EventsTest do
     setup [:setup_connection]
 
     test "get connection", context do
-      client_id = context.client_id
       parent = self()
 
       child =
@@ -46,7 +45,7 @@ defmodule Tortoise.EventsTest do
       # make sure the child process is ready and assert if it has
       # registered itself for a connection
       assert_receive :ready
-      assert [{^client_id, :connection}] = Registry.keys(Tortoise.Events, child)
+      assert [:connection] = Registry.keys(Tortoise.Events, child)
 
       # dispatch the connection
       connection = {context.transport, context.client}
@@ -85,7 +84,7 @@ defmodule Tortoise.EventsTest do
       # make sure the child process is ready and assert if it has
       # registered itself for a connection
       assert_receive :ready
-      assert [{^client_id, :connection}] = Registry.keys(Tortoise.Events, child)
+      assert [:connection] = Registry.keys(Tortoise.Events, child)
 
       # dispatch the connection
       connection = {context.transport, context.client}
@@ -94,13 +93,59 @@ defmodule Tortoise.EventsTest do
       # the subscriber should receive the connection and it should
       # still be registered for new connections
       assert_receive {:received, ^connection}
-      assert [{^client_id, :connection}] = Registry.keys(Tortoise.Events, child)
+      assert [:connection] = Registry.keys(Tortoise.Events, child)
 
       context = run_setup(context, :setup_connection)
       new_connection = {context.transport, context.client}
       :ok = Tortoise.Events.dispatch(context.client_id, :connection, new_connection)
       assert_receive {:received, ^new_connection}
-      assert [{^client_id, :connection}] = Registry.keys(Tortoise.Events, child)
+      assert [:connection] = Registry.keys(Tortoise.Events, child)
+    end
+  end
+
+  describe "ping responses" do
+    test "receive ping responses", context do
+      client_id1 = Atom.to_string(context.client_id)
+      client_id2 = client_id1 <> "2"
+      client_id3 = client_id1 <> "3"
+
+      # register retrieval of ping requests from 1 and 2
+      assert {:ok, owner} = Tortoise.Events.register(client_id1, :ping_response)
+      assert {:ok, ^owner} = Tortoise.Events.register(client_id2, :ping_response)
+
+      # dispatch ping responses; expect from 1 and 2, but not 3
+      Tortoise.Events.dispatch(client_id1, :ping_response, 500)
+      Tortoise.Events.dispatch(client_id2, :ping_response, 500)
+      Tortoise.Events.dispatch(client_id3, :ping_response, 500)
+      assert_receive {{Tortoise, ^client_id1}, :ping_response, 500}
+      assert_receive {{Tortoise, ^client_id2}, :ping_response, 500}
+      refute_receive {{Tortoise, ^client_id3}, :ping_response, 500}
+
+      # unregister 2, and register 3
+      Tortoise.Events.unregister(client_id2, :ping_response)
+      assert {:ok, ^owner} = Tortoise.Events.register(client_id3, :ping_response)
+
+      # dispatch ping responses, and expect from 1 and 3, not 2
+      Tortoise.Events.dispatch(client_id1, :ping_response, 500)
+      Tortoise.Events.dispatch(client_id2, :ping_response, 500)
+      Tortoise.Events.dispatch(client_id3, :ping_response, 500)
+      assert_receive {{Tortoise, ^client_id1}, :ping_response, 500}
+      refute_receive {{Tortoise, ^client_id2}, :ping_response, 500}
+      assert_receive {{Tortoise, ^client_id3}, :ping_response, 500}
+    end
+
+    test "Subscribing to all clients", context do
+      client_id1 = Atom.to_string(context.client_id)
+      client_id2 = client_id1 <> "2"
+
+      # :_ means every client id
+      Tortoise.Events.register(:_, :ping_response)
+
+      Tortoise.Events.dispatch(client_id1, :ping_response, 123)
+      Tortoise.Events.dispatch(client_id2, :ping_response, 234)
+
+      assert_receive {{Tortoise, ^client_id2}, :ping_response, 234}
+      assert_receive {{Tortoise, ^client_id1}, :ping_response, 123}
     end
   end
 end
