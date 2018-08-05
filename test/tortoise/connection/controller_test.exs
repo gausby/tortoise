@@ -133,13 +133,13 @@ defmodule Tortoise.Connection.ControllerTest do
 
     test "Callback is triggered on connection status change", context do
       # tell the controller that we are up
-      :ok = Controller.update_connection_status(context.client_id, :up)
+      :ok = Tortoise.Events.dispatch(context.client_id, :status, :up)
       assert_receive(%TestHandler{status: :up})
       # switch to offline
-      :ok = Controller.update_connection_status(context.client_id, :down)
+      :ok = Tortoise.Events.dispatch(context.client_id, :status, :down)
       assert_receive(%TestHandler{status: :down})
       # ... and back up
-      :ok = Controller.update_connection_status(context.client_id, :up)
+      :ok = Tortoise.Events.dispatch(context.client_id, :status, :up)
       assert_receive(%TestHandler{status: :up})
     end
   end

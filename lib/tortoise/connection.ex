@@ -9,7 +9,7 @@ defmodule Tortoise.Connection do
 
   require Logger
 
-  defstruct [:connect, :server, :backoff, :subscriptions, :keep_alive, :opts]
+  defstruct [:connect, :server, :status, :backoff, :subscriptions, :keep_alive, :opts]
   alias __MODULE__, as: State
 
   @type client_id() :: binary() | atom()
@@ -234,7 +234,8 @@ defmodule Tortoise.Connection do
       connect: connect,
       backoff: Backoff.new(backoff_opts),
       subscriptions: subscriptions,
-      opts: opts
+      opts: opts,
+      status: :down
     }
 
     Tortoise.Registry.put_meta(via_name(connect.client_id), :connecting)
@@ -252,29 +253,29 @@ defmodule Tortoise.Connection do
 
   @impl true
   def handle_info(:connect, state) do
-    :ok = Controller.update_connection_status(state.connect.client_id, :down)
-    # make sure we will not fall for a keep alive timeout while we are
-    # trying to reconnect
-    state = cancel_keep_alive(state)
+    state =
+      state
+      |> update_connection_status(:down)
+      # make sure we will not fall for a keep alive timeout while we reconnect
+      |> cancel_keep_alive()
 
     with {%Connack{status: :accepted} = connack, socket} <-
            do_connect(state.server, state.connect),
          {:ok, state} = init_connection(socket, state) do
-      # we are connected; reset backoff state
-      state = %State{state | backoff: Backoff.reset(state.backoff)}
-
-      connection = {state.server.type, socket}
-      :ok = Tortoise.Registry.put_meta(via_name(state.connect.client_id), connection)
-      :ok = Events.dispatch(state.connect.client_id, :connection, connection)
+      # we are connected; reset backoff state, etc
+      state =
+        %State{state | backoff: Backoff.reset(state.backoff)}
+        |> reset_keep_alive()
+        |> update_connection_status(:up)
 
       case connack do
         %Connack{session_present: true} ->
-          {:noreply, reset_keep_alive(state)}
+          {:noreply, state}
 
         %Connack{session_present: false} ->
           # delete inflight state ?
           if not Enum.empty?(state.subscriptions), do: send(self(), :subscribe)
-          {:noreply, reset_keep_alive(state)}
+          {:noreply, state}
       end
     else
       %Connack{status: {:refused, reason}} ->
@@ -417,6 +418,16 @@ defmodule Tortoise.Connection do
     %State{state | keep_alive: nil}
   end
 
+  # dispatch connection status if the connection status change
+  defp update_connection_status(%State{status: same} = state, same) do
+    state
+  end
+
+  defp update_connection_status(%State{} = state, status) do
+    :ok = Events.dispatch(state.connect.client_id, :status, status)
+    %State{state | status: status}
+  end
+
   defp do_connect(server, %Connect{} = connect) do
     %Transport{type: transport, host: host, port: port, opts: opts} = server
 
@@ -452,9 +463,13 @@ defmodule Tortoise.Connection do
   end
 
   defp init_connection(socket, %State{opts: opts, server: transport, connect: connect} = state) do
+    connection = {transport.type, socket}
     :ok = start_connection_supervisor(opts)
-    :ok = Receiver.handle_socket(connect.client_id, {transport.type, socket})
-    :ok = Controller.update_connection_status(connect.client_id, :up)
+    :ok = Receiver.handle_socket(connect.client_id, connection)
+    :ok = Tortoise.Registry.put_meta(via_name(connect.client_id), connection)
+    :ok = Events.dispatch(connect.client_id, :connection, connection)
+
+    # set clean session to false for future reconnect attempts
     connect = %Connect{connect | clean_session: false}
     {:ok, %State{state | connect: connect}}
   end
