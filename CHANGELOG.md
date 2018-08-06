@@ -15,6 +15,11 @@
   not dispatched using a the ETS based PubSub. This will allow the
   user to log, or do whatever they want with the ping response time.
 
+- Expose connection status changes via the `Tortoise.Events` pubsub
+  making it possible to implement custom behavior when the connection
+  goes down and when it becomes available. Great for setting up
+  alarms.
+
 ## 0.6.0 - 2018-07-29
 
 ### Changed

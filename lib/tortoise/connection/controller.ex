@@ -99,13 +99,11 @@ defmodule Tortoise.Connection.Controller do
     GenServer.cast(via_name(client_id), {:result, track})
   end
 
-  def update_connection_status(client_id, status) when status in [:up, :down] do
-    GenServer.cast(via_name(client_id), {:update_connection_status, status})
-  end
-
   # Server callbacks
   @impl true
   def init(%State{handler: handler} = opts) do
+    {:ok, _} = Tortoise.Events.register(opts.client_id, :status)
+
     case Handler.execute(handler, :init) do
       {:ok, %Handler{} = updated_handler} ->
         {:ok, %State{opts | handler: updated_handler}}
@@ -169,17 +167,6 @@ defmodule Tortoise.Connection.Controller do
     end
   end
 
-  def handle_cast({:update_connection_status, same}, %State{status: same} = state) do
-    {:noreply, state}
-  end
-
-  def handle_cast({:update_connection_status, new_status}, %State{handler: handler} = state) do
-    case Handler.execute(handler, {:connection, new_status}) do
-      {:ok, updated_handler} ->
-        {:noreply, %State{state | handler: updated_handler, status: new_status}}
-    end
-  end
-
   @impl true
   def handle_info({:next_action, {:subscribe, topic, opts} = action}, state) do
     {qos, opts} = Keyword.pop_first(opts, :qos, 0)
@@ -196,6 +183,24 @@ defmodule Tortoise.Connection.Controller do
       {:ok, ref} ->
         updated_awaiting = Map.put_new(state.awaiting, ref, action)
         {:noreply, %State{state | awaiting: updated_awaiting}}
+    end
+  end
+
+  # connection changes
+  def handle_info(
+        {{Tortoise, client_id}, :status, same},
+        %State{client_id: client_id, status: same} = state
+      ) do
+    {:noreply, state}
+  end
+
+  def handle_info(
+        {{Tortoise, client_id}, :status, new_status},
+        %State{client_id: client_id, handler: handler} = state
+      ) do
+    case Handler.execute(handler, {:connection, new_status}) do
+      {:ok, updated_handler} ->
+        {:noreply, %State{state | handler: updated_handler, status: new_status}}
     end
   end
 
