@@ -517,6 +517,7 @@ defmodule Tortoise.Connection.ControllerTest do
 
       assert capture_log(fn ->
                send(context.controller_pid, {{Tortoise, client_id}, ref, :ok})
+               :timer.sleep(100)
              end) =~ "Unexpected"
 
       %{awaiting: awaiting} = Controller.info(client_id)
