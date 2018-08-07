@@ -20,6 +20,17 @@
   goes down and when it becomes available. Great for setting up
   alarms.
 
+- The receiver will now broadcast a "status down" message on the
+  `Tortoise.Events` pubsub, and the connection process will listen for
+  that message and enter the reconnect on status change.
+
+### Removed
+
+- `Tortoise.Connection.reconnect/1` has been removed as it is has been
+  replaced with the pubsub based status-down message approach
+  described in the "changed"-section. It might make a return at some
+  point, but for now it has been removed.
+
 ## 0.6.0 - 2018-07-29
 
 ### Changed
