@@ -4,6 +4,7 @@ defmodule Tortoise.Connection.Receiver do
   use GenStateMachine
 
   alias Tortoise.Connection.Controller
+  alias Tortoise.Events
 
   defstruct client_id: nil, transport: nil, socket: nil, buffer: <<>>
   alias __MODULE__, as: State
@@ -69,7 +70,9 @@ defmodule Tortoise.Connection.Receiver do
   def handle_event(:info, {transport, socket}, _state, %{socket: socket} = data)
       when transport in [:tcp_closed, :ssl_closed] do
     # should we empty the buffer?
-    :ok = Tortoise.Connection.reconnect(data.client_id)
+
+    # communicate to the world that we have dropped the connection
+    :ok = Events.dispatch(data.client_id, :status, :down)
     {:next_state, :disconnected, %{data | socket: nil}}
   end
 
