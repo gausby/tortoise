@@ -18,6 +18,9 @@ Amongst other things Tortoise supports:
   - Connecting via TCP and SSL
   - The fundamentals are there, but some of the API's might change in
     the near future
+  - A PubSub system where one can listen to system events. For now
+    connection status and ping response times can be subscribed for
+    statistics and administrative purposes.
 
 Most of the public facing interface should be in the `Tortoise`
 module. See the GitHub issues for work in progress "known issues in
@@ -63,7 +66,7 @@ dependencies in `mix.exs`:
 ```elixir
 def deps do
   [
-    {:tortoise, "~> 0.6.0"}
+    {:tortoise, "~> 0.7.0"}
   ]
 end
 ```

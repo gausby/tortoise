@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## 0.7.0 - 2018-08-09
+
 ### Changed
 
 - The controller will stop with an `{:protocol_violation,
