@@ -99,13 +99,11 @@ defmodule Tortoise.Connection.Controller do
     GenServer.cast(via_name(client_id), {:result, track})
   end
 
-  def update_connection_status(client_id, status) when status in [:up, :down] do
-    GenServer.cast(via_name(client_id), {:update_connection_status, status})
-  end
-
   # Server callbacks
   @impl true
   def init(%State{handler: handler} = opts) do
+    {:ok, _} = Tortoise.Events.register(opts.client_id, :status)
+
     case Handler.execute(handler, :init) do
       {:ok, %Handler{} = updated_handler} ->
         {:ok, %State{opts | handler: updated_handler}}
@@ -169,17 +167,6 @@ defmodule Tortoise.Connection.Controller do
     end
   end
 
-  def handle_cast({:update_connection_status, same}, %State{status: same} = state) do
-    {:noreply, state}
-  end
-
-  def handle_cast({:update_connection_status, new_status}, %State{handler: handler} = state) do
-    case Handler.execute(handler, {:connection, new_status}) do
-      {:ok, updated_handler} ->
-        {:noreply, %State{state | handler: updated_handler, status: new_status}}
-    end
-  end
-
   @impl true
   def handle_info({:next_action, {:subscribe, topic, opts} = action}, state) do
     {qos, opts} = Keyword.pop_first(opts, :qos, 0)
@@ -196,6 +183,24 @@ defmodule Tortoise.Connection.Controller do
       {:ok, ref} ->
         updated_awaiting = Map.put_new(state.awaiting, ref, action)
         {:noreply, %State{state | awaiting: updated_awaiting}}
+    end
+  end
+
+  # connection changes
+  def handle_info(
+        {{Tortoise, client_id}, :status, same},
+        %State{client_id: client_id, status: same} = state
+      ) do
+    {:noreply, state}
+  end
+
+  def handle_info(
+        {{Tortoise, client_id}, :status, new_status},
+        %State{client_id: client_id, handler: handler} = state
+      ) do
+    case Handler.execute(handler, {:connection, new_status}) do
+      {:ok, updated_handler} ->
+        {:noreply, %State{state | handler: updated_handler, status: new_status}}
     end
   end
 
@@ -276,9 +281,9 @@ defmodule Tortoise.Connection.Controller do
 
   # SUBSCRIBING ========================================================
   # command ------------------------------------------------------------
-  defp handle_package(%Subscribe{}, state) do
+  defp handle_package(%Subscribe{} = subscribe, state) do
     # not a server! (yet)
-    {:noreply, state}
+    {:stop, {:protocol_violation, {:unexpected_package_from_remote, subscribe}}, state}
   end
 
   # response -----------------------------------------------------------
@@ -289,9 +294,9 @@ defmodule Tortoise.Connection.Controller do
 
   # UNSUBSCRIBING ======================================================
   # command ------------------------------------------------------------
-  defp handle_package(%Unsubscribe{}, state) do
+  defp handle_package(%Unsubscribe{} = unsubscribe, state) do
     # not a server
-    {:noreply, state}
+    {:stop, {:protocol_violation, {:unexpected_package_from_remote, unsubscribe}}, state}
   end
 
   # response -----------------------------------------------------------
@@ -315,28 +320,29 @@ defmodule Tortoise.Connection.Controller do
   end
 
   # response -----------------------------------------------------------
-  defp handle_package(%Pingreq{}, state) do
+  defp handle_package(%Pingreq{} = pingreq, state) do
     # not a server!
-    {:stop, {:protocol_violation, :ping_request_from_server}, state}
+    {:stop, {:protocol_violation, {:unexpected_package_from_remote, pingreq}}, state}
   end
 
   # CONNECTING =========================================================
   # command ------------------------------------------------------------
-  defp handle_package(%Connect{}, state) do
+  defp handle_package(%Connect{} = connect, state) do
     # not a server!
-    {:noreply, state}
+    {:stop, {:protocol_violation, {:unexpected_package_from_remote, connect}}, state}
   end
 
   # response -----------------------------------------------------------
-  defp handle_package(%Connack{} = _connack, state) do
+  defp handle_package(%Connack{} = connack, state) do
     # receiving a connack at this point would be a protocol violation
-    {:noreply, state}
+    {:stop, {:protocol_violation, {:unexpected_package_from_remote, connack}}, state}
   end
 
   # DISCONNECTING ======================================================
   # command ------------------------------------------------------------
-  defp handle_package(%Disconnect{}, state) do
-    # not a server
-    {:noreply, state}
+  defp handle_package(%Disconnect{} = disconnect, state) do
+    # This should be allowed when we implement MQTT 5. Remember there
+    # is a test that assert this as a protocol violation!
+    {:stop, {:protocol_violation, {:unexpected_package_from_remote, disconnect}}, state}
   end
 end

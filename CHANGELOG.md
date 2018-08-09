@@ -1,5 +1,38 @@
 # Changelog
 
+## [Unreleased]
+
+## 0.7.0 - 2018-08-09
+
+### Changed
+
+- The controller will stop with an `{:protocol_violation,
+  {:unexpected_package_from_remote, package}}` if the server send a
+  package of the type `package`. This is the right thing to do because
+  servers should implement the protocol proper, and clients should not
+  accept unexpected packages.
+
+- Instead of using the Logger module to log the ping response times
+  from the connection keep alive messages the ping response times are
+  not dispatched using a the ETS based PubSub. This will allow the
+  user to log, or do whatever they want with the ping response time.
+
+- Expose connection status changes via the `Tortoise.Events` pubsub
+  making it possible to implement custom behavior when the connection
+  goes down and when it becomes available. Great for setting up
+  alarms.
+
+- The receiver will now broadcast a "status down" message on the
+  `Tortoise.Events` pubsub, and the connection process will listen for
+  that message and enter the reconnect on status change.
+
+### Removed
+
+- `Tortoise.Connection.reconnect/1` has been removed as it is has been
+  replaced with the pubsub based status-down message approach
+  described in the "changed"-section. It might make a return at some
+  point, but for now it has been removed.
+
 ## 0.6.0 - 2018-07-29
 
 ### Changed
