@@ -76,6 +76,8 @@ configuration options. The most important additional options are:
     certificates, but an attacker could intercept the connection
     without detection!
 
+Note that any paths must be specified as charlists.
+
 The implementation is based on the `:ssl` module from the Erlang
 distribution, so be sure to check the documentation for the `:ssl`
 module for detailed information on the possible configuration
