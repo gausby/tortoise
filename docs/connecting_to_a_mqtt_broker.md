@@ -57,12 +57,31 @@ address, such as `{127, 0, 0, 1}`. An example where the TCP transport
 is used can be seen in the introduction to this article.
 
 The `Tortoise.Transport.SSL` is a bit more versatile in its
-configuration options. It is based on the `:ssl` module from the
-Erlang distribution, so be sure to check the documentation for the
-`:ssl` module for detailed information on the possible configuration
-options.
+configuration options. The most important additional options are:
 
-*[todo, describe SSL connection better when I have internet]*
+  - `cacertfile` needs to point to a file with trusted CA
+    certificates, which is necessary for server certificate
+    verification. For instance, when using the
+    [certifi](https://hex.pm/packages/certifi) package, pass
+    `cacertfile: :certifi.cacertfile()` in the options. It is also
+    possible to pass a list of binary (DER encoded) root CA
+    certificates using the `cacerts` option instead.
+  - `certfile` and `keyfile` are needed if the server authenticates
+    clients using a client certificate. The `cert` and `key` options
+    can be used instead to pass the client certificate and key as
+    DER binaries instead of paths.
+  - `verify` defaults to `:verify_peer`, enabling server certificate
+    verification. To override, include `verify: :verify_none` in the
+    server options. In that case there is no need to define CA
+    certificates, but an attacker could intercept the connection
+    without detection!
+
+Note that any paths must be specified as charlists.
+
+The implementation is based on the `:ssl` module from the Erlang
+distribution, so be sure to check the documentation for the `:ssl`
+module for detailed information on the possible configuration
+options.
 
 Information on creating a custom transport can be found in the
 `Tortoise.Transport` module, but for most cases the TCP and SSL module

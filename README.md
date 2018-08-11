@@ -46,17 +46,30 @@ Tortoise.publish("my_client_id", "foo/bar", "Hello from the World of Tomorrow !"
 ```
 
 To connect to a MQTT server using SSL the `Tortoise.Transport.SSL`
-transport can be used like this:
+transport can be used. This requires configuration of the server's
+CA certificate, and possibly a client certificate and key. For
+example, when using the [certifi](https://hex.pm/packages/certifi)
+package as the CA trust store:
 
 ``` elixir
 Tortoise.Supervisor.start_child(
     client_id: "smart-spoon",
     handler: {Tortoise.Handler.Logger, []},
-    server: {Tortoise.Transport.SSL, host: host, port: port, key: key, cert: cert},
+    server: {
+      Tortoise.Transport.SSL,
+      host: host, port: port,
+      cacertfile: :certifi.cacertfile(),
+      key: key, cert: cert
+    },
     subscriptions: [{"foo/bar", 0}])
 ```
 
-Look at the `connection_test.exs`-file for an example.
+Alternatively, for testing purposes, server certificate verification
+can be disabled by passing `verify: :verify_none` in the server
+options. In that case there is no need for CA certificates, but an
+attacker could intercept the connection without detection!
+
+Look at the `connection_test.exs`-file for more examples.
 
 ## Installation
 
