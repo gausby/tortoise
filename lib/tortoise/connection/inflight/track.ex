@@ -52,49 +52,20 @@ defmodule Tortoise.Connection.Inflight.Track do
   alias __MODULE__, as: State
   alias Tortoise.Package
 
-  @spec update(__MODULE__.t(), status_update()) :: __MODULE__.t()
-  # ":dispatch, ..." should be answered with ":dispatched, ..."
-  def update(
-        %State{identifier: id, pending: [{:dispatch, package} | rest]} = state,
-        {:dispatched, %{identifier: id} = package} = status_update
+  def next(%State{pending: [[next_action, resolution] | _]}) do
+    {next_action, resolution}
+  end
+
+  def resolve(%State{pending: [[negative, :done]]} = state, :done) do
+    %State{state | pending: [], status: state.status ++ [negative]}
+  end
+
+  def resolve(
+        %State{pending: [[negative, {:received, %{__struct__: t, identifier: id}}] | rest]} =
+          state,
+        {:received, %{__struct__: t, identifier: id}} = positive
       ) do
-    %{state | status: [status_update | state.status], pending: rest}
-  end
-
-  # ":expect, ..." should be answered with ":received, ..."
-  def update(
-        %State{identifier: id, pending: [{:expect, %{__struct__: t}} | rest]} = state,
-        {:received, %{__struct__: t, identifier: id}} = status_update
-      ) do
-    case rest do
-      [] ->
-        finalize(%{state | status: [status_update | state.status], pending: []})
-
-      rest ->
-        %{state | status: [status_update | state.status], pending: rest}
-    end
-  end
-
-  @doc """
-  Roll the state back to the previous state
-  """
-  @spec rollback(__MODULE__.t()) :: __MODULE__.t()
-  def rollback(%State{status: []} = state), do: state
-
-  def rollback(%State{status: [previous | status], pending: pending} = state) do
-    %State{state | status: status, pending: [do_rollback(previous) | pending]}
-  end
-
-  defp do_rollback({:dispatched, %Package.Publish{} = package}) do
-    {:dispatch, %Package.Publish{package | dup: true}}
-  end
-
-  defp do_rollback({:dispatched, package}) do
-    {:dispatch, package}
-  end
-
-  defp do_rollback({:received, package}) do
-    {:expect, package}
+    %State{state | pending: rest, status: state.status ++ [negative, positive]}
   end
 
   @type trackable :: Tortoise.Encodable
@@ -111,7 +82,12 @@ defmodule Tortoise.Connection.Inflight.Track do
       polarity: :positive,
       identifier: id,
       status: [{:received, publish}],
-      pending: [{:dispatch, %Package.Puback{identifier: id}}]
+      pending: [
+        [
+          {:dispatch, %Package.Puback{identifier: id}},
+          :done
+        ]
+      ]
     }
   end
 
@@ -123,8 +99,14 @@ defmodule Tortoise.Connection.Inflight.Track do
       identifier: id,
       caller: {pid, ref},
       pending: [
-        {:dispatch, publish},
-        {:expect, %Package.Puback{identifier: id}}
+        [
+          {:dispatch, publish},
+          {:received, %Package.Puback{identifier: id}}
+        ],
+        [
+          {:respond, {pid, ref}},
+          :done
+        ]
       ]
     }
   end
@@ -134,12 +116,17 @@ defmodule Tortoise.Connection.Inflight.Track do
       type: Package.Publish,
       polarity: :positive,
       identifier: id,
-      status: [{:received, publish}],
       caller: nil,
+      status: [{:received, publish}],
       pending: [
-        {:dispatch, %Package.Pubrec{identifier: id}},
-        {:expect, %Package.Pubrel{identifier: id}},
-        {:dispatch, %Package.Pubcomp{identifier: id}}
+        [
+          {:dispatch, %Package.Pubrec{identifier: id}},
+          {:received, %Package.Pubrel{identifier: id}}
+        ],
+        [
+          {:dispatch, %Package.Pubcomp{identifier: id}},
+          :done
+        ]
       ]
     }
   end
@@ -152,10 +139,18 @@ defmodule Tortoise.Connection.Inflight.Track do
       identifier: id,
       caller: {pid, ref},
       pending: [
-        {:dispatch, publish},
-        {:expect, %Package.Pubrec{identifier: id}},
-        {:dispatch, %Package.Pubrel{identifier: id}},
-        {:expect, %Package.Pubcomp{identifier: id}}
+        [
+          {:dispatch, publish},
+          {:received, %Package.Pubrec{identifier: id}}
+        ],
+        [
+          {:dispatch, %Package.Pubrel{identifier: id}},
+          {:received, %Package.Pubcomp{identifier: id}}
+        ],
+        [
+          {:respond, {pid, ref}},
+          :done
+        ]
       ]
     }
   end
@@ -169,8 +164,14 @@ defmodule Tortoise.Connection.Inflight.Track do
       identifier: id,
       caller: {pid, ref},
       pending: [
-        {:dispatch, subscribe},
-        {:expect, %Package.Suback{identifier: id}}
+        [
+          {:dispatch, subscribe},
+          {:received, %Package.Suback{identifier: id}}
+        ],
+        [
+          {:respond, {pid, ref}},
+          :done
+        ]
       ]
     }
   end
@@ -183,38 +184,40 @@ defmodule Tortoise.Connection.Inflight.Track do
       identifier: id,
       caller: {pid, ref},
       pending: [
-        {:dispatch, unsubscribe},
-        {:expect, %Package.Unsuback{identifier: id}}
+        [
+          {:dispatch, unsubscribe},
+          {:received, %Package.Unsuback{identifier: id}}
+        ],
+        [
+          {:respond, {pid, ref}},
+          :done
+        ]
       ]
     }
   end
 
-  # Calculate a result if needed
-  defp finalize(%State{type: Package.Publish} = track) do
-    %State{track | result: :ok}
+  # calculate result
+  def result(%State{type: Package.Publish}) do
+    {:ok, :ok}
   end
 
-  defp finalize(
-         %State{
-           type: Package.Unsubscribe,
-           status: [
-             {:received, _},
-             {:dispatched, %Package.Unsubscribe{topics: topics}}
-           ]
-         } = track
-       ) do
-    %State{track | result: topics}
+  def result(%State{
+        type: Package.Unsubscribe,
+        status: [
+          {:dispatch, %Package.Unsubscribe{topics: topics}},
+          {:received, _} | _other
+        ]
+      }) do
+    {:ok, topics}
   end
 
-  defp finalize(
-         %State{
-           type: Package.Subscribe,
-           status: [
-             {:received, %Package.Suback{acks: acks}},
-             {:dispatched, %Package.Subscribe{topics: topics}}
-           ]
-         } = track
-       ) do
+  def result(%State{
+        type: Package.Subscribe,
+        status: [
+          {:dispatch, %Package.Subscribe{topics: topics}},
+          {:received, %Package.Suback{acks: acks}} | _other
+        ]
+      }) do
     result =
       List.zip([topics, acks])
       |> Enum.reduce(%{error: [], warn: [], ok: []}, fn
@@ -228,6 +231,6 @@ defmodule Tortoise.Connection.Inflight.Track do
           %{acc | error: errors ++ [{:access_denied, {topic, level}}]}
       end)
 
-    %State{track | result: result}
+    {:ok, result}
   end
 end

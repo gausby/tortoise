@@ -5,17 +5,17 @@ defmodule Tortoise.Connection.Inflight do
   alias Tortoise.Connection.Controller
   alias Tortoise.Connection.Inflight.Track
 
-  use GenServer
+  use GenStateMachine
 
   @enforce_keys [:client_id]
-  defstruct pending: %{}, connection: nil, client_id: nil
+  defstruct client_id: nil, pending: %{}, connection: nil
 
   alias __MODULE__, as: State
 
   # Client API
   def start_link(opts) do
     client_id = Keyword.fetch!(opts, :client_id)
-    GenServer.start_link(__MODULE__, opts, name: via_name(client_id))
+    GenStateMachine.start_link(__MODULE__, opts, name: via_name(client_id))
   end
 
   defp via_name(client_id) do
@@ -23,12 +23,12 @@ defmodule Tortoise.Connection.Inflight do
   end
 
   def stop(client_id) do
-    GenServer.stop(via_name(client_id))
+    GenStateMachine.stop(via_name(client_id))
   end
 
   def track(client_id, {:incoming, %Package.Publish{qos: qos, dup: false} = publish})
       when qos in 1..2 do
-    :ok = GenServer.cast(via_name(client_id), {:incoming, publish})
+    :ok = GenStateMachine.cast(via_name(client_id), {:incoming, publish})
   end
 
   def track(client_id, {:outgoing, package}) do
@@ -36,15 +36,15 @@ defmodule Tortoise.Connection.Inflight do
 
     case package do
       %Package.Publish{qos: qos} when qos in 1..2 ->
-        :ok = GenServer.cast(via_name(client_id), {:outgoing, caller, package})
+        :ok = GenStateMachine.cast(via_name(client_id), {:outgoing, caller, package})
         {:ok, ref}
 
       %Package.Subscribe{} ->
-        :ok = GenServer.cast(via_name(client_id), {:outgoing, caller, package})
+        :ok = GenStateMachine.cast(via_name(client_id), {:outgoing, caller, package})
         {:ok, ref}
 
       %Package.Unsubscribe{} ->
-        :ok = GenServer.cast(via_name(client_id), {:outgoing, caller, package})
+        :ok = GenStateMachine.cast(via_name(client_id), {:outgoing, caller, package})
         {:ok, ref}
     end
   end
@@ -61,101 +61,103 @@ defmodule Tortoise.Connection.Inflight do
   end
 
   def update(client_id, {_, %{__struct__: _, identifier: _identifier}} = event) do
-    :ok = GenServer.cast(via_name(client_id), {:update, event})
+    :ok = GenStateMachine.cast(via_name(client_id), {:update, event})
   end
 
   # Server callbacks
   @impl true
   def init(opts) do
     client_id = Keyword.fetch!(opts, :client_id)
-    initial_state = %State{client_id: client_id}
+    initial_data = %State{client_id: client_id}
 
-    send(self(), :post_init)
-    {:ok, initial_state}
+    next_actions = [
+      {:next_event, :internal, :post_init}
+    ]
+
+    {:ok, :disconnected, initial_data, next_actions}
   end
 
   @impl true
-  def handle_info(:post_init, state) do
-    case Connection.connection(state.client_id, active: true) do
+  def handle_event(:internal, :post_init, :disconnected, data) do
+    case Connection.connection(data.client_id, active: true) do
       {:ok, {_transport, _socket} = connection} ->
-        {:noreply, %State{state | connection: connection}}
+        {:next_state, :connected, %State{data | connection: connection}}
 
       {:error, :timeout} ->
-        {:stop, :connection_timeout, state}
+        {:stop, :connection_timeout}
 
       {:error, :unknown_connection} ->
-        {:stop, :unknown_connection, state}
+        {:stop, :unknown_connection}
     end
   end
 
-  def handle_info(
+  def handle_event(
+        :info,
         {{Tortoise, client_id}, :connection, {transport, socket}},
-        %State{client_id: client_id} = state
+        :disconnected,
+        %State{client_id: client_id} = data
       ) do
-    {:noreply, %State{state | connection: {transport, socket}}}
+    {:next_action, :connected, %State{data | connection: {transport, socket}}}
   end
 
-  @impl true
-  def handle_cast({:incoming, package}, %{pending: pending} = state) do
+  def handle_event(:cast, {:incoming, package}, :connected, data) do
     track = Track.create(:positive, package)
-    updated_pending = Map.put_new(pending, track.identifier, track)
+    updated_pending = Map.put_new(data.pending, track.identifier, track)
 
-    case execute(track, %State{state | pending: updated_pending}) do
-      {:ok, state} ->
-        {:noreply, state}
+    case execute(track, %State{data | pending: updated_pending}) do
+      {:ok, data} ->
+        {:keep_state, data}
     end
   end
 
-  def handle_cast({:outgoing, caller, package}, %{pending: pending} = state) do
-    {:ok, package} = assign_identifier(package, pending)
+  def handle_event(:cast, {:outgoing, caller, package}, :connected, data) do
+    {:ok, package} = assign_identifier(package, data.pending)
     track = Track.create({:negative, caller}, package)
-    updated_pending = Map.put_new(pending, track.identifier, track)
+    updated_pending = Map.put_new(data.pending, track.identifier, track)
 
-    case execute(track, %State{state | pending: updated_pending}) do
-      {:ok, state} ->
-        {:noreply, state}
+    case execute(track, %State{data | pending: updated_pending}) do
+      {:ok, data} ->
+        {:keep_state, data}
     end
   end
 
-  def handle_cast({:update, update}, state) do
-    {:ok, next_action, state} = progress_track_state(update, state)
+  def handle_event(:cast, {:update, update}, :connected, data) do
+    {:ok, next_action, data} = progress_track_state(update, data)
 
-    case execute(next_action, state) do
-      {:ok, state} ->
-        {:noreply, state}
+    case execute(next_action, data) do
+      {:ok, data} ->
+        {:keep_state, data}
     end
   end
 
   # helpers
 
   defp execute(
-         %Track{pending: [{:dispatch, package} | _]},
+         %Track{pending: [[{:dispatch, package}, _] | _]},
          %State{connection: {transport, socket}} = state
        ) do
     case apply(transport, :send, [socket, Package.encode(package)]) do
       :ok ->
-        update = {:dispatched, package}
-        {:ok, next_action, state} = progress_track_state(update, state)
-        execute(next_action, state)
+        {:ok, state}
+
+        # {:error, :closed} ->
+        #   nil
     end
   end
 
-  defp execute(%Track{pending: [{:expect, _package} | _]}, state) do
-    # await the package in a later update
+  defp execute(
+         %Track{pending: [[{:respond, _caller}, _] | _]} = track,
+         %State{} = state
+       ) do
+    :ok = Controller.handle_result(state.client_id, track)
     {:ok, state}
   end
 
-  defp execute(%Track{pending: []} = track, state) do
-    :ok = Controller.handle_result(state.client_id, track)
-    pending = Map.delete(state.pending, track.identifier)
-    {:ok, %State{state | pending: pending}}
-  end
-
   defp progress_track_state({_, package} = input, %State{} = state) do
-    # todo, handle possible error
     {next_action, updated_pending} =
       Map.get_and_update!(state.pending, package.identifier, fn track ->
-        updated_track = Track.update(track, input)
+        updated_track = Track.resolve(track, input)
+
         {updated_track, updated_track}
       end)
 

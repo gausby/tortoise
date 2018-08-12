@@ -11,10 +11,21 @@ defmodule Tortoise.Connection.Inflight.TrackTest do
     publish = %Package.Publish{qos: 1, identifier: id}
 
     state = Track.create(:positive, publish)
-    assert %Track{pending: [{:dispatch, %Package.Puback{}} | _]} = state
 
-    state = Track.update(state, {:dispatched, %Package.Puback{identifier: id}})
-    assert %Track{identifier: ^id, pending: []} = state
+    assert %Track{
+             pending: [
+               [
+                 {:dispatch, %Package.Puback{identifier: ^id}},
+                 :done
+               ]
+             ]
+           } = state
+
+    assert {next_action, resolution} = Track.next(state)
+    assert {:dispatch, %Package.Puback{identifier: ^id}} = next_action
+    assert :done = resolution
+
+    assert %Track{identifier: ^id, pending: []} = Track.resolve(state, resolution)
   end
 
   test "progress a qos 2 receive" do
@@ -22,16 +33,17 @@ defmodule Tortoise.Connection.Inflight.TrackTest do
     publish = %Package.Publish{qos: 2, identifier: id}
 
     state = Track.create(:positive, publish)
-    assert %Track{pending: [{:dispatch, %Package.Pubrec{}} | _]} = state
+    assert %Track{pending: [[{:dispatch, %Package.Pubrec{}} | _] | _]} = state
 
-    state = Track.update(state, {:dispatched, %Package.Pubrec{identifier: id}})
-    assert %Track{pending: [{:expect, %Package.Pubrel{}} | _]} = state
+    {next_action, resolution} = Track.next(state)
+    assert {:dispatch, %Package.Pubrec{identifier: ^id}} = next_action
 
-    state = Track.update(state, {:received, %Package.Pubrel{identifier: id}})
-    assert %Track{pending: [{:dispatch, %Package.Pubcomp{}} | _]} = state
+    state = Track.resolve(state, resolution)
+    {next_action, resolution} = Track.next(state)
+    assert {:dispatch, %Package.Pubcomp{identifier: ^id}} = next_action
+    assert :done = resolution
 
-    state = Track.update(state, {:dispatched, %Package.Pubcomp{identifier: id}})
-    assert %Track{identifier: ^id, pending: []} = state
+    assert %Track{identifier: ^id, pending: []} = Track.resolve(state, resolution)
   end
 
   test "progress a qos 1 publish" do
@@ -40,13 +52,19 @@ defmodule Tortoise.Connection.Inflight.TrackTest do
     caller = {self(), make_ref()}
 
     state = Track.create({:negative, caller}, publish)
-    assert %Track{pending: [{:dispatch, ^publish} | _]} = state
+    assert %Track{pending: [[{:dispatch, ^publish}, _] | _]} = state
 
-    state = Track.update(state, {:dispatched, publish})
-    assert %Track{pending: [{:expect, %Package.Puback{}} | _]} = state
+    {next_action, resolution} = Track.next(state)
+    assert {:dispatch, %Package.Publish{identifier: ^id}} = next_action
+    assert {:received, %Package.Puback{identifier: ^id}} = resolution
+    state = Track.resolve(state, resolution)
 
-    state = Track.update(state, {:received, %Package.Puback{identifier: id}})
-    assert %Track{identifier: ^id, pending: [], caller: ^caller} = state
+    {next_action, resolution} = Track.next(state)
+    assert {:respond, ^caller} = next_action
+    assert :done = resolution
+    state = Track.resolve(state, resolution)
+
+    assert %Track{identifier: ^id, pending: []} = state
   end
 
   test "progress a qos 2 publish" do
@@ -55,19 +73,24 @@ defmodule Tortoise.Connection.Inflight.TrackTest do
     caller = {self(), make_ref()}
 
     state = Track.create({:negative, caller}, publish)
-    assert %Track{pending: [{:dispatch, publish} | _]} = state
+    assert %Track{pending: [[{:dispatch, publish}, _] | _]} = state
 
-    state = Track.update(state, {:dispatched, publish})
-    assert %Track{pending: [{:expect, %Package.Pubrec{}} | _]} = state
+    {next_action, resolution} = Track.next(state)
+    assert {:dispatch, %Package.Publish{identifier: ^id}} = next_action
+    assert {:received, %Package.Pubrec{identifier: ^id}} = resolution
+    state = Track.resolve(state, resolution)
 
-    state = Track.update(state, {:received, %Package.Pubrec{identifier: id}})
-    assert %Track{pending: [{:dispatch, %Package.Pubrel{}} | _]} = state
+    {next_action, resolution} = Track.next(state)
+    assert {:dispatch, %Package.Pubrel{identifier: ^id}} = next_action
+    assert {:received, %Package.Pubcomp{identifier: ^id}} = resolution
+    state = Track.resolve(state, resolution)
 
-    state = Track.update(state, {:dispatched, %Package.Pubrel{identifier: id}})
-    assert %Track{pending: [{:expect, %Package.Pubcomp{}}]} = state
+    {next_action, resolution} = Track.next(state)
+    assert {:respond, ^caller} = next_action
+    assert :done = resolution
+    state = Track.resolve(state, resolution)
 
-    state = Track.update(state, {:received, %Package.Pubcomp{identifier: id}})
-    assert %Track{identifier: ^id, pending: [], caller: ^caller} = state
+    assert %Track{identifier: ^id, pending: []} = state
   end
 
   test "progress a subscribe" do
@@ -77,12 +100,18 @@ defmodule Tortoise.Connection.Inflight.TrackTest do
     caller = {self(), make_ref()}
 
     state = Track.create({:negative, caller}, subscribe)
-    assert %Track{pending: [{:dispatch, ^subscribe} | _]} = state
+    assert %Track{pending: [[{:dispatch, ^subscribe}, _] | _]} = state
 
-    state = Track.update(state, {:dispatched, subscribe})
-    assert %Track{pending: [{:expect, %{__struct__: Package.Suback}} | _]} = state
+    {next_action, resolution} = Track.next(state)
+    assert {:dispatch, ^subscribe} = next_action
+    assert {:received, %Package.Suback{identifier: ^id}} = resolution
+    state = Track.resolve(state, {:received, suback})
 
-    state = Track.update(state, {:received, suback})
+    {next_action, resolution} = Track.next(state)
+    assert {:respond, ^caller} = next_action
+    assert :done = resolution
+    state = Track.resolve(state, resolution)
+
     assert %Track{identifier: ^id, pending: []} = state
   end
 
@@ -93,55 +122,18 @@ defmodule Tortoise.Connection.Inflight.TrackTest do
     caller = {self(), make_ref()}
 
     state = Track.create({:negative, caller}, unsubscribe)
-    assert %Track{pending: [{:dispatch, ^unsubscribe} | _]} = state
+    assert %Track{pending: [[{:dispatch, ^unsubscribe}, _] | _]} = state
 
-    state = Track.update(state, {:dispatched, unsubscribe})
-    assert %Track{pending: [{:expect, %{__struct__: Package.Unsuback}} | _]} = state
+    {next_action, resolution} = Track.next(state)
+    assert {:dispatch, ^unsubscribe} = next_action
+    assert {:received, %Package.Unsuback{identifier: ^id}} = resolution
+    state = Track.resolve(state, {:received, unsuback})
 
-    state = Track.update(state, {:received, unsuback})
+    {next_action, resolution} = Track.next(state)
+    assert {:respond, ^caller} = next_action
+    assert :done = resolution
+    state = Track.resolve(state, resolution)
+
     assert %Track{identifier: ^id, pending: []} = state
-  end
-
-  describe "rollback/1" do
-    # todo, this could be described as a property
-    test "roll back to dispatch state" do
-      publish = %Package.Publish{qos: 2, identifier: 1}
-      initial_state = Track.create(:positive, publish)
-      command = {:dispatched, %Package.Pubrec{identifier: 1}}
-      state = Track.update(initial_state, command)
-
-      assert ^initial_state = Track.rollback(state)
-    end
-
-    test "roll back to expect state" do
-      publish = %Package.Publish{qos: 2, identifier: 1}
-      caller = {self(), make_ref()}
-      state = Track.create({:negative, caller}, publish)
-      command = {:dispatched, publish}
-      target_state = state = Track.update(state, command)
-      command = {:received, %Package.Pubrec{identifier: 1}}
-      state = Track.update(state, command)
-
-      assert ^target_state = Track.rollback(state)
-    end
-
-    test "rolling back to a publish dispatch should set the duplication flag" do
-      # setup tracking of an outgoing publish qos 2
-      publish = %Package.Publish{qos: 2, identifier: 1, dup: false}
-      caller = {self(), make_ref()}
-      # record data in initial state for later assertions
-      initial_state = Track.create({:negative, caller}, publish)
-      %{pending: [{:dispatch, ^publish} | pending]} = initial_state
-      # progress the state
-      command = {:dispatched, publish}
-      state = Track.update(initial_state, command)
-      # When we roll back the "dup" flag should get set on the publish
-      dupped_publish = %Package.Publish{publish | dup: true}
-
-      assert Track.rollback(state) == %Track{
-               initial_state
-               | pending: [{:dispatch, dupped_publish} | pending]
-             }
-    end
   end
 end

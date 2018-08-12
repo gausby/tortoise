@@ -85,18 +85,22 @@ defmodule Tortoise.Connection.Controller do
     :ok
   end
 
-  def handle_result(client_id, %Inflight.Track{
-        type: Package.Publish,
-        caller: {pid, ref},
-        result: :ok
-      }) do
-    send(pid, {{Tortoise, client_id}, ref, :ok})
+  def handle_result(
+        client_id,
+        %Inflight.Track{
+          type: Package.Publish,
+          caller: {pid, ref}
+        } = track
+      ) do
+    {:ok, result} = Inflight.Track.result(track)
+    send(pid, {{Tortoise, client_id}, ref, result})
     :ok
   end
 
-  def handle_result(client_id, %Inflight.Track{caller: {pid, ref}, result: result} = track) do
+  def handle_result(client_id, %Inflight.Track{caller: {pid, ref}} = track) do
+    {:ok, result} = Inflight.Track.result(track)
     send(pid, {{Tortoise, client_id}, ref, result})
-    GenServer.cast(via_name(client_id), {:result, track})
+    GenServer.cast(via_name(client_id), {:result, {track.type, result}})
   end
 
   # Server callbacks
@@ -148,20 +152,20 @@ defmodule Tortoise.Connection.Controller do
   end
 
   def handle_cast(
-        {:result, %Inflight.Track{type: Package.Subscribe} = track},
+        {:result, {Package.Subscribe, subacks}},
         %State{handler: handler} = state
       ) do
-    case Handler.execute(handler, {:subscribe, track}) do
+    case Handler.execute(handler, {:subscribe, subacks}) do
       {:ok, updated_handler} ->
         {:noreply, %State{state | handler: updated_handler}}
     end
   end
 
   def handle_cast(
-        {:result, %Inflight.Track{type: Package.Unsubscribe} = track},
+        {:result, {Package.Unsubscribe, unsubacks}},
         %State{handler: handler} = state
       ) do
-    case Handler.execute(handler, {:unsubscribe, track}) do
+    case Handler.execute(handler, {:unsubscribe, unsubacks}) do
       {:ok, updated_handler} ->
         {:noreply, %State{state | handler: updated_handler}}
     end
