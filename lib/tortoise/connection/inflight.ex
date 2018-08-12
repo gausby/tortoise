@@ -143,19 +143,28 @@ defmodule Tortoise.Connection.Inflight do
   end
 
   # update
-  def handle_event(:cast, {:update, update}, _state, data) do
-    {_, %{identifier: identifier}} = update
-    track = Map.get(data.pending, identifier)
+  def handle_event(
+        :cast,
+        {:update, {_, %{identifier: identifier}} = update},
+        _state,
+        %State{pending: pending} = data
+      ) do
+    with {:ok, track} <- Map.fetch(pending, identifier),
+         {:ok, track} <- Track.resolve(track, update) do
+      next_actions = [
+        {:next_event, :internal, {:execute, track}}
+      ]
 
-    next_action = Track.resolve(track, update)
+      data = %State{data | pending: Map.put(pending, identifier, track)}
 
-    data = %State{data | pending: Map.put(data.pending, identifier, next_action)}
+      {:keep_state, data, next_actions}
+    else
+      :error ->
+        {:stop, {:protocol_violation, :unknown_identifier}, data}
 
-    next_actions = [
-      {:next_event, :internal, {:execute, next_action}}
-    ]
-
-    {:keep_state, data, next_actions}
+      {:error, reason} ->
+        {:stop, reason, data}
+    end
   end
 
   def handle_event(

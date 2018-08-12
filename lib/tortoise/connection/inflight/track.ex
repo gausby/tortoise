@@ -52,16 +52,32 @@ defmodule Tortoise.Connection.Inflight.Track do
     {next_action, resolution}
   end
 
-  def resolve(%State{pending: [[negative, :cleanup]]} = state, :cleanup) do
-    %State{state | pending: [], status: [negative | state.status]}
+  def resolve(%State{pending: [[action, :cleanup]]} = state, :cleanup) do
+    {:ok, %State{state | pending: [], status: [action | state.status]}}
   end
 
   def resolve(
-        %State{pending: [[negative, {:received, %{__struct__: t, identifier: id}}] | rest]} =
-          state,
-        {:received, %{__struct__: t, identifier: id}} = positive
+        %State{pending: [[action, {:received, %{__struct__: t, identifier: id}}] | rest]} = state,
+        {:received, %{__struct__: t, identifier: id}} = expected
       ) do
-    %State{state | pending: rest, status: [positive, negative | state.status]}
+    {:ok, %State{state | pending: rest, status: [expected, action | state.status]}}
+  end
+
+  # the value has previously been received; here we should stay where
+  # we are at and retry the transmission
+  def resolve(
+        %State{status: [{same, %{__struct__: t, identifier: id}} | _]} = state,
+        {same, %{__struct__: t, identifier: id}}
+      ) do
+    {:ok, state}
+  end
+
+  def resolve(%State{pending: []} = state, :cleanup) do
+    {:ok, state}
+  end
+
+  def resolve(%State{}, {:received, package}) do
+    {:error, {:protocol_violation, {:unexpected_package_from_remote, package}}}
   end
 
   @type trackable :: Tortoise.Encodable
