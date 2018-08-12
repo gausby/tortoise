@@ -81,26 +81,14 @@ defmodule Tortoise.Connection.Controller do
     GenServer.cast(via_name(client_id), {:incoming, package})
   end
 
-  def handle_result(_client_id, %Inflight.Track{caller: nil}) do
-    :ok
-  end
-
-  def handle_result(
-        client_id,
-        %Inflight.Track{
-          type: Package.Publish,
-          caller: {pid, ref}
-        } = track
-      ) do
-    {:ok, result} = Inflight.Track.result(track)
+  def handle_result(client_id, {{pid, ref}, Package.Publish, result}) do
     send(pid, {{Tortoise, client_id}, ref, result})
     :ok
   end
 
-  def handle_result(client_id, %Inflight.Track{caller: {pid, ref}} = track) do
-    {:ok, result} = Inflight.Track.result(track)
+  def handle_result(client_id, {{pid, ref}, type, result}) do
     send(pid, {{Tortoise, client_id}, ref, result})
-    GenServer.cast(via_name(client_id), {:result, {track.type, result}})
+    GenServer.cast(via_name(client_id), {:result, {type, result}})
   end
 
   # Server callbacks

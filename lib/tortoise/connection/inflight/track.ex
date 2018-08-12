@@ -37,7 +37,6 @@ defmodule Tortoise.Connection.Inflight.Track do
             identifier: package_identifier(),
             status: [status_update()],
             pending: [next_action()],
-            caller: caller(),
             result: term() | nil
           }
   @enforce_keys [:type, :identifier, :polarity, :pending]
@@ -46,7 +45,6 @@ defmodule Tortoise.Connection.Inflight.Track do
             identifier: nil,
             status: [],
             pending: [],
-            caller: nil,
             result: nil
 
   alias __MODULE__, as: State
@@ -97,7 +95,6 @@ defmodule Tortoise.Connection.Inflight.Track do
       type: Package.Publish,
       polarity: :negative,
       identifier: id,
-      caller: {pid, ref},
       pending: [
         [
           {:dispatch, publish},
@@ -116,7 +113,6 @@ defmodule Tortoise.Connection.Inflight.Track do
       type: Package.Publish,
       polarity: :positive,
       identifier: id,
-      caller: nil,
       status: [{:received, publish}],
       pending: [
         [
@@ -137,7 +133,6 @@ defmodule Tortoise.Connection.Inflight.Track do
       type: Package.Publish,
       polarity: :negative,
       identifier: id,
-      caller: {pid, ref},
       pending: [
         [
           {:dispatch, publish},
@@ -162,7 +157,6 @@ defmodule Tortoise.Connection.Inflight.Track do
       type: Package.Subscribe,
       polarity: :negative,
       identifier: id,
-      caller: {pid, ref},
       pending: [
         [
           {:dispatch, subscribe},
@@ -182,7 +176,6 @@ defmodule Tortoise.Connection.Inflight.Track do
       type: Package.Unsubscribe,
       polarity: :negative,
       identifier: id,
-      caller: {pid, ref},
       pending: [
         [
           {:dispatch, unsubscribe},

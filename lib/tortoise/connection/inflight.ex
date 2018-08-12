@@ -146,11 +146,14 @@ defmodule Tortoise.Connection.Inflight do
   end
 
   defp execute(
-         %Track{pending: [[{:respond, _caller}, _] | _]} = track,
+         %Track{pending: [[{:respond, caller}, _] | _]} = track,
          %State{} = state
        ) do
-    :ok = Controller.handle_result(state.client_id, track)
-    {:ok, state}
+    case Track.result(track) do
+      {:ok, result} ->
+        :ok = Controller.handle_result(state.client_id, {caller, track.type, result})
+        {:ok, state}
+    end
   end
 
   defp progress_track_state({_, package} = input, %State{} = state) do
