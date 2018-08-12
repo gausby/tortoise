@@ -16,14 +16,14 @@ defmodule Tortoise.Connection.Inflight.TrackTest do
              pending: [
                [
                  {:dispatch, %Package.Puback{identifier: ^id}},
-                 :done
+                 :cleanup
                ]
              ]
            } = state
 
     assert {next_action, resolution} = Track.next(state)
     assert {:dispatch, %Package.Puback{identifier: ^id}} = next_action
-    assert :done = resolution
+    assert :cleanup = resolution
 
     assert %Track{identifier: ^id, pending: []} = Track.resolve(state, resolution)
   end
@@ -41,7 +41,7 @@ defmodule Tortoise.Connection.Inflight.TrackTest do
     state = Track.resolve(state, resolution)
     {next_action, resolution} = Track.next(state)
     assert {:dispatch, %Package.Pubcomp{identifier: ^id}} = next_action
-    assert :done = resolution
+    assert :cleanup = resolution
 
     assert %Track{identifier: ^id, pending: []} = Track.resolve(state, resolution)
   end
@@ -61,7 +61,7 @@ defmodule Tortoise.Connection.Inflight.TrackTest do
 
     {next_action, resolution} = Track.next(state)
     assert {:respond, ^caller} = next_action
-    assert :done = resolution
+    assert :cleanup = resolution
     state = Track.resolve(state, resolution)
 
     assert %Track{identifier: ^id, pending: []} = state
@@ -87,7 +87,7 @@ defmodule Tortoise.Connection.Inflight.TrackTest do
 
     {next_action, resolution} = Track.next(state)
     assert {:respond, ^caller} = next_action
-    assert :done = resolution
+    assert :cleanup = resolution
     state = Track.resolve(state, resolution)
 
     assert %Track{identifier: ^id, pending: []} = state
@@ -109,7 +109,7 @@ defmodule Tortoise.Connection.Inflight.TrackTest do
 
     {next_action, resolution} = Track.next(state)
     assert {:respond, ^caller} = next_action
-    assert :done = resolution
+    assert :cleanup = resolution
     state = Track.resolve(state, resolution)
 
     assert %Track{identifier: ^id, pending: []} = state
@@ -131,7 +131,7 @@ defmodule Tortoise.Connection.Inflight.TrackTest do
 
     {next_action, resolution} = Track.next(state)
     assert {:respond, ^caller} = next_action
-    assert :done = resolution
+    assert :cleanup = resolution
     state = Track.resolve(state, resolution)
 
     assert %Track{identifier: ^id, pending: []} = state

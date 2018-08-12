@@ -36,16 +36,14 @@ defmodule Tortoise.Connection.Inflight.Track do
             type: package,
             identifier: package_identifier(),
             status: [status_update()],
-            pending: [next_action()],
-            result: term() | nil
+            pending: [next_action()]
           }
   @enforce_keys [:type, :identifier, :polarity, :pending]
   defstruct type: nil,
             polarity: nil,
             identifier: nil,
             status: [],
-            pending: [],
-            result: nil
+            pending: []
 
   alias __MODULE__, as: State
   alias Tortoise.Package
@@ -54,8 +52,8 @@ defmodule Tortoise.Connection.Inflight.Track do
     {next_action, resolution}
   end
 
-  def resolve(%State{pending: [[negative, :done]]} = state, :done) do
-    %State{state | pending: [], status: state.status ++ [negative]}
+  def resolve(%State{pending: [[negative, :cleanup]]} = state, :cleanup) do
+    %State{state | pending: [], status: [negative | state.status]}
   end
 
   def resolve(
@@ -63,7 +61,7 @@ defmodule Tortoise.Connection.Inflight.Track do
           state,
         {:received, %{__struct__: t, identifier: id}} = positive
       ) do
-    %State{state | pending: rest, status: state.status ++ [negative, positive]}
+    %State{state | pending: rest, status: [positive, negative | state.status]}
   end
 
   @type trackable :: Tortoise.Encodable
@@ -83,7 +81,7 @@ defmodule Tortoise.Connection.Inflight.Track do
       pending: [
         [
           {:dispatch, %Package.Puback{identifier: id}},
-          :done
+          :cleanup
         ]
       ]
     }
@@ -102,7 +100,7 @@ defmodule Tortoise.Connection.Inflight.Track do
         ],
         [
           {:respond, {pid, ref}},
-          :done
+          :cleanup
         ]
       ]
     }
@@ -121,7 +119,7 @@ defmodule Tortoise.Connection.Inflight.Track do
         ],
         [
           {:dispatch, %Package.Pubcomp{identifier: id}},
-          :done
+          :cleanup
         ]
       ]
     }
@@ -144,7 +142,7 @@ defmodule Tortoise.Connection.Inflight.Track do
         ],
         [
           {:respond, {pid, ref}},
-          :done
+          :cleanup
         ]
       ]
     }
@@ -164,7 +162,7 @@ defmodule Tortoise.Connection.Inflight.Track do
         ],
         [
           {:respond, {pid, ref}},
-          :done
+          :cleanup
         ]
       ]
     }
@@ -183,7 +181,7 @@ defmodule Tortoise.Connection.Inflight.Track do
         ],
         [
           {:respond, {pid, ref}},
-          :done
+          :cleanup
         ]
       ]
     }
@@ -197,8 +195,8 @@ defmodule Tortoise.Connection.Inflight.Track do
   def result(%State{
         type: Package.Unsubscribe,
         status: [
-          {:dispatch, %Package.Unsubscribe{topics: topics}},
-          {:received, _} | _other
+          {:received, _},
+          {:dispatch, %Package.Unsubscribe{topics: topics}} | _other
         ]
       }) do
     {:ok, topics}
@@ -207,8 +205,8 @@ defmodule Tortoise.Connection.Inflight.Track do
   def result(%State{
         type: Package.Subscribe,
         status: [
-          {:dispatch, %Package.Subscribe{topics: topics}},
-          {:received, %Package.Suback{acks: acks}} | _other
+          {:received, %Package.Suback{acks: acks}},
+          {:dispatch, %Package.Subscribe{topics: topics}} | _other
         ]
       }) do
     result =
