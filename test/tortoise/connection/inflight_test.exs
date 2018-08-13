@@ -128,4 +128,63 @@ defmodule Tortoise.Connection.InflightTest do
       assert_receive {{Tortoise, ^client_id}, ^ref, :ok}
     end
   end
+
+  describe "Subscription" do
+    setup [:setup_connection, :setup_inflight]
+
+    test "subscription", %{client_id: client_id} = context do
+      subscribe = %Package.Subscribe{
+        identifier: 1,
+        topics: [{"foo", 0}, {"bar", 1}, {"baz", 2}]
+      }
+
+      {:ok, ref} = Inflight.track(client_id, {:outgoing, subscribe})
+
+      # send the subscribe package
+      assert {:ok, package} = :gen_tcp.recv(context.server, 0, 500)
+      assert ^subscribe = Package.decode(package)
+      # drop and reestablish the connection
+      {:ok, context} = drop_connection(context)
+      {:ok, context} = setup_connection(context)
+      # re-transmit the subscribe package
+      assert {:ok, ^package} = :gen_tcp.recv(context.server, 0, 500)
+
+      # when receiving the suback we should respond to the caller
+      suback = %Package.Suback{
+        identifier: 1,
+        acks: [{:ok, 0}, {:ok, 1}, {:ok, 2}]
+      }
+
+      Inflight.update(client_id, {:received, suback})
+
+      assert_receive {{Tortoise, ^client_id}, ^ref, _}
+    end
+  end
+
+  describe "Unsubscribe" do
+    setup [:setup_connection, :setup_inflight]
+
+    test "unsubscribe", %{client_id: client_id} = context do
+      unsubscribe = %Package.Unsubscribe{
+        identifier: 1,
+        topics: ["foo", "bar", "baz"]
+      }
+
+      {:ok, ref} = Inflight.track(client_id, {:outgoing, unsubscribe})
+
+      # send the unsubscribe package
+      assert {:ok, package} = :gen_tcp.recv(context.server, 0, 500)
+      assert ^unsubscribe = Package.decode(package)
+      # drop and reestablish the connection
+      {:ok, context} = drop_connection(context)
+      {:ok, context} = setup_connection(context)
+      # re-transmit the subscribe package
+      assert {:ok, ^package} = :gen_tcp.recv(context.server, 0, 500)
+
+      # when receiving the suback we should respond to the caller
+      Inflight.update(client_id, {:received, %Package.Unsuback{identifier: 1}})
+
+      assert_receive {{Tortoise, ^client_id}, ^ref, _}
+    end
+  end
 end
