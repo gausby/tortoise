@@ -98,9 +98,22 @@ defmodule Tortoise.Connection.Inflight do
         :info,
         {{Tortoise, client_id}, :connection, connection},
         _current_state,
-        %State{client_id: client_id} = data
+        %State{client_id: client_id, pending: pending} = data
       ) do
-    {:next_state, {:connected, connection}, data}
+    next_actions =
+      for {identifier, %{identifier: identifier} = track} <- pending do
+        case track do
+          %Track{pending: [[{:dispatch, %Package.Publish{} = publish} | action] | pending]} ->
+            publish = %Package.Publish{publish | dup: true}
+            track = %Track{track | pending: [[{:dispatch, publish} | action] | pending]}
+            {:next_event, :internal, {:execute, track}}
+
+          _otherwise ->
+            {:next_event, :internal, {:execute, track}}
+        end
+      end
+
+    {:next_state, {:connected, connection}, data, next_actions}
   end
 
   # Connection status events; when we go offline we should transition
@@ -185,6 +198,7 @@ defmodule Tortoise.Connection.Inflight do
         :disconnected,
         %State{}
       ) do
+    # the dispatch will get re-queued when we regain the connection
     :keep_state_and_data
   end
 
