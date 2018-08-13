@@ -85,7 +85,7 @@ defmodule Tortoise.Connection.Inflight.TrackTest do
       caller = {self(), make_ref()}
 
       state = Track.create({:negative, caller}, publish)
-      assert %Track{pending: [[{:dispatch, publish}, _] | _]} = state
+      assert %Track{pending: [[{:dispatch, ^publish}, _] | _]} = state
 
       {next_action, resolution} = Track.next(state)
       assert {:dispatch, %Package.Publish{identifier: ^id}} = next_action
