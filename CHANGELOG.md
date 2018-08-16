@@ -2,6 +2,12 @@
 
 ## [Unreleased]
 
+### Changed
+
+- When a connection drop the inflight manager will now re-transmit
+  packages with quality of service that was inflight when the regain a
+  connection.
+
 ## 0.7.0 - 2018-08-09
 
 ### Changed
