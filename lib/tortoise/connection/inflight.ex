@@ -8,7 +8,7 @@ defmodule Tortoise.Connection.Inflight do
   use GenStateMachine
 
   @enforce_keys [:client_id]
-  defstruct client_id: nil, pending: %{}
+  defstruct client_id: nil, pending: %{}, order: []
 
   alias __MODULE__, as: State
 
@@ -101,14 +101,15 @@ defmodule Tortoise.Connection.Inflight do
         %State{client_id: client_id, pending: pending} = data
       ) do
     next_actions =
-      for {identifier, %{identifier: identifier} = track} <- pending do
-        case track do
-          %Track{pending: [[{:dispatch, %Package.Publish{} = publish} | action] | pending]} ->
+      for identifier <- Enum.reverse(data.order) do
+        case Map.get(pending, identifier, :unknown) do
+          %Track{pending: [[{:dispatch, %Package.Publish{} = publish} | action] | pending]} =
+              track ->
             publish = %Package.Publish{publish | dup: true}
             track = %Track{track | pending: [[{:dispatch, publish} | action] | pending]}
             {:next_event, :internal, {:execute, track}}
 
-          _otherwise ->
+          %Track{} = track ->
             {:next_event, :internal, {:execute, track}}
         end
       end
@@ -132,7 +133,7 @@ defmodule Tortoise.Connection.Inflight do
   end
 
   # create
-  def handle_event(:cast, {:incoming, package}, _state, data) do
+  def handle_event(:cast, {:incoming, package}, _state, %State{} = data) do
     track = Track.create(:positive, package)
     updated_pending = Map.put_new(data.pending, track.identifier, track)
 
@@ -140,19 +141,26 @@ defmodule Tortoise.Connection.Inflight do
       {:next_event, :internal, {:execute, track}}
     ]
 
-    {:keep_state, %State{data | pending: updated_pending}, next_actions}
+    order = [track.identifier | data.order]
+
+    {:keep_state, %State{data | pending: updated_pending, order: order}, next_actions}
   end
 
   def handle_event(:cast, {:outgoing, caller, package}, _state, data) do
     {:ok, package} = assign_identifier(package, data.pending)
     track = Track.create({:negative, caller}, package)
-    updated_pending = Map.put_new(data.pending, track.identifier, track)
 
     next_actions = [
       {:next_event, :internal, {:execute, track}}
     ]
 
-    {:keep_state, %State{data | pending: updated_pending}, next_actions}
+    data = %State{
+      data
+      | pending: Map.put_new(data.pending, track.identifier, track),
+        order: [track.identifier | data.order]
+    }
+
+    {:keep_state, data, next_actions}
   end
 
   # update
@@ -168,7 +176,11 @@ defmodule Tortoise.Connection.Inflight do
         {:next_event, :internal, {:execute, track}}
       ]
 
-      data = %State{data | pending: Map.put(pending, identifier, track)}
+      data = %State{
+        data
+        | pending: Map.put(pending, identifier, track),
+          order: [identifier | data.order -- [identifier]]
+      }
 
       {:keep_state, data, next_actions}
     else
@@ -220,7 +232,8 @@ defmodule Tortoise.Connection.Inflight do
          %Track{pending: [[_, :cleanup]], identifier: identifier},
          %State{pending: pending} = state
        ) do
-    %State{state | pending: Map.delete(pending, identifier)}
+    order = state.order -- [identifier]
+    %State{state | pending: Map.delete(pending, identifier), order: order}
   end
 
   defp handle_next(_track, %State{} = state) do

@@ -187,4 +187,43 @@ defmodule Tortoise.Connection.InflightTest do
       assert_receive {{Tortoise, ^client_id}, ^ref, _}
     end
   end
+
+  describe "message ordering" do
+    setup [:setup_connection, :setup_inflight]
+
+    test "publish should be retransmitted in the same order", context do
+      client_id = context.client_id
+      publish1 = %Package.Publish{identifier: 250, topic: "foo", qos: 1}
+      publish2 = %Package.Publish{identifier: 500, topic: "foo", qos: 1}
+      publish3 = %Package.Publish{identifier: 100, topic: "foo", qos: 1}
+
+      {:ok, _} = Inflight.track(client_id, {:outgoing, publish1})
+      {:ok, _} = Inflight.track(client_id, {:outgoing, publish2})
+      {:ok, _} = Inflight.track(client_id, {:outgoing, publish3})
+
+      expected = Package.encode(publish1) |> IO.iodata_to_binary()
+      assert {:ok, ^expected} = :gen_tcp.recv(context.server, byte_size(expected), 500)
+      expected = Package.encode(publish2) |> IO.iodata_to_binary()
+      assert {:ok, ^expected} = :gen_tcp.recv(context.server, byte_size(expected), 500)
+      expected = Package.encode(publish3) |> IO.iodata_to_binary()
+      assert {:ok, ^expected} = :gen_tcp.recv(context.server, byte_size(expected), 500)
+
+      # drop and reestablish the connection
+      {:ok, context} = drop_connection(context)
+      {:ok, context} = setup_connection(context)
+
+      # the in flight manager should now re-transmit the publish
+      # messages in the same order they arrived
+      publish1 = %Package.Publish{publish1 | dup: true}
+      publish2 = %Package.Publish{publish2 | dup: true}
+      publish3 = %Package.Publish{publish3 | dup: true}
+
+      expected = Package.encode(publish1) |> IO.iodata_to_binary()
+      assert {:ok, ^expected} = :gen_tcp.recv(context.server, byte_size(expected), 500)
+      expected = Package.encode(publish2) |> IO.iodata_to_binary()
+      assert {:ok, ^expected} = :gen_tcp.recv(context.server, byte_size(expected), 500)
+      expected = Package.encode(publish3) |> IO.iodata_to_binary()
+      assert {:ok, ^expected} = :gen_tcp.recv(context.server, byte_size(expected), 500)
+    end
+  end
 end
