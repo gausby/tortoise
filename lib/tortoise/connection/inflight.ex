@@ -26,7 +26,7 @@ defmodule Tortoise.Connection.Inflight do
     GenStateMachine.stop(via_name(client_id))
   end
 
-  def track(client_id, {:incoming, %Package.Publish{qos: qos, dup: false} = publish})
+  def track(client_id, {:incoming, %Package.Publish{qos: qos} = publish})
       when qos in 1..2 do
     :ok = GenStateMachine.cast(via_name(client_id), {:incoming, publish})
   end
@@ -132,18 +132,51 @@ defmodule Tortoise.Connection.Inflight do
     :keep_state_and_data
   end
 
-  # create
-  def handle_event(:cast, {:incoming, package}, _state, %State{} = data) do
+  # Create. Notice: we will only receive publish packages from the
+  # remote; everything else is something we initiate
+  def handle_event(
+        :cast,
+        {:incoming, %Package.Publish{dup: false} = package},
+        _state,
+        %State{pending: pending} = data
+      ) do
     track = Track.create(:positive, package)
-    updated_pending = Map.put_new(data.pending, track.identifier, track)
+
+    data = %State{
+      data
+      | pending: Map.put_new(pending, track.identifier, track),
+        order: [track.identifier | data.order]
+    }
 
     next_actions = [
+      {:next_event, :internal, {:onward_publish, package}},
       {:next_event, :internal, {:execute, track}}
     ]
 
-    order = [track.identifier | data.order]
+    {:keep_state, data, next_actions}
+  end
 
-    {:keep_state, %State{data | pending: updated_pending, order: order}, next_actions}
+  # possible duplicate
+  def handle_event(
+        :cast,
+        {:incoming, %Package.Publish{identifier: identifier, dup: true} = publish},
+        _state,
+        %State{pending: pending} = data
+      ) do
+    case Map.get(pending, identifier) do
+      nil ->
+        next_actions = [
+          {:next_event, :cast, {:incoming, %Package.Publish{publish | dup: false}}}
+        ]
+
+        {:keep_state_and_data, next_actions}
+
+      %Track{polarity: :positive, status: [{:received, %{__struct__: Package.Publish}}]} ->
+        :keep_state_and_data
+
+      _otherwise ->
+        {:stop, :state_out_of_sync, data}
+    end
   end
 
   def handle_event(:cast, {:outgoing, caller, package}, _state, data) do
@@ -190,6 +223,25 @@ defmodule Tortoise.Connection.Inflight do
       {:error, reason} ->
         {:stop, reason, data}
     end
+  end
+
+  # We trap the incoming QoS 2 packages in the inflight manager so we
+  # can make sure we will not onward them to the connection handler
+  # more than once.
+  def handle_event(
+        :internal,
+        {:onward_publish, %Package.Publish{qos: 2} = publish},
+        _,
+        %State{} = data
+      ) do
+    :ok = Controller.handle_onward(data.client_id, publish)
+    :keep_state_and_data
+  end
+
+  # The other package types should not get onwarded to the controller
+  # handler
+  def handle_event(:internal, {:onward_publish, _}, _, %State{}) do
+    :keep_state_and_data
   end
 
   def handle_event(

@@ -77,10 +77,12 @@ defmodule Tortoise.Connection.Controller do
     end
   end
 
+  @doc false
   def handle_incoming(client_id, package) do
     GenServer.cast(via_name(client_id), {:incoming, package})
   end
 
+  @doc false
   def handle_result(client_id, {{pid, ref}, Package.Publish, result}) do
     send(pid, {{Tortoise, client_id}, ref, result})
     :ok
@@ -89,6 +91,11 @@ defmodule Tortoise.Connection.Controller do
   def handle_result(client_id, {{pid, ref}, type, result}) do
     send(pid, {{Tortoise, client_id}, ref, result})
     GenServer.cast(via_name(client_id), {:result, {type, result}})
+  end
+
+  @doc false
+  def handle_onward(client_id, %Package.Publish{} = publish) do
+    GenServer.cast(via_name(client_id), {:onward, publish})
   end
 
   # Server callbacks
@@ -154,6 +161,19 @@ defmodule Tortoise.Connection.Controller do
         %State{handler: handler} = state
       ) do
     case Handler.execute(handler, {:unsubscribe, unsubacks}) do
+      {:ok, updated_handler} ->
+        {:noreply, %State{state | handler: updated_handler}}
+    end
+  end
+
+  # an incoming publish with QoS=2 will get parked in the inflight
+  # manager process, which will onward it to the controller, making
+  # sure we will only dispatch it once to the publish-handler.
+  def handle_cast(
+        {:onward, %Package.Publish{qos: 2, dup: false} = publish},
+        %State{handler: handler} = state
+      ) do
+    case Handler.execute(handler, {:publish, publish}) do
       {:ok, updated_handler} ->
         {:noreply, %State{state | handler: updated_handler}}
     end
@@ -243,16 +263,9 @@ defmodule Tortoise.Connection.Controller do
 
   # QoS LEVEL 2 ========================================================
   # commands -----------------------------------------------------------
-  defp handle_package(
-         %Publish{qos: 2, dup: false} = publish,
-         %State{handler: handler} = state
-       ) do
+  defp handle_package(%Publish{qos: 2} = publish, %State{} = state) do
     :ok = Inflight.track(state.client_id, {:incoming, publish})
-
-    case Handler.execute(handler, {:publish, publish}) do
-      {:ok, updated_handler} ->
-        {:noreply, %State{state | handler: updated_handler}}
-    end
+    {:noreply, state}
   end
 
   defp handle_package(%Pubrel{} = pubrel, state) do
