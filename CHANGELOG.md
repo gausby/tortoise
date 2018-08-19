@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## 0.8.0 - 2018-08-09
+
 ### Changed
 
 - When a connection drop the inflight manager will now re-transmit
