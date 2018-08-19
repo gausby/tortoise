@@ -14,6 +14,12 @@
   messages caused by retransmisions should get trapped and not
   forwarded to the user defined publish handler.
 
+### Added
+
+- The documentation on how to connect to a broker using the
+  `Tortoise.Transport.SSL` method has been improved by [Bram
+  Verburg](https://github.com/voltone).
+
 ## 0.7.0 - 2018-08-09
 
 ### Changed
