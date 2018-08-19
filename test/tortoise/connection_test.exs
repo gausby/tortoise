@@ -555,7 +555,7 @@ defmodule Tortoise.ConnectionTest do
       assert {:ok, _pid} = Connection.start_link(opts)
       assert_receive {ScriptedMqttServer, {:received, ^connect}}
 
-      assert {:ok, {Tortoise.Transport.Tcp, socket}} =
+      assert {:ok, {Tortoise.Transport.Tcp, _socket}} =
                Connection.connection(client_id, timeout: 500)
 
       assert_receive {ScriptedMqttServer, :completed}

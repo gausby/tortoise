@@ -93,7 +93,6 @@ defmodule Tortoise.Handler do
   """
 
   alias Tortoise.Package
-  alias Tortoise.Connection.Inflight
 
   @enforce_keys [:module, :initial_args]
   defstruct module: nil, state: nil, initial_args: []
@@ -267,10 +266,7 @@ defmodule Tortoise.Handler do
     |> handle_result(handler)
   end
 
-  def execute(
-        handler,
-        {:unsubscribe, %Inflight.Track{type: Package.Unsubscribe, result: unsubacks}}
-      ) do
+  def execute(handler, {:unsubscribe, unsubacks}) do
     Enum.reduce(unsubacks, {:ok, handler}, fn topic_filter, {:ok, handler} ->
       handler.module
       |> apply(:subscription, [:down, topic_filter, handler.state])
@@ -281,10 +277,7 @@ defmodule Tortoise.Handler do
     end)
   end
 
-  def execute(
-        handler,
-        {:subscribe, %Inflight.Track{type: Package.Subscribe, result: subacks}}
-      ) do
+  def execute(handler, {:subscribe, subacks}) do
     subacks
     |> flatten_subacks()
     |> Enum.reduce({:ok, handler}, fn {op, topic_filter}, {:ok, handler} ->

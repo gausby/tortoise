@@ -34,67 +34,52 @@ defmodule Tortoise.Connection.Inflight.Track do
   @opaque t :: %__MODULE__{
             polarity: :positive | :negative,
             type: package,
+            caller: {pid(), reference()} | nil,
             identifier: package_identifier(),
             status: [status_update()],
-            pending: [next_action()],
-            caller: caller(),
-            result: term() | nil
+            pending: [next_action()]
           }
   @enforce_keys [:type, :identifier, :polarity, :pending]
   defstruct type: nil,
             polarity: nil,
+            caller: nil,
             identifier: nil,
             status: [],
-            pending: [],
-            caller: nil,
-            result: nil
+            pending: []
 
   alias __MODULE__, as: State
   alias Tortoise.Package
 
-  @spec update(__MODULE__.t(), status_update()) :: __MODULE__.t()
-  # ":dispatch, ..." should be answered with ":dispatched, ..."
-  def update(
-        %State{identifier: id, pending: [{:dispatch, package} | rest]} = state,
-        {:dispatched, %{identifier: id} = package} = status_update
+  def next(%State{pending: [[next_action, resolution] | _]}) do
+    {next_action, resolution}
+  end
+
+  def resolve(%State{pending: [[action, :cleanup]]} = state, :cleanup) do
+    {:ok, %State{state | pending: [], status: [action | state.status]}}
+  end
+
+  def resolve(
+        %State{pending: [[action, {:received, %{__struct__: t, identifier: id}}] | rest]} = state,
+        {:received, %{__struct__: t, identifier: id}} = expected
       ) do
-    %{state | status: [status_update | state.status], pending: rest}
+    {:ok, %State{state | pending: rest, status: [expected, action | state.status]}}
   end
 
-  # ":expect, ..." should be answered with ":received, ..."
-  def update(
-        %State{identifier: id, pending: [{:expect, %{__struct__: t}} | rest]} = state,
-        {:received, %{__struct__: t, identifier: id}} = status_update
+  # the value has previously been received; here we should stay where
+  # we are at and retry the transmission
+  def resolve(
+        %State{status: [{same, %{__struct__: t, identifier: id}} | _]} = state,
+        {same, %{__struct__: t, identifier: id}}
       ) do
-    case rest do
-      [] ->
-        finalize(%{state | status: [status_update | state.status], pending: []})
-
-      rest ->
-        %{state | status: [status_update | state.status], pending: rest}
-    end
+    {:ok, state}
   end
 
-  @doc """
-  Roll the state back to the previous state
-  """
-  @spec rollback(__MODULE__.t()) :: __MODULE__.t()
-  def rollback(%State{status: []} = state), do: state
-
-  def rollback(%State{status: [previous | status], pending: pending} = state) do
-    %State{state | status: status, pending: [do_rollback(previous) | pending]}
+  def resolve(%State{pending: []} = state, :cleanup) do
+    {:ok, state}
   end
 
-  defp do_rollback({:dispatched, %Package.Publish{} = package}) do
-    {:dispatch, %Package.Publish{package | dup: true}}
-  end
-
-  defp do_rollback({:dispatched, package}) do
-    {:dispatch, package}
-  end
-
-  defp do_rollback({:received, package}) do
-    {:expect, package}
+  def resolve(%State{}, {:received, package}) do
+    {:error, {:protocol_violation, {:unexpected_package_from_remote, package}}}
   end
 
   @type trackable :: Tortoise.Encodable
@@ -111,7 +96,12 @@ defmodule Tortoise.Connection.Inflight.Track do
       polarity: :positive,
       identifier: id,
       status: [{:received, publish}],
-      pending: [{:dispatch, %Package.Puback{identifier: id}}]
+      pending: [
+        [
+          {:dispatch, %Package.Puback{identifier: id}},
+          :cleanup
+        ]
+      ]
     }
   end
 
@@ -120,11 +110,17 @@ defmodule Tortoise.Connection.Inflight.Track do
     %State{
       type: Package.Publish,
       polarity: :negative,
-      identifier: id,
       caller: {pid, ref},
+      identifier: id,
       pending: [
-        {:dispatch, publish},
-        {:expect, %Package.Puback{identifier: id}}
+        [
+          {:dispatch, publish},
+          {:received, %Package.Puback{identifier: id}}
+        ],
+        [
+          {:respond, {pid, ref}},
+          :cleanup
+        ]
       ]
     }
   end
@@ -135,11 +131,15 @@ defmodule Tortoise.Connection.Inflight.Track do
       polarity: :positive,
       identifier: id,
       status: [{:received, publish}],
-      caller: nil,
       pending: [
-        {:dispatch, %Package.Pubrec{identifier: id}},
-        {:expect, %Package.Pubrel{identifier: id}},
-        {:dispatch, %Package.Pubcomp{identifier: id}}
+        [
+          {:dispatch, %Package.Pubrec{identifier: id}},
+          {:received, %Package.Pubrel{identifier: id}}
+        ],
+        [
+          {:dispatch, %Package.Pubcomp{identifier: id}},
+          :cleanup
+        ]
       ]
     }
   end
@@ -149,13 +149,21 @@ defmodule Tortoise.Connection.Inflight.Track do
     %State{
       type: Package.Publish,
       polarity: :negative,
-      identifier: id,
       caller: {pid, ref},
+      identifier: id,
       pending: [
-        {:dispatch, publish},
-        {:expect, %Package.Pubrec{identifier: id}},
-        {:dispatch, %Package.Pubrel{identifier: id}},
-        {:expect, %Package.Pubcomp{identifier: id}}
+        [
+          {:dispatch, publish},
+          {:received, %Package.Pubrec{identifier: id}}
+        ],
+        [
+          {:dispatch, %Package.Pubrel{identifier: id}},
+          {:received, %Package.Pubcomp{identifier: id}}
+        ],
+        [
+          {:respond, {pid, ref}},
+          :cleanup
+        ]
       ]
     }
   end
@@ -166,11 +174,17 @@ defmodule Tortoise.Connection.Inflight.Track do
     %State{
       type: Package.Subscribe,
       polarity: :negative,
-      identifier: id,
       caller: {pid, ref},
+      identifier: id,
       pending: [
-        {:dispatch, subscribe},
-        {:expect, %Package.Suback{identifier: id}}
+        [
+          {:dispatch, subscribe},
+          {:received, %Package.Suback{identifier: id}}
+        ],
+        [
+          {:respond, {pid, ref}},
+          :cleanup
+        ]
       ]
     }
   end
@@ -180,41 +194,43 @@ defmodule Tortoise.Connection.Inflight.Track do
     %State{
       type: Package.Unsubscribe,
       polarity: :negative,
-      identifier: id,
       caller: {pid, ref},
+      identifier: id,
       pending: [
-        {:dispatch, unsubscribe},
-        {:expect, %Package.Unsuback{identifier: id}}
+        [
+          {:dispatch, unsubscribe},
+          {:received, %Package.Unsuback{identifier: id}}
+        ],
+        [
+          {:respond, {pid, ref}},
+          :cleanup
+        ]
       ]
     }
   end
 
-  # Calculate a result if needed
-  defp finalize(%State{type: Package.Publish} = track) do
-    %State{track | result: :ok}
+  # calculate result
+  def result(%State{type: Package.Publish}) do
+    {:ok, :ok}
   end
 
-  defp finalize(
-         %State{
-           type: Package.Unsubscribe,
-           status: [
-             {:received, _},
-             {:dispatched, %Package.Unsubscribe{topics: topics}}
-           ]
-         } = track
-       ) do
-    %State{track | result: topics}
+  def result(%State{
+        type: Package.Unsubscribe,
+        status: [
+          {:received, _},
+          {:dispatch, %Package.Unsubscribe{topics: topics}} | _other
+        ]
+      }) do
+    {:ok, topics}
   end
 
-  defp finalize(
-         %State{
-           type: Package.Subscribe,
-           status: [
-             {:received, %Package.Suback{acks: acks}},
-             {:dispatched, %Package.Subscribe{topics: topics}}
-           ]
-         } = track
-       ) do
+  def result(%State{
+        type: Package.Subscribe,
+        status: [
+          {:received, %Package.Suback{acks: acks}},
+          {:dispatch, %Package.Subscribe{topics: topics}} | _other
+        ]
+      }) do
     result =
       List.zip([topics, acks])
       |> Enum.reduce(%{error: [], warn: [], ok: []}, fn
@@ -228,6 +244,6 @@ defmodule Tortoise.Connection.Inflight.Track do
           %{acc | error: errors ++ [{:access_denied, {topic, level}}]}
       end)
 
-    %State{track | result: result}
+    {:ok, result}
   end
 end

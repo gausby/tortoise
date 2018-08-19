@@ -43,7 +43,7 @@ defmodule Tortoise.MixProject do
   # Run "mix help deps" to learn about dependencies.
   defp deps do
     [
-      {:gen_state_machine, "~> 2.0.2"},
+      {:gen_state_machine, "~> 2.0"},
       {:eqc_ex, "~> 1.4"},
       {:dialyxir, "~> 0.5", only: [:dev, :test], runtime: false},
       {:excoveralls, "~> 0.9", only: :test},

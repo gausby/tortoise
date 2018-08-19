@@ -242,10 +242,8 @@ defmodule Tortoise.Connection do
 
   @impl true
   def handle_info(:connect, state) do
-    state =
-      state
-      # make sure we will not fall for a keep alive timeout while we reconnect
-      |> cancel_keep_alive()
+    # make sure we will not fall for a keep alive timeout while we reconnect
+    state = cancel_keep_alive(state)
 
     with {%Connack{status: :accepted} = connack, socket} <-
            do_connect(state.server, state.connect),
@@ -261,8 +259,8 @@ defmodule Tortoise.Connection do
           {:noreply, state}
 
         %Connack{session_present: false} ->
-          # delete inflight state ?
-          if not Enum.empty?(state.subscriptions), do: send(self(), :subscribe)
+          :ok = Inflight.reset(state.client_id)
+          unless Enum.empty?(state.subscriptions), do: send(self(), :subscribe)
           {:noreply, state}
       end
     else

@@ -321,16 +321,49 @@ defmodule Tortoise.Connection.ControllerTest do
       client_id = context.client_id
       # send in an publish message with a QoS of 2
       publish = %Package.Publish{identifier: 1, topic: "a", qos: 2}
-      Controller.handle_incoming(client_id, publish)
+      :ok = Controller.handle_incoming(client_id, publish)
+      # test sending in a duplicate publish
+      :ok = Controller.handle_incoming(client_id, %Package.Publish{publish | dup: true})
 
       # assert that the sender receives a pubrec package
       {:ok, pubrec} = :gen_tcp.recv(context.server, 0, 200)
       assert %Package.Pubrec{identifier: 1} = Package.decode(pubrec)
+
+      # the publish should get onwarded to the handler
+      assert_receive %TestHandler{publish_count: 1, received: [{["a"], nil}]}
+
       # the MQTT server will then respond with pubrel
       Controller.handle_incoming(client_id, %Package.Pubrel{identifier: 1})
       # a pubcomp message should get transmitted
       {:ok, pubcomp} = :gen_tcp.recv(context.server, 0, 200)
+
       assert %Package.Pubcomp{identifier: 1} = Package.decode(pubcomp)
+
+      # the publish should only get onwareded once
+      refute_receive %TestHandler{publish_count: 2}
+    end
+
+    test "incoming publish with qos 2 (first message dup)", context do
+      # send in an publish with dup set to true should succeed if the
+      # id is unknown.
+      client_id = context.client_id
+      # send in an publish message with a QoS of 2
+      publish = %Package.Publish{identifier: 1, topic: "a", qos: 2, dup: true}
+      :ok = Controller.handle_incoming(client_id, publish)
+
+      # assert that the sender receives a pubrec package
+      {:ok, pubrec} = :gen_tcp.recv(context.server, 0, 200)
+      assert %Package.Pubrec{identifier: 1} = Package.decode(pubrec)
+
+      # the MQTT server will then respond with pubrel
+      Controller.handle_incoming(client_id, %Package.Pubrel{identifier: 1})
+      # a pubcomp message should get transmitted
+      {:ok, pubcomp} = :gen_tcp.recv(context.server, 0, 200)
+
+      assert %Package.Pubcomp{identifier: 1} = Package.decode(pubcomp)
+
+      # the publish should get onwarded to the handler
+      assert_receive %TestHandler{publish_count: 1, received: [{["a"], nil}]}
     end
 
     test "outgoing publish with qos 2", context do
