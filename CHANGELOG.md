@@ -14,6 +14,10 @@
   messages caused by retransmisions should get trapped and not
   forwarded to the user defined publish handler.
 
+- It is now possible to pass in a binary/string as the host for a
+  connection using the `Tortoise.Transport.SSL` module; it will be
+  coerced to a charlist.
+
 ### Added
 
 - The documentation on how to connect to a broker using the
