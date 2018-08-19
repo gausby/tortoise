@@ -2,6 +2,30 @@
 
 ## [Unreleased]
 
+## 0.8.0 - 2018-08-09
+
+### Changed
+
+- When a connection drop the inflight manager will now re-transmit
+  packages with quality of service that was inflight when the regain a
+  connection.
+
+- Improved the logic for handling incoming publishes with Quality of
+  Service 2 (exactly once delivery). The inflight manager will ensure
+  we only handle the message once (as we should); possible duplicate
+  messages caused by retransmisions should get trapped and not
+  forwarded to the user defined publish handler.
+
+- It is now possible to pass in a binary/string as the host for a
+  connection using the `Tortoise.Transport.SSL` module; it will be
+  coerced to a charlist.
+
+### Added
+
+- The documentation on how to connect to a broker using the
+  `Tortoise.Transport.SSL` method has been improved by [Bram
+  Verburg](https://github.com/voltone).
+
 ## 0.7.0 - 2018-08-09
 
 ### Changed

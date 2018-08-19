@@ -153,10 +153,9 @@ defmodule Tortoise.HandlerTest do
       suback = %Package.Suback{identifier: 1, acks: [ok: 0, ok: 0, error: :access_denied]}
       caller = {self(), make_ref()}
 
-      result =
-        Track.create({:negative, caller}, subscribe)
-        |> Track.update({:dispatched, subscribe})
-        |> Track.update({:received, suback})
+      track = Track.create({:negative, caller}, subscribe)
+      {:ok, track} = Track.resolve(track, {:received, suback})
+      {:ok, result} = Track.result(track)
 
       handler = set_state(context.handler, pid: self())
       assert {:ok, %Handler{}} = Handler.execute(handler, {:subscribe, result})
@@ -173,10 +172,9 @@ defmodule Tortoise.HandlerTest do
       unsuback = %Package.Unsuback{identifier: 1}
       caller = {self(), make_ref()}
 
-      result =
-        Track.create({:negative, caller}, unsubscribe)
-        |> Track.update({:dispatched, unsubscribe})
-        |> Track.update({:received, unsuback})
+      track = Track.create({:negative, caller}, unsubscribe)
+      {:ok, track} = Track.resolve(track, {:received, unsuback})
+      {:ok, result} = Track.result(track)
 
       handler = set_state(context.handler, pid: self())
       assert {:ok, %Handler{}} = Handler.execute(handler, {:unsubscribe, result})
