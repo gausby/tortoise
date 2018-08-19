@@ -34,6 +34,7 @@ defmodule Tortoise.Connection.Inflight.Track do
   @opaque t :: %__MODULE__{
             polarity: :positive | :negative,
             type: package,
+            caller: {pid(), reference()} | nil,
             identifier: package_identifier(),
             status: [status_update()],
             pending: [next_action()]
@@ -41,6 +42,7 @@ defmodule Tortoise.Connection.Inflight.Track do
   @enforce_keys [:type, :identifier, :polarity, :pending]
   defstruct type: nil,
             polarity: nil,
+            caller: nil,
             identifier: nil,
             status: [],
             pending: []
@@ -108,6 +110,7 @@ defmodule Tortoise.Connection.Inflight.Track do
     %State{
       type: Package.Publish,
       polarity: :negative,
+      caller: {pid, ref},
       identifier: id,
       pending: [
         [
@@ -146,6 +149,7 @@ defmodule Tortoise.Connection.Inflight.Track do
     %State{
       type: Package.Publish,
       polarity: :negative,
+      caller: {pid, ref},
       identifier: id,
       pending: [
         [
@@ -170,6 +174,7 @@ defmodule Tortoise.Connection.Inflight.Track do
     %State{
       type: Package.Subscribe,
       polarity: :negative,
+      caller: {pid, ref},
       identifier: id,
       pending: [
         [
@@ -189,6 +194,7 @@ defmodule Tortoise.Connection.Inflight.Track do
     %State{
       type: Package.Unsubscribe,
       polarity: :negative,
+      caller: {pid, ref},
       identifier: id,
       pending: [
         [

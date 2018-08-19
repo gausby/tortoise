@@ -226,4 +226,16 @@ defmodule Tortoise.Connection.InflightTest do
       assert {:ok, ^expected} = :gen_tcp.recv(context.server, byte_size(expected), 500)
     end
   end
+
+  describe "resetting" do
+    setup [:setup_connection, :setup_inflight]
+
+    test "cancel outgoing inflight packages", %{client_id: client_id} do
+      publish = %Package.Publish{identifier: 1, topic: "foo", qos: 1}
+      {:ok, ref} = Inflight.track(client_id, {:outgoing, publish})
+      :ok = Inflight.reset(client_id)
+      # the calling process should get a result response
+      assert_receive {{Tortoise, ^client_id}, ^ref, {:error, :canceled}}
+    end
+  end
 end

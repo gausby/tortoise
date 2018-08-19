@@ -26,6 +26,7 @@ defmodule Tortoise.Connection.Inflight do
     GenStateMachine.stop(via_name(client_id))
   end
 
+  @doc false
   def track(client_id, {:incoming, %Package.Publish{qos: qos} = publish})
       when qos in 1..2 do
     :ok = GenStateMachine.cast(via_name(client_id), {:incoming, publish})
@@ -49,6 +50,7 @@ defmodule Tortoise.Connection.Inflight do
     end
   end
 
+  @doc false
   def track_sync(client_id, {:outgoing, _} = command, timeout \\ :infinity) do
     {:ok, ref} = track(client_id, command)
 
@@ -60,8 +62,14 @@ defmodule Tortoise.Connection.Inflight do
     end
   end
 
+  @doc false
   def update(client_id, {_, %{__struct__: _, identifier: _identifier}} = event) do
     :ok = GenStateMachine.cast(via_name(client_id), {:update, event})
+  end
+
+  @doc false
+  def reset(client_id) do
+    :ok = GenStateMachine.cast(via_name(client_id), :reset)
   end
 
   # Server callbacks
@@ -223,6 +231,15 @@ defmodule Tortoise.Connection.Inflight do
       {:error, reason} ->
         {:stop, reason, data}
     end
+  end
+
+  def handle_event(:cast, :reset, _, %State{pending: pending} = data) do
+    # cancel all currently outgoing messages
+    for {_, %Track{polarity: :negative, caller: {pid, ref}}} <- pending do
+      send(pid, {{Tortoise, data.client_id}, ref, {:error, :canceled}})
+    end
+
+    {:keep_state, %State{data | pending: %{}, order: []}}
   end
 
   # We trap the incoming QoS 2 packages in the inflight manager so we
