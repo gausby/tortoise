@@ -78,6 +78,7 @@ defmodule Tortoise.Connection do
     %{
       id: Keyword.get(opts, :name, __MODULE__),
       start: {__MODULE__, :start_link, [opts]},
+      restart: Keyword.get(opts, :restart, :transient),
       type: :worker
     }
   end
