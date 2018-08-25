@@ -24,6 +24,11 @@ defmodule Tortoise.Handler.Logger do
     {:ok, state}
   end
 
+  def connection(:terminating, state) do
+    Logger.warn("Connection is terminating")
+    {:ok, state}
+  end
+
   @impl true
   def subscription(:up, topic, state) do
     Logger.info("Subscribed to #{topic}")

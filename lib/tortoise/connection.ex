@@ -360,6 +360,7 @@ defmodule Tortoise.Connection do
   def handle_call(:disconnect, from, state) do
     :ok = Events.dispatch(state.client_id, :status, :terminating)
     :ok = Inflight.drain(state.client_id)
+    :ok = Controller.stop(state.client_id)
     :ok = GenServer.reply(from, :ok)
     {:stop, :shutdown, state}
   end
