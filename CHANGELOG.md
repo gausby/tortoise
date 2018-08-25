@@ -2,6 +2,15 @@
 
 ## [Unreleased]
 
+## 0.8.1 - 2018-08-25
+
+### Added
+
+- `disconnect/1` has been added to the `Tortoise.Connection`
+  module. Given a `client_id` it will close down the connection
+  cleanly; in flight messages will get canceled and a disconnect
+  package will be send to the broker.
+
 ## 0.8.0 - 2018-08-19
 
 ### Changed
