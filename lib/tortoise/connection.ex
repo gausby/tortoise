@@ -78,8 +78,21 @@ defmodule Tortoise.Connection do
     %{
       id: Keyword.get(opts, :name, __MODULE__),
       start: {__MODULE__, :start_link, [opts]},
+      restart: Keyword.get(opts, :restart, :transient),
       type: :worker
     }
+  end
+
+  @doc """
+  Close the connection to the broker.
+
+  Given the `client_id` of a running connection it will cancel the
+  inflight messages and send the proper disconnect message to the
+  broker. The session will get terminated on the server.
+  """
+  @spec disconnect(client_id()) :: :ok
+  def disconnect(client_id) do
+    GenServer.call(via_name(client_id), :disconnect)
   end
 
   @doc """
@@ -237,6 +250,7 @@ defmodule Tortoise.Connection do
   @impl true
   def terminate(_reason, state) do
     :ok = Tortoise.Registry.delete_meta(via_name(state.connect.client_id))
+    :ok = Events.dispatch(state.client_id, :status, :terminated)
     :ok
   end
 
@@ -349,6 +363,14 @@ defmodule Tortoise.Connection do
   @impl true
   def handle_call(:subscriptions, _from, state) do
     {:reply, state.subscriptions, state}
+  end
+
+  def handle_call(:disconnect, from, state) do
+    :ok = Events.dispatch(state.client_id, :status, :terminating)
+    :ok = Inflight.drain(state.client_id)
+    :ok = Controller.stop(state.client_id)
+    :ok = GenServer.reply(from, :ok)
+    {:stop, :shutdown, state}
   end
 
   @impl true

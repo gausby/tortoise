@@ -27,6 +27,11 @@ defmodule Tortoise.Connection.Inflight do
   end
 
   @doc false
+  def drain(client_id) do
+    GenStateMachine.call(via_name(client_id), :drain)
+  end
+
+  @doc false
   def track(client_id, {:incoming, %Package.Publish{qos: qos} = publish})
       when qos in 1..2 do
     :ok = GenStateMachine.cast(via_name(client_id), {:incoming, publish})
@@ -165,6 +170,10 @@ defmodule Tortoise.Connection.Inflight do
   end
 
   # possible duplicate
+  def handle_event(:cast, {:incoming, _}, :draining, %State{}) do
+    :keep_state_and_data
+  end
+
   def handle_event(
         :cast,
         {:incoming, %Package.Publish{identifier: identifier, dup: true} = publish},
@@ -187,6 +196,11 @@ defmodule Tortoise.Connection.Inflight do
     end
   end
 
+  def handle_event(:cast, {:outgoing, {pid, ref}, _}, :draining, data) do
+    send(pid, {{Tortoise, data.client_id}, ref, {:error, :terminating}})
+    :keep_state_and_data
+  end
+
   def handle_event(:cast, {:outgoing, caller, package}, _state, data) do
     {:ok, package} = assign_identifier(package, data.pending)
     track = Track.create({:negative, caller}, package)
@@ -205,6 +219,10 @@ defmodule Tortoise.Connection.Inflight do
   end
 
   # update
+  def handle_event(:cast, {:update, _}, :draining, _data) do
+    :keep_state_and_data
+  end
+
   def handle_event(
         :cast,
         {:update, {_, %{identifier: identifier}} = update},
@@ -261,6 +279,10 @@ defmodule Tortoise.Connection.Inflight do
     :keep_state_and_data
   end
 
+  def handle_event(:internal, {:execute, _}, :draining, _) do
+    :keep_state_and_data
+  end
+
   def handle_event(
         :internal,
         {:execute, %Track{pending: [[{:dispatch, package}, _] | _]} = track},
@@ -293,6 +315,22 @@ defmodule Tortoise.Connection.Inflight do
       {:ok, result} ->
         :ok = Controller.handle_result(client_id, {caller, track.type, result})
         {:keep_state, handle_next(track, data)}
+    end
+  end
+
+  def handle_event({:call, from}, :drain, {:connected, {transport, socket}}, %State{} = data) do
+    for {_, %Track{polarity: :negative, caller: {pid, ref}}} <- data.pending do
+      send(pid, {{Tortoise, data.client_id}, ref, {:error, :canceled}})
+    end
+
+    data = %State{data | pending: %{}, order: []}
+    disconnect = %Package.Disconnect{}
+
+    case apply(transport, :send, [socket, Package.encode(disconnect)]) do
+      :ok ->
+        :ok = transport.close(socket)
+        reply = {:reply, from, :ok}
+        {:next_state, :draining, data, reply}
     end
   end
 
