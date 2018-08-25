@@ -83,6 +83,10 @@ defmodule Tortoise.Connection do
     }
   end
 
+  def disconnect(client_id) do
+    GenServer.call(via_name(client_id), :disconnect)
+  end
+
   @doc """
   Return the list of subscribed topics.
 
@@ -238,6 +242,7 @@ defmodule Tortoise.Connection do
   @impl true
   def terminate(_reason, state) do
     :ok = Tortoise.Registry.delete_meta(via_name(state.connect.client_id))
+    :ok = Events.dispatch(state.client_id, :status, :terminated)
     :ok
   end
 
@@ -350,6 +355,13 @@ defmodule Tortoise.Connection do
   @impl true
   def handle_call(:subscriptions, _from, state) do
     {:reply, state.subscriptions, state}
+  end
+
+  def handle_call(:disconnect, from, state) do
+    :ok = Events.dispatch(state.client_id, :status, :terminating)
+    :ok = Inflight.drain(state.client_id)
+    :ok = GenServer.reply(from, :ok)
+    {:stop, :shutdown, state}
   end
 
   @impl true

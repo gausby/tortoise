@@ -586,4 +586,36 @@ defmodule Tortoise.ConnectionTest do
       assert_receive {ScriptedMqttServer, :completed}
     end
   end
+
+  describe "life-cycle" do
+    setup [:setup_scripted_mqtt_server]
+
+    test "connect and cleanly disconnect", context do
+      Process.flag(:trap_exit, true)
+      client_id = context.client_id
+
+      connect = %Package.Connect{client_id: client_id}
+      expected_connack = %Package.Connack{status: :accepted, session_present: false}
+      disconnect = %Package.Disconnect{}
+
+      script = [{:receive, connect}, {:send, expected_connack}, {:receive, disconnect}]
+
+      {:ok, {ip, port}} = ScriptedMqttServer.enact(context.scripted_mqtt_server, script)
+
+      opts = [
+        client_id: client_id,
+        server: {Tortoise.Transport.Tcp, [host: ip, port: port]},
+        handler: {Tortoise.Handler.Default, []}
+      ]
+
+      assert {:ok, pid} = Connection.start_link(opts)
+      assert_receive {ScriptedMqttServer, {:received, ^connect}}
+
+      assert :ok = Tortoise.Connection.disconnect(client_id)
+      assert_receive {ScriptedMqttServer, {:received, ^disconnect}}
+      assert_receive {:EXIT, ^pid, :shutdown}
+
+      assert_receive {ScriptedMqttServer, :completed}
+    end
+  end
 end
