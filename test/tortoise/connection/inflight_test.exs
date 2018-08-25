@@ -238,4 +238,29 @@ defmodule Tortoise.Connection.InflightTest do
       assert_receive {{Tortoise, ^client_id}, ^ref, {:error, :canceled}}
     end
   end
+
+  describe "draining" do
+    setup [:setup_connection, :setup_inflight]
+
+    test "cancel outgoing inflight packages", %{client_id: client_id} = context do
+      publish = %Package.Publish{identifier: 1, topic: "foo", qos: 1}
+      {:ok, ref} = Inflight.track(client_id, {:outgoing, publish})
+      # the publish should get dispatched
+      expected = publish |> Package.encode() |> IO.iodata_to_binary()
+      assert {:ok, ^expected} = :gen_tcp.recv(context.server, byte_size(expected), 500)
+      # start draining
+      :ok = Inflight.drain(client_id)
+      # updates should have no effect at this point
+      :ok = Inflight.update(client_id, {:received, %Package.Puback{identifier: 1}})
+      # the calling process should get a result response
+      assert_receive {{Tortoise, ^client_id}, ^ref, {:error, :canceled}}
+      # Now the inflight manager should be in the draining state, new
+      # outbound messages should not get accepted
+      {:ok, ref} = Inflight.track(client_id, {:outgoing, publish})
+      assert_receive {{Tortoise, ^client_id}, ^ref, {:error, :terminating}}
+      # the remote should receive a disconnect package
+      expected = %Package.Disconnect{} |> Package.encode() |> IO.iodata_to_binary()
+      assert {:ok, ^expected} = :gen_tcp.recv(context.server, byte_size(expected), 500)
+    end
+  end
 end
