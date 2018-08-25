@@ -390,7 +390,7 @@ defmodule Tortoise.ConnectionTest do
       ]
 
       assert {:ok, _pid} = Connection.start_link(opts)
-      assert_receive {ScriptedMqttServer, {:received, ^connect}}
+      assert_receive {ScriptedMqttServer, {:received, ^connect}}, 5000
       assert_receive {ScriptedMqttServer, :completed}
     end
 
