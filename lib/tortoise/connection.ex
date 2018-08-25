@@ -83,6 +83,14 @@ defmodule Tortoise.Connection do
     }
   end
 
+  @doc """
+  Close the connection to the broker.
+
+  Given the `client_id` of a running connection it will cancel the
+  inflight messages and send the proper disconnect message to the
+  broker. The session will get terminated on the server.
+  """
+  @spec disconnect(client_id()) :: :ok
   def disconnect(client_id) do
     GenServer.call(via_name(client_id), :disconnect)
   end
