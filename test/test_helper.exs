@@ -208,7 +208,7 @@ defmodule Tortoise.TestGenerators do
   def gen_unsubscribe() do
     let unsubscribe <- %Package.Unsubscribe{
           identifier: gen_identifier(),
-          topics: list(gen_topic_filter())
+          topics: non_empty(list(gen_topic_filter()))
         } do
       unsubscribe
     end

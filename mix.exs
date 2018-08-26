@@ -1,7 +1,7 @@
 defmodule Tortoise.MixProject do
   use Mix.Project
 
-  @version "0.8.1"
+  @version "0.8.2"
 
   def project do
     [
@@ -46,7 +46,7 @@ defmodule Tortoise.MixProject do
       {:gen_state_machine, "~> 2.0"},
       {:eqc_ex, "~> 1.4"},
       {:dialyxir, "~> 0.5", only: [:dev, :test], runtime: false},
-      {:excoveralls, "~> 0.9", only: :test},
+      {:excoveralls, "~> 0.10", only: :test},
       {:ex_doc, "~> 0.19", only: :docs},
       {:ct_helper, github: "ninenines/ct_helper", only: :test}
     ]

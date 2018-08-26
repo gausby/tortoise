@@ -43,7 +43,13 @@ defmodule Tortoise.Package.Unsubscribe do
 
   # Protocols ----------------------------------------------------------
   defimpl Tortoise.Encodable do
-    def encode(%Package.Unsubscribe{identifier: identifier} = t)
+    def encode(
+          %Package.Unsubscribe{
+            identifier: identifier,
+            # a valid unsubscribe package has at least one topic filter
+            topics: [_topic_filter | _]
+          } = t
+        )
         when identifier in 0x0001..0xFFFF do
       [
         Package.Meta.encode(t.__META__),

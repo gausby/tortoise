@@ -45,8 +45,14 @@ defmodule Tortoise.Package.Subscribe do
 
   # PROTOCOLS ==========================================================
   defimpl Tortoise.Encodable do
-    def encode(%Package.Subscribe{identifier: identifier} = t)
-        when identifier in 0x0001..0xFFFF do
+    def encode(
+          %Package.Subscribe{
+            identifier: identifier,
+            # a valid subscribe package has at least one topic/qos pair
+            topics: [{<<_topic_filter::binary>>, qos} | _]
+          } = t
+        )
+        when identifier in 0x0001..0xFFFF and qos in 0..2 do
       [
         Package.Meta.encode(t.__META__),
         Package.variable_length_encode([
@@ -87,13 +93,9 @@ defmodule Tortoise.Package.Subscribe do
       {Enum.into(topics, %{}),
        fn
          acc, {:cont, {<<topic::binary>>, qos}} when qos in 0..2 ->
-           Map.update(acc, topic, qos, fn
-             current_qos when qos > current_qos ->
-               qos
-
-             current_qos ->
-               current_qos
-           end)
+           # if a topic filter repeat in the input we will pick the
+           # biggest one
+           Map.update(acc, topic, qos, &max(&1, qos))
 
          acc, {:cont, <<topic::binary>>} ->
            Map.put_new(acc, topic, 0)
