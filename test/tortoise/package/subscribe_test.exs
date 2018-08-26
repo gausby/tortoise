@@ -33,5 +33,10 @@ defmodule Tortoise.Package.SubscribeTest do
       topic_filters = [{"a", 0}, {"a", 0}]
       assert %Subscribe{topics: [{"a", 0}]} = Enum.into(topic_filters, %Subscribe{})
     end
+
+    test "If no QoS is given it should default to zero" do
+      topic_filters = ["a"]
+      assert %Subscribe{topics: [{"a", 0}]} = Enum.into(topic_filters, %Subscribe{})
+    end
   end
 end
