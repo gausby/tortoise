@@ -1,8 +1,8 @@
 # Tortoise
 
+[![Build Status](https://semaphoreci.com/api/v1/gausby/tortoise/branches/master/badge.svg)](https://semaphoreci.com/gausby/tortoise)
 [![Hex.pm](https://img.shields.io/hexpm/l/tortoise.svg "Apache 2.0 Licensed")](https://github.com/gausby/tortoise/blob/master/LICENSE)
 [![Hex version](https://img.shields.io/hexpm/v/tortoise.svg "Hex version")](https://hex.pm/packages/tortoise)
-[![Build Status](https://semaphoreci.com/api/v1/gausby/tortoise/branches/master/badge.svg)](https://semaphoreci.com/gausby/tortoise)
 [![Coverage Status](https://coveralls.io/repos/github/gausby/tortoise/badge.svg?branch=master)](https://coveralls.io/github/gausby/tortoise?branch=master)
 
 A MQTT Client application that keep connections to one or more MQTT
@@ -79,7 +79,7 @@ dependencies in `mix.exs`:
 ```elixir
 def deps do
   [
-    {:tortoise, "~> 0.8.1"}
+    {:tortoise, "~> 0.8"}
   ]
 end
 ```

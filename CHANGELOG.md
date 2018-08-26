@@ -1,6 +1,6 @@
 # Changelog
 
-## [Unreleased]
+## 0.8.2 - 2018-08-26
 
 ### Fixed
 
@@ -8,7 +8,8 @@
   package can no longer be encoded if it has no topic filters defined.
 
 - Got rid of TravisCI in favor of SemaphoreCI. Hopefully this will
-  provide more reliable CI.
+  provide more reliable CI, and a funner experience for people working
+  on Tortoise.
 
 ## 0.8.1 - 2018-08-25
 
