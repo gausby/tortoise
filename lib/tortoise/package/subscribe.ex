@@ -93,13 +93,9 @@ defmodule Tortoise.Package.Subscribe do
       {Enum.into(topics, %{}),
        fn
          acc, {:cont, {<<topic::binary>>, qos}} when qos in 0..2 ->
-           Map.update(acc, topic, qos, fn
-             current_qos when qos > current_qos ->
-               qos
-
-             current_qos ->
-               current_qos
-           end)
+           # if a topic filter repeat in the input we will pick the
+           # biggest one
+           Map.update(acc, topic, qos, &max(&1, qos))
 
          acc, {:cont, <<topic::binary>>} ->
            Map.put_new(acc, topic, 0)
