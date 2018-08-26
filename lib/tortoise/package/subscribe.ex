@@ -45,8 +45,14 @@ defmodule Tortoise.Package.Subscribe do
 
   # PROTOCOLS ==========================================================
   defimpl Tortoise.Encodable do
-    def encode(%Package.Subscribe{identifier: identifier} = t)
-        when identifier in 0x0001..0xFFFF do
+    def encode(
+          %Package.Subscribe{
+            identifier: identifier,
+            # a valid subscribe package has at least one topic/qos pair
+            topics: [{<<_topic_filter::binary>>, qos} | _]
+          } = t
+        )
+        when identifier in 0x0001..0xFFFF and qos in 0..2 do
       [
         Package.Meta.encode(t.__META__),
         Package.variable_length_encode([
