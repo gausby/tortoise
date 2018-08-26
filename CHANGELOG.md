@@ -4,8 +4,8 @@
 
 ### Fixed
 
-- As according to the specification, an unsubscribe package can no
-  longer be encoded if it has no topic filters defined.
+- As according to the specification, an unsubscribe, and a subscribe
+  package can no longer be encoded if it has no topic filters defined.
 
 ## 0.8.1 - 2018-08-25
 
