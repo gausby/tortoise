@@ -32,6 +32,11 @@ defmodule Tortoise.Package.SubscribeTest do
 
       topic_filters = [{"a", 0}, {"a", 0}]
       assert %Subscribe{topics: [{"a", 0}]} = Enum.into(topic_filters, %Subscribe{})
+
+      # if no qos is given it will default to 0, make sure we still
+      # pick the biggest QoS given in the list in that case
+      topic_filters = ["b", {"b", 2}, "b"]
+      assert %Subscribe{topics: [{"b", 2}]} = Enum.into(topic_filters, %Subscribe{})
     end
 
     test "If no QoS is given it should default to zero" do
