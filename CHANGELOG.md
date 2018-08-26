@@ -7,6 +7,9 @@
 - As according to the specification, an unsubscribe, and a subscribe
   package can no longer be encoded if it has no topic filters defined.
 
+- Got rid of TravisCI in favor of SemaphoreCI. Hopefully this will
+  provide more reliable CI.
+
 ## 0.8.1 - 2018-08-25
 
 ### Added
