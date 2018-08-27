@@ -3,6 +3,7 @@ defmodule Tortoise.Registry do
 
   @type client_id :: term()
   @type via :: {:via, Registry, {__MODULE__, {module(), client_id()}}}
+  @type key :: atom() | tuple()
 
   @spec via_name(module(), client_id()) :: via() | pid()
   def via_name(_module, pid) when is_pid(pid), do: pid
@@ -16,12 +17,12 @@ defmodule Tortoise.Registry do
     {__MODULE__, {module, client_id}}
   end
 
-  @spec meta(key :: term()) :: :ok
+  @spec meta(key :: key()) :: {:ok, term()} | :error
   def meta(key) do
     Registry.meta(__MODULE__, key)
   end
 
-  @spec put_meta(key :: term(), value :: term()) :: :ok
+  @spec put_meta(key :: key(), value :: term()) :: :ok
   def put_meta(key, value) do
     :ok = Registry.put_meta(__MODULE__, key, value)
   end

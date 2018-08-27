@@ -14,7 +14,7 @@ defmodule Tortoise.Package.Pubrec do
   defstruct __META__: %Package.Meta{opcode: @opcode, flags: 0b000},
             identifier: nil
 
-  @spec decode(binary()) :: t
+  @spec decode(<<_::32>>) :: __MODULE__.t()
   def decode(<<@opcode::4, 0::4, 2, identifier::big-integer-size(16)>>)
       when identifier in 0x0001..0xFFFF do
     %__MODULE__{identifier: identifier}
