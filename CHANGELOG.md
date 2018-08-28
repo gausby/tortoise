@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.8.3 - 2018-08-28
+
+### Fixed
+
+- Upgraded to a more recent version of dialyxir and made the project
+  pass the dialyzer.
+
 ## 0.8.2 - 2018-08-26
 
 ### Fixed

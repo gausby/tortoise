@@ -1,7 +1,7 @@
 defmodule Tortoise.MixProject do
   use Mix.Project
 
-  @version "0.8.2"
+  @version "0.8.3"
 
   def project do
     [
@@ -45,7 +45,7 @@ defmodule Tortoise.MixProject do
     [
       {:gen_state_machine, "~> 2.0"},
       {:eqc_ex, "~> 1.4"},
-      {:dialyxir, "~> 0.5", only: [:dev, :test], runtime: false},
+      {:dialyxir, "~> 1.0.0-rc.3", only: [:dev], runtime: false},
       {:excoveralls, "~> 0.10", only: :test},
       {:ex_doc, "~> 0.19", only: :docs},
       {:ct_helper, github: "ninenines/ct_helper", only: :test}
@@ -79,7 +79,8 @@ defmodule Tortoise.MixProject do
 
   defp dialyzer() do
     [
-      ignore_warnings: "dialyzer.ignore"
+      ignore_warnings: "dialyzer.ignore",
+      flags: [:error_handling, :race_conditions, :underspecs]
     ]
   end
 end
