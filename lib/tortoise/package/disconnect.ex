@@ -10,7 +10,7 @@ defmodule Tortoise.Package.Disconnect do
           }
   defstruct __META__: %Package.Meta{opcode: @opcode, flags: 0}
 
-  @spec decode(binary()) :: t
+  @spec decode(<<_::16>>) :: __MODULE__.t()
   def decode(<<@opcode::4, 0::4, 0>>), do: %__MODULE__{}
 
   # Protocols ----------------------------------------------------------
