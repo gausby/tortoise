@@ -64,6 +64,8 @@ defmodule Tortoise do
   alias Tortoise.Connection
   alias Tortoise.Connection.Inflight
 
+  @type client_id() :: atom() | String.t()
+
   @doc """
   Publish a message to the MQTT broker.
 

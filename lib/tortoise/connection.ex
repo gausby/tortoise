@@ -12,8 +12,6 @@ defmodule Tortoise.Connection do
   defstruct [:client_id, :connect, :server, :status, :backoff, :subscriptions, :keep_alive, :opts]
   alias __MODULE__, as: State
 
-  @type client_id() :: binary() | atom()
-
   alias Tortoise.{Transport, Connection, Package, Events}
   alias Tortoise.Connection.{Inflight, Controller, Receiver, Backoff}
   alias Tortoise.Package.{Connect, Connack}
@@ -26,7 +24,7 @@ defmodule Tortoise.Connection do
   """
   @spec start_link(connection_options, GenServer.options()) :: GenServer.on_start()
         when connection_option:
-               {:client_id, String.t() | atom()}
+               {:client_id, Tortoise.client_id()}
                | {:user_name, String.t()}
                | {:password, String.t()}
                | {:keep_alive, pos_integer()}
@@ -70,7 +68,8 @@ defmodule Tortoise.Connection do
   end
 
   @doc false
-  @spec via_name(client_id()) :: pid() | {:via, Registry, {Tortoise.Registry, {atom(), term()}}}
+  @spec via_name(Tortoise.client_id()) ::
+          pid() | {:via, Registry, {Tortoise.Registry, {atom(), Tortoise.client_id()}}}
   def via_name(client_id) do
     Tortoise.Registry.via_name(__MODULE__, client_id)
   end
@@ -97,7 +96,7 @@ defmodule Tortoise.Connection do
   inflight messages and send the proper disconnect message to the
   broker. The session will get terminated on the server.
   """
-  @spec disconnect(client_id()) :: :ok
+  @spec disconnect(Tortoise.client_id()) :: :ok
   def disconnect(client_id) do
     GenServer.call(via_name(client_id), :disconnect)
   end
@@ -108,7 +107,7 @@ defmodule Tortoise.Connection do
   Given the `client_id` of a running connection return its current
   subscriptions. This is helpful in a debugging situation.
   """
-  @spec subscriptions(client_id()) :: Tortoise.Package.Subscribe.t()
+  @spec subscriptions(Tortoise.client_id()) :: Tortoise.Package.Subscribe.t()
   def subscriptions(client_id) do
     GenServer.call(via_name(client_id), :subscriptions)
   end
@@ -134,7 +133,7 @@ defmodule Tortoise.Connection do
   Read the documentation for `Tortoise.Connection.subscribe_sync/3`
   for a blocking version of this call.
   """
-  @spec subscribe(client_id(), topic | topics, [options]) :: {:ok, reference()}
+  @spec subscribe(Tortoise.client_id(), topic | topics, [options]) :: {:ok, reference()}
         when topics: [topic],
              topic: {binary(), 0..2},
              options:
@@ -176,7 +175,8 @@ defmodule Tortoise.Connection do
 
   See `Tortoise.Connection.subscribe/3` for configuration options.
   """
-  @spec subscribe_sync(client_id(), topic | topics, [options]) :: :ok | {:error, :timeout}
+  @spec subscribe_sync(Tortoise.client_id(), topic | topics, [options]) ::
+          :ok | {:error, :timeout}
         when topics: [topic],
              topic: {binary(), 0..2},
              options:
@@ -220,7 +220,7 @@ defmodule Tortoise.Connection do
   This operation is asynchronous. When the operation is done a message
   will be received in mailbox of the originating process.
   """
-  @spec unsubscribe(client_id(), topic | topics, [options]) :: {:ok, reference()}
+  @spec unsubscribe(Tortoise.client_id(), topic | topics, [options]) :: {:ok, reference()}
         when topics: [topic],
              topic: binary(),
              options:
@@ -249,7 +249,8 @@ defmodule Tortoise.Connection do
 
   See `Tortoise.Connection.unsubscribe/3` for configuration options.
   """
-  @spec unsubscribe_sync(client_id(), topic | topics, [options]) :: :ok | {:error, :timeout}
+  @spec unsubscribe_sync(Tortoise.client_id(), topic | topics, [options]) ::
+          :ok | {:error, :timeout}
         when topics: [topic],
              topic: binary(),
              options:
@@ -304,7 +305,7 @@ defmodule Tortoise.Connection do
     to: Tortoise.Connection.Controller
 
   @doc false
-  @spec connection(client_id(), [opts]) ::
+  @spec connection(Tortoise.client_id(), [opts]) ::
           {:ok, {module(), term()}} | {:error, :unknown_connection} | {:error, :timeout}
         when opts: {:timeout, timeout()} | {:active, boolean()}
   def connection(client_id, opts \\ [active: false]) do
