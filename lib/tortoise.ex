@@ -67,6 +67,8 @@ defmodule Tortoise do
   @type client_id() :: atom() | String.t()
   @type package_identifier() :: 0x0001..0xFFFF | nil
 
+  @type qos() :: 0..2
+
   @doc """
   Publish a message to the MQTT broker.
 

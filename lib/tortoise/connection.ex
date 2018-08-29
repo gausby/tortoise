@@ -29,7 +29,7 @@ defmodule Tortoise.Connection do
                | {:password, String.t()}
                | {:keep_alive, pos_integer()}
                | {:will, Tortoise.Package.Publish.t()}
-               | {:subscriptions, [{String.t(), 0..2}] | Tortoise.Package.Subscribe.t()}
+               | {:subscriptions, [{String.t(), Tortoise.qos()}] | Tortoise.Package.Subscribe.t()}
                | {:handler, {atom(), term()}},
              connection_options: [connection_option]
   def start_link(connection_opts, opts \\ []) do
@@ -135,7 +135,7 @@ defmodule Tortoise.Connection do
   """
   @spec subscribe(Tortoise.client_id(), topic | topics, [options]) :: {:ok, reference()}
         when topics: [topic],
-             topic: {binary(), 0..2},
+             topic: {binary(), Tortoise.qos()},
              options:
                {:timeout, timeout()}
                | {:identifier, Tortoise.package_identifier()}
@@ -178,7 +178,7 @@ defmodule Tortoise.Connection do
   @spec subscribe_sync(Tortoise.client_id(), topic | topics, [options]) ::
           :ok | {:error, :timeout}
         when topics: [topic],
-             topic: {binary(), 0..2},
+             topic: {binary(), Tortoise.qos()},
              options:
                {:timeout, timeout()}
                | {:identifier, Tortoise.package_identifier()}
