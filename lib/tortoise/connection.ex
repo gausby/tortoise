@@ -106,7 +106,33 @@ defmodule Tortoise.Connection do
     GenServer.call(via_name(client_id), :subscriptions)
   end
 
-  @doc false
+  @doc """
+  Subscribe to one or more topics using topic filters on `client_id`
+
+  The topic filter should be a 2-tuple, `{topic_filter, qos}`, where
+  the `topic_filter` is a valid MQTT topic filter, and `qos` an
+  integer value 0 through 2.
+
+  Multiple topics can be given as a list.
+
+  The subscribe function is asynchronous, so it will return `{:ok,
+  ref}`. Eventually a response will get delivered to the process
+  mailbox, tagged with the reference stored in `ref`. It will take the
+  form of:
+
+      {{Tortoise, ^client_id}, ^ref, ^result}
+
+  Where the `result` can be one of `:ok`, or `{:error, reason}`.
+
+  Read the documentation for `Tortoise.Connection.subscribe_sync/3`
+  for a blocking version of this call.
+  """
+  @spec subscribe(client_id(), topic | topics, [options]) :: {:ok, reference()}
+        when topics: [topic],
+             topic: {binary(), 0..2},
+             options:
+               {:timeout, non_neg_integer()}
+               | {:identifier, nil | 0x0001..0xFFFF}
   def subscribe(client_id, topics, opts \\ [])
 
   def subscribe(client_id, [{_, n} | _] = topics, opts) when is_number(n) do
@@ -131,7 +157,24 @@ defmodule Tortoise.Connection do
     end
   end
 
-  @doc false
+  @doc """
+  Subscribe to topics and block until the server acknowledges.
+
+  This is a synchronous version of the
+  `Tortoise.Connection.subscribe/3`. In fact it calls into
+  `Tortoise.Connection.subscribe/3` but will handle the selective
+  receive loop, making it much easier to work with. Also, this
+  function can be used to block a process that cannot continue before
+  it has a subscription to the given topics.
+
+  See `Tortoise.Connection.subscribe/3` for configuration options.
+  """
+  @spec subscribe_sync(client_id(), topic | topics, [options]) :: :ok | {:error, :timeout}
+        when topics: [topic],
+             topic: {binary(), 0..2},
+             options:
+               {:timeout, non_neg_integer()}
+               | {:identifier, nil | 0x0001..0xFFFF}
   def subscribe_sync(client_id, topics, opts \\ [])
 
   def subscribe_sync(client_id, [{_, n} | _] = topics, opts) when is_number(n) do
@@ -160,7 +203,22 @@ defmodule Tortoise.Connection do
     end
   end
 
-  @doc false
+  @doc """
+  Unsubscribe from one of more topic filters. The topic filters are
+  given as strings. Multiple topic filters can be given at once by
+  passing in a list of strings.
+
+      Tortoise.Connection.unsubscribe(client_id, ["foo/bar", "quux"])
+
+  This operation is asynchronous. When the operation is done a message
+  will be received in mailbox of the originating process.
+  """
+  @spec unsubscribe(client_id(), topic | topics, [options]) :: {:ok, reference()}
+        when topics: [topic],
+             topic: binary(),
+             options:
+               {:timeout, non_neg_integer()}
+               | {:identifier, nil | 0x0001..0xFFFF}
   def unsubscribe(client_id, topics, opts \\ [])
 
   def unsubscribe(client_id, [topic | _] = topics, opts) when is_binary(topic) do
@@ -175,7 +233,21 @@ defmodule Tortoise.Connection do
     unsubscribe(client_id, [topic], opts)
   end
 
-  @doc false
+  @doc """
+  Unsubscribe from topics and block until the server acknowledges.
+
+  This is a synchronous version of
+  `Tortoise.Connection.unsubscribe/3`. It will block until the server
+  has send the acknowledge message.
+
+  See `Tortoise.Connection.unsubscribe/3` for configuration options.
+  """
+  @spec unsubscribe_sync(client_id(), topic | topics, [options]) :: :ok | {:error, :timeout}
+        when topics: [topic],
+             topic: binary(),
+             options:
+               {:timeout, non_neg_integer()}
+               | {:identifier, nil | 0x0001..0xFFFF}
   def unsubscribe_sync(client_id, topics, opts \\ [])
 
   def unsubscribe_sync(client_id, topics, opts) when is_list(topics) do
