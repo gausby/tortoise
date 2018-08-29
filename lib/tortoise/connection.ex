@@ -138,7 +138,7 @@ defmodule Tortoise.Connection do
              topic: {binary(), 0..2},
              options:
                {:timeout, timeout()}
-               | {:identifier, nil | 0x0001..0xFFFF}
+               | {:identifier, Tortoise.package_identifier()}
   def subscribe(client_id, topics, opts \\ [])
 
   def subscribe(client_id, [{_, n} | _] = topics, opts) when is_number(n) do
@@ -181,7 +181,7 @@ defmodule Tortoise.Connection do
              topic: {binary(), 0..2},
              options:
                {:timeout, timeout()}
-               | {:identifier, nil | 0x0001..0xFFFF}
+               | {:identifier, Tortoise.package_identifier()}
   def subscribe_sync(client_id, topics, opts \\ [])
 
   def subscribe_sync(client_id, [{_, n} | _] = topics, opts) when is_number(n) do
@@ -225,7 +225,7 @@ defmodule Tortoise.Connection do
              topic: binary(),
              options:
                {:timeout, timeout()}
-               | {:identifier, nil | 0x0001..0xFFFF}
+               | {:identifier, Tortoise.package_identifier()}
   def unsubscribe(client_id, topics, opts \\ [])
 
   def unsubscribe(client_id, [topic | _] = topics, opts) when is_binary(topic) do
@@ -255,7 +255,7 @@ defmodule Tortoise.Connection do
              topic: binary(),
              options:
                {:timeout, timeout()}
-               | {:identifier, nil | 0x0001..0xFFFF}
+               | {:identifier, Tortoise.package_identifier()}
   def unsubscribe_sync(client_id, topics, opts \\ [])
 
   def unsubscribe_sync(client_id, topics, opts) when is_list(topics) do

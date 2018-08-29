@@ -5,14 +5,13 @@ defmodule Tortoise.Package.Subscribe do
 
   alias Tortoise.Package
 
-  @type package_identifier :: 0x0001..0xFFFF
   @type qos :: 0 | 1 | 2
   @type topic :: {binary(), qos}
   @type topics :: [topic]
 
   @opaque t :: %__MODULE__{
             __META__: Package.Meta.t(),
-            identifier: package_identifier() | nil,
+            identifier: Tortoise.package_identifier(),
             topics: topics()
           }
   defstruct __META__: %Package.Meta{opcode: @opcode, flags: 0b0010},

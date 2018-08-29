@@ -5,11 +5,9 @@ defmodule Tortoise.Package.Puback do
 
   alias Tortoise.Package
 
-  @type package_identifier :: 0x0001..0xFFFF
-
   @opaque t :: %__MODULE__{
             __META__: Package.Meta.t(),
-            identifier: package_identifier() | nil
+            identifier: Tortoise.package_identifier()
           }
   @enforce_keys [:identifier]
   defstruct __META__: %Package.Meta{opcode: @opcode, flags: 0b0000},

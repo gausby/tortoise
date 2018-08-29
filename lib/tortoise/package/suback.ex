@@ -5,13 +5,12 @@ defmodule Tortoise.Package.Suback do
 
   alias Tortoise.Package
 
-  @type package_identifier :: 0x0001..0xFFFF
   @type qos :: 0 | 1 | 2
   @type ack_result :: {:ok, qos} | {:error, :access_denied}
 
   @opaque t :: %__MODULE__{
             __META__: Package.Meta.t(),
-            identifier: package_identifier() | nil,
+            identifier: Tortoise.package_identifier(),
             acks: [ack_result]
           }
   @enforce_keys [:identifier]
