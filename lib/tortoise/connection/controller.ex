@@ -1,6 +1,8 @@
 defmodule Tortoise.Connection.Controller do
   @moduledoc false
 
+  @type client_id() :: binary() | atom()
+
   require Logger
 
   alias Tortoise.{Package, Connection, Handler}
@@ -59,12 +61,14 @@ defmodule Tortoise.Connection.Controller do
     GenServer.call(via_name(client_id), :info)
   end
 
+  @spec ping(client_id()) :: {:ok, reference()}
   def ping(client_id) do
     ref = make_ref()
     :ok = GenServer.cast(via_name(client_id), {:ping, {self(), ref}})
     {:ok, ref}
   end
 
+  @spec ping_sync(client_id(), timeout()) :: {:ok, reference()} | {:error, :timeout}
   def ping_sync(client_id, timeout \\ :infinity) do
     {:ok, ref} = ping(client_id)
 

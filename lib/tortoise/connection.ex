@@ -70,10 +70,17 @@ defmodule Tortoise.Connection do
   end
 
   @doc false
+  @spec via_name(client_id()) :: pid() | {:via, Registry, {Tortoise.Registry, {atom(), term()}}}
   def via_name(client_id) do
     Tortoise.Registry.via_name(__MODULE__, client_id)
   end
 
+  @spec child_spec(Keyword.t()) :: %{
+          id: term(),
+          start: {__MODULE__, :start_link, [Keyword.t()]},
+          restart: :transient | :permanent | :temporary,
+          type: :worker
+        }
   def child_spec(opts) do
     %{
       id: Keyword.get(opts, :name, __MODULE__),
@@ -131,7 +138,7 @@ defmodule Tortoise.Connection do
         when topics: [topic],
              topic: {binary(), 0..2},
              options:
-               {:timeout, non_neg_integer()}
+               {:timeout, timeout()}
                | {:identifier, nil | 0x0001..0xFFFF}
   def subscribe(client_id, topics, opts \\ [])
 
@@ -173,7 +180,7 @@ defmodule Tortoise.Connection do
         when topics: [topic],
              topic: {binary(), 0..2},
              options:
-               {:timeout, non_neg_integer()}
+               {:timeout, timeout()}
                | {:identifier, nil | 0x0001..0xFFFF}
   def subscribe_sync(client_id, topics, opts \\ [])
 
@@ -217,7 +224,7 @@ defmodule Tortoise.Connection do
         when topics: [topic],
              topic: binary(),
              options:
-               {:timeout, non_neg_integer()}
+               {:timeout, timeout()}
                | {:identifier, nil | 0x0001..0xFFFF}
   def unsubscribe(client_id, topics, opts \\ [])
 
@@ -246,7 +253,7 @@ defmodule Tortoise.Connection do
         when topics: [topic],
              topic: binary(),
              options:
-               {:timeout, non_neg_integer()}
+               {:timeout, timeout()}
                | {:identifier, nil | 0x0001..0xFFFF}
   def unsubscribe_sync(client_id, topics, opts \\ [])
 
@@ -266,10 +273,40 @@ defmodule Tortoise.Connection do
     unsubscribe_sync(client_id, [topic], opts)
   end
 
+  @doc """
+  Ping the broker.
+
+  When the round-trip is complete a message with the time taken in
+  milliseconds will be send to the process that invoked the ping
+  command.
+
+  The connection will automatically ping the broker at the interval
+  specified in the connection configuration, so there is no need to
+  setup a reoccurring ping. This ping function is exposed for
+  debugging purposes. If ping latency over time is desired it is
+  better to listen on `:ping_response` using the `Tortoise.Events`
+  PubSub.
+  """
+  defdelegate ping(client_id), to: Tortoise.Connection.Controller
+
+  @doc """
+  Ping the server and await the ping latency reply.
+
+  Takes a `client_id` and an optional `timeout`.
+
+  Like `ping/1` but will block the caller process until a response is
+  received from the server. The response will contain the ping latency
+  in milliseconds.  The `timeout` defaults to `:infinity`, so it is
+  advisable to specify a reasonable time one is willing to wait for a
+  response.
+  """
+  defdelegate ping_sync(client_id, timeout \\ :infinity),
+    to: Tortoise.Connection.Controller
+
   @doc false
   @spec connection(client_id(), [opts]) ::
           {:ok, {module(), term()}} | {:error, :unknown_connection} | {:error, :timeout}
-        when opts: {:timeout, non_neg_integer()} | {:active, boolean()}
+        when opts: {:timeout, timeout()} | {:active, boolean()}
   def connection(client_id, opts \\ [active: false]) do
     active = Keyword.get(opts, :active, false)
 
