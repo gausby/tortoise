@@ -74,7 +74,7 @@ defmodule Tortoise do
 
   Tortoise accept atoms as client ids but they it will be converted to
   a string before going on the wire. Be careful with atoms such as
-  `Example` because they are expanded to the atom :"Elixir.Example",
+  `Example` because they are expanded to the atom `:"Elixir.Example"`,
   it is really easy to hit the maximum byte limit. Solving this is
   easy, just add a `:` before the client id such as `:Example`.
   """
@@ -83,7 +83,7 @@ defmodule Tortoise do
   @typedoc """
   A 16-bit number identifying a message in a message exchange.
 
-  Some MQTT packages is part of a message exchange and need an
+  Some MQTT packages are part of a message exchange and need an
   identifier so the server and client can distinct between multiple
   in-flight messages.
 
@@ -95,7 +95,7 @@ defmodule Tortoise do
   @type package_identifier() :: 0x0001..0xFFFF | nil
 
   @typedoc """
-  What Quality of Service (QoS) mode should be used
+  What Quality of Service (QoS) mode should be used.
 
   Quality of Service is one of 0, 1, and 2 denoting the following:
 
@@ -130,14 +130,53 @@ defmodule Tortoise do
   @type qos() :: 0..2
 
   @typedoc """
-  A topic for a message
+  A topic for a message.
+
+  According to the MQTT 3.1.1 specification a valid topic must be at
+  least one character long. They are case sensitive and can include
+  space characters.
+
+  MQTT topics consist of topic levels which are delimited with forward
+  slashes `/`. A topic with a leading or trailing forward slash is
+  allowed but they create distinct topics from the ones without;
+  `/sports/tennis/results` are different from
+  `sports/tennis/results`. While a topic level normally require at
+  least one character the topic `/` (a single forward slash) is valid.
+
+  The server will drop the connection if it receive an invalid topic.
   """
   @type topic() :: String.t()
 
   @typedoc """
-  A topic filter for a subscription
+  A topic filter for a subscription.
+
+  The topic filter is different from a `topic` because it is allowed
+  to contain wildcard characters:
+
+  - `+` is a single level wildcard which is allowed to stand on any
+    position in the topic filter. For instance: `sport/+/results` will
+    match `sport/tennis/results`, `sport/soccer/results`, etc.
+
+  - `#` is a multi-level wildcard and is only allowed to be on the
+    last position of the topic filter. For instance: `sport/#` will
+    match `sport/tennis/results`, `sport/tennis/announcements`, etc.
+
+  The server will reject any invalid topic filter and close the
+  connection.
   """
   @type topic_filter() :: String.t()
+
+  @typedoc """
+  An optional message payload.
+
+  A message can optionally have a payload. The payload is a series of
+  bytes and for MQTT 3.1.1 the payload has no defined structure; any
+  series of bytes will do, and the client has to make sense of it.
+
+  The payload will be `nil` if there is no payload. This is done to
+  distinct between a zero byte binary and an empty payload.
+  """
+  @type payload() :: binary() | nil
 
   @doc """
   Publish a message to the MQTT broker.
@@ -272,6 +311,7 @@ defmodule Tortoise do
                {:qos, qos()}
                | {:retain, boolean()}
                | {:identifier, package_identifier()}
+               | {:timeout, timeout()}
   def publish_sync(client_id, topic, payload \\ nil, opts \\ []) do
     timeout = Keyword.get(opts, :timeout, :infinity)
     qos = Keyword.get(opts, :qos, 0)

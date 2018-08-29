@@ -22,16 +22,17 @@ defmodule Tortoise.Connection do
   Read the documentation on `child_spec/1` if you want... (todo!)
 
   """
-  @spec start_link(connection_options, GenServer.options()) :: GenServer.on_start()
-        when connection_option:
+  @spec start_link(options, GenServer.options()) :: GenServer.on_start()
+        when option:
                {:client_id, Tortoise.client_id()}
                | {:user_name, String.t()}
                | {:password, String.t()}
-               | {:keep_alive, pos_integer()}
+               | {:keep_alive, non_neg_integer()}
                | {:will, Tortoise.Package.Publish.t()}
-               | {:subscriptions, [{String.t(), Tortoise.qos()}] | Tortoise.Package.Subscribe.t()}
+               | {:subscriptions,
+                  [{Tortoise.topic_filter(), Tortoise.qos()}] | Tortoise.Package.Subscribe.t()}
                | {:handler, {atom(), term()}},
-             connection_options: [connection_option]
+             options: [option]
   def start_link(connection_opts, opts \\ []) do
     client_id = Keyword.fetch!(connection_opts, :client_id)
     server = connection_opts |> Keyword.fetch!(:server) |> Transport.new()
@@ -135,7 +136,7 @@ defmodule Tortoise.Connection do
   """
   @spec subscribe(Tortoise.client_id(), topic | topics, [options]) :: {:ok, reference()}
         when topics: [topic],
-             topic: {binary(), Tortoise.qos()},
+             topic: {Tortoise.topic_filter(), Tortoise.qos()},
              options:
                {:timeout, timeout()}
                | {:identifier, Tortoise.package_identifier()}
@@ -178,7 +179,7 @@ defmodule Tortoise.Connection do
   @spec subscribe_sync(Tortoise.client_id(), topic | topics, [options]) ::
           :ok | {:error, :timeout}
         when topics: [topic],
-             topic: {binary(), Tortoise.qos()},
+             topic: {Tortoise.topic_filter(), Tortoise.qos()},
              options:
                {:timeout, timeout()}
                | {:identifier, Tortoise.package_identifier()}
@@ -222,7 +223,7 @@ defmodule Tortoise.Connection do
   """
   @spec unsubscribe(Tortoise.client_id(), topic | topics, [options]) :: {:ok, reference()}
         when topics: [topic],
-             topic: binary(),
+             topic: Tortoise.topic_filter(),
              options:
                {:timeout, timeout()}
                | {:identifier, Tortoise.package_identifier()}
@@ -252,7 +253,7 @@ defmodule Tortoise.Connection do
   @spec unsubscribe_sync(Tortoise.client_id(), topic | topics, [options]) ::
           :ok | {:error, :timeout}
         when topics: [topic],
-             topic: binary(),
+             topic: Tortoise.topic_filter(),
              options:
                {:timeout, timeout()}
                | {:identifier, Tortoise.package_identifier()}
@@ -288,6 +289,7 @@ defmodule Tortoise.Connection do
   better to listen on `:ping_response` using the `Tortoise.Events`
   PubSub.
   """
+  @spec ping(Tortoise.client_id()) :: {:ok, reference()}
   defdelegate ping(client_id), to: Tortoise.Connection.Controller
 
   @doc """
@@ -301,6 +303,7 @@ defmodule Tortoise.Connection do
   advisable to specify a reasonable time one is willing to wait for a
   response.
   """
+  @spec ping_sync(Tortoise.client_id(), timeout()) :: {:ok, reference()} | {:error, :timeout}
   defdelegate ping_sync(client_id, timeout \\ :infinity),
     to: Tortoise.Connection.Controller
 

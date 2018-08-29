@@ -5,13 +5,11 @@ defmodule Tortoise.Package.Publish do
 
   alias Tortoise.Package
 
-  @type qos :: 0 | 1 | 2
-
   @opaque t :: %__MODULE__{
             __META__: Package.Meta.t(),
-            topic: binary() | nil,
-            qos: qos(),
-            payload: binary() | nil,
+            topic: Tortoise.topic() | nil,
+            qos: Tortoise.qos(),
+            payload: Tortoise.payload(),
             identifier: Tortoise.package_identifier(),
             dup: boolean(),
             retain: boolean()
