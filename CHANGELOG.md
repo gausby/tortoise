@@ -11,6 +11,11 @@
   the documentation efforts easier, because conceptually the
   subscription belongs to the connection.
 
+### Fixed
+
+- Improvements has been made to the type specs and the documentation
+  of various modules.
+
 ## 0.8.3 - 2018-08-28
 
 ### Fixed
