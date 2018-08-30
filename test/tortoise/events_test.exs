@@ -42,14 +42,14 @@ defmodule Tortoise.EventsTest do
           :timer.sleep(:infinity)
         end)
 
-      # make sure the child process is ready and assert if it has
-      # registered itself for a connection
+      # make sure the child process is ready
       assert_receive :ready
-      assert [:connection] = Registry.keys(Tortoise.Events, child)
 
       # dispatch the connection
       connection = {context.transport, context.client}
       :ok = Tortoise.Events.dispatch(context.client_id, :connection, connection)
+      # have the process registered itself
+      assert [:connection] = Registry.keys(Tortoise.Events, child)
 
       # the subscriber should receive the connection and unregister
       # itself from the connection event
@@ -81,10 +81,8 @@ defmodule Tortoise.EventsTest do
           end
         end)
 
-      # make sure the child process is ready and assert if it has
-      # registered itself for a connection
+      # make sure the child process is ready
       assert_receive :ready
-      assert [:connection] = Registry.keys(Tortoise.Events, child)
 
       # dispatch the connection
       connection = {context.transport, context.client}
