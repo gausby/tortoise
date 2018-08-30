@@ -23,6 +23,7 @@ defmodule Tortoise.Package.Connack do
             session_present: false,
             status: nil
 
+  @spec decode(<<_::32>>) :: t
   def decode(<<@opcode::4, 0::4, 2, 0::7, session_present::1, return_code::8>>) do
     %__MODULE__{
       session_present: session_present == 1,
