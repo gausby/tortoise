@@ -312,20 +312,23 @@ defmodule Tortoise.Connection do
           {:ok, {module(), term()}} | {:error, :unknown_connection} | {:error, :timeout}
         when opts: {:timeout, timeout()} | {:active, boolean()}
   def connection(client_id, opts \\ [active: false]) do
-    active = Keyword.get(opts, :active, false)
+    # register a connection subscription in the case we are currently
+    # in the connect phase; this solves a possible race condition
+    # where the connection is requested while the status is
+    # connecting, but will reach the receive block after the message
+    # has been dispatched from the pubsub; previously we registered
+    # for the connection message in this window.
+    {:ok, _} = Events.register(client_id, :connection)
 
     case Tortoise.Registry.meta(via_name(client_id)) do
       {:ok, {_transport, _socket} = connection} ->
-        if active, do: Events.register(client_id, :connection)
         {:ok, connection}
 
       {:ok, :connecting} ->
         timeout = Keyword.get(opts, :timeout, :infinity)
-        {:ok, _} = Events.register(client_id, :connection)
 
         receive do
           {{Tortoise, ^client_id}, :connection, {transport, socket}} ->
-            unless active, do: Events.unregister(client_id, :connection)
             {:ok, {transport, socket}}
         after
           timeout ->
@@ -335,6 +338,12 @@ defmodule Tortoise.Connection do
       :error ->
         {:error, :unknown_connection}
     end
+  after
+    # if the connection subscription is non-active we should remove it
+    # from the registry, so the process will not receive connection
+    # messages when the connection is reestablished.
+    active? = Keyword.get(opts, :active, false)
+    unless active?, do: Events.unregister(client_id, :connection)
   end
 
   # Callbacks
