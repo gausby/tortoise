@@ -13,7 +13,7 @@ defmodule Tortoise.Package.Connect do
             password: binary() | nil,
             clean_session: boolean(),
             keep_alive: non_neg_integer(),
-            client_id: binary(),
+            client_id: Tortoise.client_id(),
             will: Package.Publish.t() | nil
           }
   @enforce_keys [:client_id]
@@ -27,6 +27,7 @@ defmodule Tortoise.Package.Connect do
             client_id: nil,
             will: nil
 
+  @spec decode(binary()) :: t
   def decode(<<@opcode::4, 0::4, variable::binary>>) do
     <<4::big-integer-size(16), "MQTT", 4::8, user_name::1, password::1, will_retain::1,
       will_qos::2, will::1, clean_session::1, 0::1, keep_alive::big-integer-size(16),

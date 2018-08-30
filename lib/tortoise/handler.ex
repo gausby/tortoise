@@ -109,11 +109,10 @@ defmodule Tortoise.Handler do
 
   # todo; define topic_filter and qos in another module and reference
   #       them from there
-  @typep qos() :: 0..2
   @typep topic_filter() :: binary()
 
   @type topic_opts() ::
-          {:qos, qos()}
+          {:qos, Tortoise.qos()}
           | {:timeout, timeout()}
   @type next_action() ::
           {:subscribe, topic_filter(), [topic_opts()]}
@@ -188,7 +187,7 @@ defmodule Tortoise.Handler do
             when status:
                    :up
                    | :down
-                   | {:warn, [requested: qos(), accepted: qos()]}
+                   | {:warn, [requested: Tortoise.qos(), accepted: Tortoise.qos()]}
                    | {:error, term()},
                  new_state: term
 

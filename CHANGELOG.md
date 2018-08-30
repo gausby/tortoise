@@ -2,6 +2,20 @@
 
 ## [unreleased]
 
+### Changed
+
+- The `Tortoise` module does no longer delegate the `subscribe`,
+  `unsubscribe`, and their `_sync` variants to the
+  `Tortoise.Connection` module. They should just be accessed directly
+  on the `Tortoise.Connection` module instead. This is done to make
+  the documentation efforts easier, because conceptually the
+  subscription belongs to the connection.
+
+### Fixed
+
+- Improvements has been made to the type specs and the documentation
+  of various modules.
+
 ## 0.8.3 - 2018-08-28
 
 ### Fixed
