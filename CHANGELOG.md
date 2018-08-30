@@ -1,5 +1,30 @@
 # Changelog
 
+## 0.9.0 - 2018-08-29
+
+### Changed
+
+- The `Tortoise` module does no longer delegate the `subscribe`,
+  `unsubscribe`, and their `_sync` variants to the
+  `Tortoise.Connection` module. They should just be accessed directly
+  on the `Tortoise.Connection` module instead. This is done to make
+  the documentation efforts easier, because conceptually the
+  subscription belongs to the connection.
+
+### Fixed
+
+- Improvements has been made to the type specs and the documentation
+  of various modules.
+
+### Added
+
+- A `ping/1` and `ping_sync/2` function has been added to the
+  `Tortoise.Connection` module. This allow the user to ping the broker
+  to check the connection. Notice that the connection process will
+  still send ping messages to fulfill the connection keep alive
+  timeout interval. There is no need to manually ping an open
+  connection.
+
 ## 0.8.3 - 2018-08-28
 
 ### Fixed

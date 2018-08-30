@@ -23,7 +23,6 @@ defmodule Tortoise.Connection.Inflight.Track do
   # attached to the Controller module, so in that case there will be no
   # caller.
 
-  @type package_identifier :: 0x0001..0xFFFF
   @type package :: Package.Publish | Package.Subscribe | Package.Unsubscribe
 
   @type caller :: {pid(), reference()} | nil
@@ -35,7 +34,7 @@ defmodule Tortoise.Connection.Inflight.Track do
             polarity: :positive | :negative,
             type: package,
             caller: {pid(), reference()} | nil,
-            identifier: package_identifier(),
+            identifier: Tortoise.package_identifier(),
             status: [status_update()],
             pending: [next_action()]
           }

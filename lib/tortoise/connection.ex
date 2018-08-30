@@ -12,8 +12,6 @@ defmodule Tortoise.Connection do
   defstruct [:client_id, :connect, :server, :status, :backoff, :subscriptions, :keep_alive, :opts]
   alias __MODULE__, as: State
 
-  @type client_id() :: binary() | atom()
-
   alias Tortoise.{Transport, Connection, Package, Events}
   alias Tortoise.Connection.{Inflight, Controller, Receiver, Backoff}
   alias Tortoise.Package.{Connect, Connack}
@@ -24,16 +22,17 @@ defmodule Tortoise.Connection do
   Read the documentation on `child_spec/1` if you want... (todo!)
 
   """
-  @spec start_link(connection_options, GenServer.options()) :: GenServer.on_start()
-        when connection_option:
-               {:client_id, String.t() | atom()}
+  @spec start_link(options, GenServer.options()) :: GenServer.on_start()
+        when option:
+               {:client_id, Tortoise.client_id()}
                | {:user_name, String.t()}
                | {:password, String.t()}
-               | {:keep_alive, pos_integer()}
+               | {:keep_alive, non_neg_integer()}
                | {:will, Tortoise.Package.Publish.t()}
-               | {:subscriptions, [{String.t(), 0..2}] | Tortoise.Package.Subscribe.t()}
+               | {:subscriptions,
+                  [{Tortoise.topic_filter(), Tortoise.qos()}] | Tortoise.Package.Subscribe.t()}
                | {:handler, {atom(), term()}},
-             connection_options: [connection_option]
+             options: [option]
   def start_link(connection_opts, opts \\ []) do
     client_id = Keyword.fetch!(connection_opts, :client_id)
     server = connection_opts |> Keyword.fetch!(:server) |> Transport.new()
@@ -70,10 +69,18 @@ defmodule Tortoise.Connection do
   end
 
   @doc false
+  @spec via_name(Tortoise.client_id()) ::
+          pid() | {:via, Registry, {Tortoise.Registry, {atom(), Tortoise.client_id()}}}
   def via_name(client_id) do
     Tortoise.Registry.via_name(__MODULE__, client_id)
   end
 
+  @spec child_spec(Keyword.t()) :: %{
+          id: term(),
+          start: {__MODULE__, :start_link, [Keyword.t()]},
+          restart: :transient | :permanent | :temporary,
+          type: :worker
+        }
   def child_spec(opts) do
     %{
       id: Keyword.get(opts, :name, __MODULE__),
@@ -90,7 +97,7 @@ defmodule Tortoise.Connection do
   inflight messages and send the proper disconnect message to the
   broker. The session will get terminated on the server.
   """
-  @spec disconnect(client_id()) :: :ok
+  @spec disconnect(Tortoise.client_id()) :: :ok
   def disconnect(client_id) do
     GenServer.call(via_name(client_id), :disconnect)
   end
@@ -101,12 +108,38 @@ defmodule Tortoise.Connection do
   Given the `client_id` of a running connection return its current
   subscriptions. This is helpful in a debugging situation.
   """
-  @spec subscriptions(client_id()) :: Tortoise.Package.Subscribe.t()
+  @spec subscriptions(Tortoise.client_id()) :: Tortoise.Package.Subscribe.t()
   def subscriptions(client_id) do
     GenServer.call(via_name(client_id), :subscriptions)
   end
 
-  @doc false
+  @doc """
+  Subscribe to one or more topics using topic filters on `client_id`
+
+  The topic filter should be a 2-tuple, `{topic_filter, qos}`, where
+  the `topic_filter` is a valid MQTT topic filter, and `qos` an
+  integer value 0 through 2.
+
+  Multiple topics can be given as a list.
+
+  The subscribe function is asynchronous, so it will return `{:ok,
+  ref}`. Eventually a response will get delivered to the process
+  mailbox, tagged with the reference stored in `ref`. It will take the
+  form of:
+
+      {{Tortoise, ^client_id}, ^ref, ^result}
+
+  Where the `result` can be one of `:ok`, or `{:error, reason}`.
+
+  Read the documentation for `Tortoise.Connection.subscribe_sync/3`
+  for a blocking version of this call.
+  """
+  @spec subscribe(Tortoise.client_id(), topic | topics, [options]) :: {:ok, reference()}
+        when topics: [topic],
+             topic: {Tortoise.topic_filter(), Tortoise.qos()},
+             options:
+               {:timeout, timeout()}
+               | {:identifier, Tortoise.package_identifier()}
   def subscribe(client_id, topics, opts \\ [])
 
   def subscribe(client_id, [{_, n} | _] = topics, opts) when is_number(n) do
@@ -131,7 +164,25 @@ defmodule Tortoise.Connection do
     end
   end
 
-  @doc false
+  @doc """
+  Subscribe to topics and block until the server acknowledges.
+
+  This is a synchronous version of the
+  `Tortoise.Connection.subscribe/3`. In fact it calls into
+  `Tortoise.Connection.subscribe/3` but will handle the selective
+  receive loop, making it much easier to work with. Also, this
+  function can be used to block a process that cannot continue before
+  it has a subscription to the given topics.
+
+  See `Tortoise.Connection.subscribe/3` for configuration options.
+  """
+  @spec subscribe_sync(Tortoise.client_id(), topic | topics, [options]) ::
+          :ok | {:error, :timeout}
+        when topics: [topic],
+             topic: {Tortoise.topic_filter(), Tortoise.qos()},
+             options:
+               {:timeout, timeout()}
+               | {:identifier, Tortoise.package_identifier()}
   def subscribe_sync(client_id, topics, opts \\ [])
 
   def subscribe_sync(client_id, [{_, n} | _] = topics, opts) when is_number(n) do
@@ -160,7 +211,22 @@ defmodule Tortoise.Connection do
     end
   end
 
-  @doc false
+  @doc """
+  Unsubscribe from one of more topic filters. The topic filters are
+  given as strings. Multiple topic filters can be given at once by
+  passing in a list of strings.
+
+      Tortoise.Connection.unsubscribe(client_id, ["foo/bar", "quux"])
+
+  This operation is asynchronous. When the operation is done a message
+  will be received in mailbox of the originating process.
+  """
+  @spec unsubscribe(Tortoise.client_id(), topic | topics, [options]) :: {:ok, reference()}
+        when topics: [topic],
+             topic: Tortoise.topic_filter(),
+             options:
+               {:timeout, timeout()}
+               | {:identifier, Tortoise.package_identifier()}
   def unsubscribe(client_id, topics, opts \\ [])
 
   def unsubscribe(client_id, [topic | _] = topics, opts) when is_binary(topic) do
@@ -175,7 +241,22 @@ defmodule Tortoise.Connection do
     unsubscribe(client_id, [topic], opts)
   end
 
-  @doc false
+  @doc """
+  Unsubscribe from topics and block until the server acknowledges.
+
+  This is a synchronous version of
+  `Tortoise.Connection.unsubscribe/3`. It will block until the server
+  has send the acknowledge message.
+
+  See `Tortoise.Connection.unsubscribe/3` for configuration options.
+  """
+  @spec unsubscribe_sync(Tortoise.client_id(), topic | topics, [options]) ::
+          :ok | {:error, :timeout}
+        when topics: [topic],
+             topic: Tortoise.topic_filter(),
+             options:
+               {:timeout, timeout()}
+               | {:identifier, Tortoise.package_identifier()}
   def unsubscribe_sync(client_id, topics, opts \\ [])
 
   def unsubscribe_sync(client_id, topics, opts) when is_list(topics) do
@@ -194,10 +275,42 @@ defmodule Tortoise.Connection do
     unsubscribe_sync(client_id, [topic], opts)
   end
 
+  @doc """
+  Ping the broker.
+
+  When the round-trip is complete a message with the time taken in
+  milliseconds will be send to the process that invoked the ping
+  command.
+
+  The connection will automatically ping the broker at the interval
+  specified in the connection configuration, so there is no need to
+  setup a reoccurring ping. This ping function is exposed for
+  debugging purposes. If ping latency over time is desired it is
+  better to listen on `:ping_response` using the `Tortoise.Events`
+  PubSub.
+  """
+  @spec ping(Tortoise.client_id()) :: {:ok, reference()}
+  defdelegate ping(client_id), to: Tortoise.Connection.Controller
+
+  @doc """
+  Ping the server and await the ping latency reply.
+
+  Takes a `client_id` and an optional `timeout`.
+
+  Like `ping/1` but will block the caller process until a response is
+  received from the server. The response will contain the ping latency
+  in milliseconds.  The `timeout` defaults to `:infinity`, so it is
+  advisable to specify a reasonable time one is willing to wait for a
+  response.
+  """
+  @spec ping_sync(Tortoise.client_id(), timeout()) :: {:ok, reference()} | {:error, :timeout}
+  defdelegate ping_sync(client_id, timeout \\ :infinity),
+    to: Tortoise.Connection.Controller
+
   @doc false
-  @spec connection(client_id(), [opts]) ::
+  @spec connection(Tortoise.client_id(), [opts]) ::
           {:ok, {module(), term()}} | {:error, :unknown_connection} | {:error, :timeout}
-        when opts: {:timeout, non_neg_integer()} | {:active, boolean()}
+        when opts: {:timeout, timeout()} | {:active, boolean()}
   def connection(client_id, opts \\ [active: false]) do
     active = Keyword.get(opts, :active, false)
 
