@@ -9,6 +9,11 @@
   established. This update should avoid hanging processes when a
   publish is attempted.
 
+### Added
+
+- A usage example was added to the README-file. Thanks, [Tanweer
+  Shahzaad](https://github.com/tanweerdev).
+
 ## 0.9.0 - 2018-08-29
 
 ### Changed
