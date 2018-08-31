@@ -118,6 +118,39 @@ defmodule Tortoise.Handler do
           {:subscribe, topic_filter(), [topic_opts()]}
           | {:unsubscribe, topic_filter()}
 
+  defmacro __using__(_opts) do
+    quote location: :keep do
+      @behaviour Tortoise.Handler
+
+      @impl true
+      def init(state) do
+        {:ok, state}
+      end
+
+      @impl true
+      def terminate(_reason, _state) do
+        :ok
+      end
+
+      @impl true
+      def connection(_status, state) do
+        {:ok, state}
+      end
+
+      @impl true
+      def subscription(_status, _topic_filter, state) do
+        {:ok, state}
+      end
+
+      @impl true
+      def handle_message(_topic, _payload, state) do
+        {:ok, state}
+      end
+
+      defoverridable Tortoise.Handler
+    end
+  end
+
   @doc """
   Invoked when the connection is started.
 
