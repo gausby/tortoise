@@ -1,13 +1,14 @@
 # Changelog
 
-## [Unreleased]
+## 0.9.1 - 2018-08-31
 
 ### Fixed
 
 - Avoid a possible race condition that could happen when a connection
   was requested while the connection was in the process of being
   established. This update should avoid hanging processes when a
-  publish is attempted.
+  publish is attempted in the small window between going from
+  connecting to connected.
 
 ### Added
 
