@@ -73,15 +73,15 @@ Look at the `connection_test.exs`-file for more examples.
 
 Example Handler
 ```elixir
-defmodule Tortoise.Handler.Logger do
-  @behaviour Tortoise.Handler
+defmodule Tortoise.Handler.Example do
+  use Tortoise.Handler
 
   def init(args) do
     {:ok, args}
   end
 
   def connection(status, state) do
-    # `status` would be either `:up` or `:down`; you can use this to
+    # `status` will be either `:up` or `:down`; you can use this to
     # inform the rest of your system if the connection is currently
     # open or closed; tortoise should be busy reconnecting if you get
     # a `:down`

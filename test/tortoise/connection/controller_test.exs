@@ -8,7 +8,7 @@ defmodule Tortoise.Connection.ControllerTest do
   import ExUnit.CaptureLog
 
   defmodule TestHandler do
-    @behaviour Tortoise.Handler
+    use Tortoise.Handler
 
     defstruct pid: nil,
               client_id: nil,
