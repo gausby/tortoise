@@ -94,12 +94,25 @@ defmodule Tortoise.Handler do
 
   alias Tortoise.Package
 
+  @typedoc """
+  Data structure describing the user defined callback handler
+
+  The data structure describe the current state as well as its initial
+  arguments and the module driving the handler. This allow Tortoise to
+  restart the handler if needed be.
+  """
+  @type t :: %__MODULE__{
+          module: module(),
+          initial_args: term(),
+          state: term()
+        }
   @enforce_keys [:module, :initial_args]
   defstruct module: nil, state: nil, initial_args: []
 
   # Helper for building a Handler struct so we can keep it as an
   # opaque type in the system.
   @doc false
+  @spec new({module(), args :: term()}) :: t
   def new({module, args}) when is_atom(module) and is_list(args) do
     %__MODULE__{module: module, initial_args: args}
   end
@@ -107,16 +120,52 @@ defmodule Tortoise.Handler do
   # identity
   def new(%__MODULE__{} = handler), do: handler
 
-  # todo; define topic_filter and qos in another module and reference
-  #       them from there
-  @typep topic_filter() :: binary()
+  defmacro __using__(_opts) do
+    quote location: :keep do
+      @behaviour Tortoise.Handler
 
-  @type topic_opts() ::
-          {:qos, Tortoise.qos()}
-          | {:timeout, timeout()}
+      @impl true
+      def init(state) do
+        {:ok, state}
+      end
+
+      @impl true
+      def terminate(_reason, _state) do
+        :ok
+      end
+
+      @impl true
+      def connection(_status, state) do
+        {:ok, state}
+      end
+
+      @impl true
+      def subscription(_status, _topic_filter, state) do
+        {:ok, state}
+      end
+
+      @impl true
+      def handle_message(_topic, _payload, state) do
+        {:ok, state}
+      end
+
+      defoverridable Tortoise.Handler
+    end
+  end
+
+  @typedoc """
+  Action to perform before reentering the execution loop.
+
+  The supported next actions are:
+
+    - Tell the connection process to subscribe to a topic filter
+    - Tell the connection process to unsubscribe from a topic filter
+
+  More next actions might be supported in the future.
+  """
   @type next_action() ::
-          {:subscribe, topic_filter(), [topic_opts()]}
-          | {:unsubscribe, topic_filter()}
+          {:subscribe, Tortoise.topic_filter(), [{:qos, Tortoise.qos()} | {:timeout, timeout()}]}
+          | {:unsubscribe, Tortoise.topic_filter()}
 
   @doc """
   Invoked when the connection is started.
@@ -127,8 +176,8 @@ defmodule Tortoise.Handler do
   from the MQTT broker, and the value contained in `state` will be
   used as the process state.
   """
-  @callback init(args :: term) :: {:ok, state}
-            when state: any
+  @callback init(args :: term()) :: {:ok, state}
+            when state: any()
 
   @doc """
   Invoked when the connection status changes.
@@ -145,11 +194,11 @@ defmodule Tortoise.Handler do
   a list of next actions such as `{:unsubscribe, "foo/bar"}` will
   result in the state being returned and the next actions performed.
   """
-  @callback connection(status, state :: term) ::
+  @callback connection(status, state :: term()) ::
               {:ok, new_state}
               | {:ok, new_state, [next_action()]}
             when status: :up | :down,
-                 new_state: term
+                 new_state: term()
 
   @doc """
   Invoked when the subscription of a topic filter changes status.
@@ -181,7 +230,7 @@ defmodule Tortoise.Handler do
   a list of next actions such as `{:unsubscribe, "foo/bar"}` will
   result in the state being returned and the next actions performed.
   """
-  @callback subscription(status, topic_filter(), state :: term) ::
+  @callback subscription(status, topic_filter, state :: term) ::
               {:ok, new_state}
               | {:ok, new_state, [next_action()]}
             when status:
@@ -189,6 +238,7 @@ defmodule Tortoise.Handler do
                    | :down
                    | {:warn, [requested: Tortoise.qos(), accepted: Tortoise.qos()]}
                    | {:error, term()},
+                 topic_filter: Tortoise.topic_filter(),
                  new_state: term
 
   @doc """
@@ -226,12 +276,12 @@ defmodule Tortoise.Handler do
   a list of next actions such as `{:unsubscribe, "foo/bar"}` will
   reenter the loop and perform the listed actions.
   """
-  @callback handle_message(topic, payload, state :: term) ::
+  @callback handle_message(topic_levels, payload, state :: term()) ::
               {:ok, new_state}
               | {:ok, new_state, [next_action()]}
-            when new_state: term,
-                 topic: [binary()],
-                 payload: binary()
+            when new_state: term(),
+                 topic_levels: [String.t()],
+                 payload: Tortoise.payload()
 
   @doc """
   Invoked when the connection process is about to exit.
@@ -240,10 +290,18 @@ defmodule Tortoise.Handler do
   cleaned up during the `terminate/2` callback.
   """
   @callback terminate(reason, state :: term) :: ignored
-            when reason: :normal | :shutdown | {:shutdown, term},
-                 ignored: term
+            when reason: :normal | :shutdown | {:shutdown, term()},
+                 ignored: term()
 
   @doc false
+  @spec execute(t, action) :: :ok | {:ok, t} | {:error, {:invalid_next_action, term()}}
+        when action:
+               :init
+               | {:subscribe, [term()]}
+               | {:unsubscribe, [term()]}
+               | {:publish, Tortoise.Package.Publish.t()}
+               | {:connection, :up | :down}
+               | {:terminate, reason :: term()}
   def execute(handler, :init) do
     case apply(handler.module, :init, [handler.initial_args]) do
       {:ok, initial_state} ->
