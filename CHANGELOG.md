@@ -1,6 +1,13 @@
 # Changelog
 
-## [Unreleased]
+## 0.9.2 - 2018-09-01
+
+### Added
+
+- A use-macro has been added to `Tortoise.Handler` which implements
+  default behaviour for the callbacks so the user only have to
+  implement the callbacks they care about. This should improve
+  usability of the project quite a bit.
 
 ## 0.9.1 - 2018-08-31
 
