@@ -3,17 +3,16 @@ defmodule Tortoise.Handler.Logger do
 
   require Logger
 
+  use Tortoise.Handler
+
   defstruct []
   alias __MODULE__, as: State
 
-  @behaviour Tortoise.Handler
-
-  @impl true
   def init(_opts) do
+    Logger.info("Initializing handler")
     {:ok, %State{}}
   end
 
-  @impl true
   def connection(:up, state) do
     Logger.info("Connection has been established")
     {:ok, state}
@@ -29,7 +28,6 @@ defmodule Tortoise.Handler.Logger do
     {:ok, state}
   end
 
-  @impl true
   def subscription(:up, topic, state) do
     Logger.info("Subscribed to #{topic}")
     {:ok, state}
@@ -50,13 +48,11 @@ defmodule Tortoise.Handler.Logger do
     {:ok, state}
   end
 
-  @impl true
   def handle_message(topic, publish, state) do
     Logger.info("#{Enum.join(topic, "/")} #{inspect(publish)}")
     {:ok, state}
   end
 
-  @impl true
   def terminate(reason, _state) do
     Logger.warn("Client has been terminated with reason: #{inspect(reason)}")
     :ok
