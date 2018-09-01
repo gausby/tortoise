@@ -5,15 +5,15 @@ defmodule Tortoise.Package.Publish do
 
   alias Tortoise.Package
 
-  @opaque t :: %__MODULE__{
-            __META__: Package.Meta.t(),
-            topic: Tortoise.topic() | nil,
-            qos: Tortoise.qos(),
-            payload: Tortoise.payload(),
-            identifier: Tortoise.package_identifier(),
-            dup: boolean(),
-            retain: boolean()
-          }
+  @type t :: %__MODULE__{
+          __META__: Package.Meta.t(),
+          topic: Tortoise.topic() | nil,
+          qos: Tortoise.qos(),
+          payload: Tortoise.payload(),
+          identifier: Tortoise.package_identifier(),
+          dup: boolean(),
+          retain: boolean()
+        }
   defstruct __META__: %Package.Meta{opcode: @opcode, flags: 0},
             identifier: nil,
             topic: nil,
