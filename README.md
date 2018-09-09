@@ -147,6 +147,16 @@ end
 Documentation should be available at
 [https://hexdocs.pm/tortoise](https://hexdocs.pm/tortoise).
 
+## Development
+
+To start developing, run the following commands:
+
+```
+mix deps.get
+MIX_ENV=test mix eqc.install --mini
+mix test
+```
+
 ## Building documentation
 
 To build the documentation run the following command in a terminal emulator:
