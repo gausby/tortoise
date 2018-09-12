@@ -254,6 +254,54 @@ defmodule Tortoise.TestGenerators do
     end
   end
 
+  def gen_disconnect() do
+    let disconnect <-
+          %Package.Disconnect{
+            reason:
+              oneof([
+                :normal_disconnection,
+                :disconnect_with_will_message,
+                :unspecified_error,
+                :malformed_packet,
+                :protocol_error,
+                :implementation_specific_error,
+                :not_authorized,
+                :server_busy,
+                :server_shutting_down,
+                :keep_alive_timeout,
+                :session_taken_over,
+                :topic_filter_invalid,
+                :topic_name_invalid,
+                :receive_maximum_exceeded,
+                :topic_alias_invalid,
+                :packet_too_large,
+                :message_rate_too_high,
+                :quota_exceeded,
+                :administrative_action,
+                :payload_format_invalid,
+                :retain_not_supported,
+                :qos_not_supported,
+                :use_another_server,
+                :server_moved,
+                :shared_subscriptions_not_supported,
+                :connection_rate_exceeded,
+                :maximum_connect_time,
+                :subscription_identifiers_not_supported,
+                :wildcard_subscriptions_not_supported
+              ])
+          } do
+      %Package.Disconnect{disconnect | properties: gen_properties(disconnect)}
+    end
+  end
+
+  def gen_properties(%Package.Disconnect{reason: :normal_disconnection}) do
+    []
+  end
+
+  def gen_properties(%{}) do
+    []
+  end
+
   def gen_properties() do
     let properties <-
           oneof([
