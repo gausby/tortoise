@@ -253,6 +253,73 @@ defmodule Tortoise.TestGenerators do
       pubrec
     end
   end
+
+  def gen_properties() do
+    let properties <-
+          oneof([
+            :payload_format_indicator,
+            :message_expiry_interval,
+            :content_type,
+            :response_topic,
+            :correlation_data,
+            :subscription_identifier,
+            :session_expiry_interval,
+            :assigned_client_identifier,
+            :server_keep_alive,
+            :authentication_method,
+            :authentication_data,
+            :request_problem_information,
+            :will_delay_interval,
+            :request_response_information,
+            :response_information,
+            :server_reference,
+            :reason_string,
+            :receive_maximum,
+            :topic_alias_maximum,
+            :topic_alias,
+            :maximum_qos,
+            :retain_available,
+            :user_property,
+            :maximum_packet_size,
+            :wildcard_subscription_available,
+            :subscription_identifier_available,
+            :shared_subscription_available
+          ]) do
+      list(10, lazy(do: gen_property_value(properties)))
+    end
+  end
+
+  def gen_property_value(type) do
+    case type do
+      :payload_format_indicator -> {type, oneof([0, 1])}
+      :message_expiry_interval -> {type, choose(0, 4_294_967_295)}
+      :content_type -> {type, utf8()}
+      :response_topic -> {type, gen_topic()}
+      :correlation_data -> {type, binary()}
+      :subscription_identifier -> {type, choose(1, 268_435_455)}
+      :session_expiry_interval -> {type, choose(1, 268_435_455)}
+      :assigned_client_identifier -> {type, utf8()}
+      :server_keep_alive -> {type, choose(0x0000, 0xFFFF)}
+      :authentication_method -> {type, utf8()}
+      :authentication_data -> {type, binary()}
+      :request_problem_information -> {type, oneof([0, 1])}
+      :will_delay_interval -> {type, choose(0, 4_294_967_295)}
+      :request_response_information -> {type, oneof([0, 1])}
+      :response_information -> {type, utf8()}
+      :server_reference -> {type, utf8()}
+      :reason_string -> {type, utf8()}
+      :receive_maximum -> {type, choose(0x0001, 0xFFFF)}
+      :topic_alias_maximum -> {type, choose(0x0000, 0xFFFF)}
+      :topic_alias -> {type, choose(0x0001, 0xFFFF)}
+      :maximum_qos -> {type, oneof([0, 1])}
+      :retain_available -> {type, oneof([0, 1])}
+      :user_property -> {utf8(), utf8()}
+      :maximum_packet_size -> {type, choose(1, 268_435_455)}
+      :wildcard_subscription_available -> {type, oneof([0, 1])}
+      :subscription_identifier_available -> {type, oneof([0, 1])}
+      :shared_subscription_available -> {type, oneof([0, 1])}
+    end
+  end
 end
 
 # make certs for tests using the SSL transport

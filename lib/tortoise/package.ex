@@ -29,6 +29,11 @@ defmodule Tortoise.Package do
   end
 
   @doc false
+  def variable_length(n) do
+    remaining_length(n)
+  end
+
+  @doc false
   def variable_length_encode(data) when is_list(data) do
     length_prefix = data |> IO.iodata_length() |> remaining_length()
     length_prefix ++ data
@@ -39,5 +44,15 @@ defmodule Tortoise.Package do
 
   defp remaining_length(n) do
     [<<1::1, rem(n, @highbit)::7>>] ++ remaining_length(div(n, @highbit))
+  end
+
+  @doc false
+  def drop_length_prefix(payload) do
+    case payload do
+      <<0::1, _::7, r::binary>> -> r
+      <<1::1, _::7, 0::1, _::7, r::binary>> -> r
+      <<1::1, _::7, 1::1, _::7, 0::1, _::7, r::binary>> -> r
+      <<1::1, _::7, 1::1, _::7, 1::1, _::7, 0::1, _::7, r::binary>> -> r
+    end
   end
 end
