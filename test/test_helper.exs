@@ -163,6 +163,7 @@ defmodule Tortoise.TestGenerators do
           payload: oneof([non_empty(binary()), nil]),
           retain: bool()
       }
+      |> gen_properties()
     end
   end
 
@@ -303,6 +304,10 @@ defmodule Tortoise.TestGenerators do
     end
   end
 
+  def gen_properties(%Package.Publish{} = publish) do
+    %Package.Publish{publish | properties: gen_properties()}
+  end
+
   def gen_properties(%Package.Disconnect{reason: :normal_disconnection}) do
     []
   end
@@ -313,36 +318,39 @@ defmodule Tortoise.TestGenerators do
 
   def gen_properties() do
     let properties <-
-          oneof([
-            :payload_format_indicator,
-            :message_expiry_interval,
-            :content_type,
-            :response_topic,
-            :correlation_data,
-            :subscription_identifier,
-            :session_expiry_interval,
-            :assigned_client_identifier,
-            :server_keep_alive,
-            :authentication_method,
-            :authentication_data,
-            :request_problem_information,
-            :will_delay_interval,
-            :request_response_information,
-            :response_information,
-            :server_reference,
-            :reason_string,
-            :receive_maximum,
-            :topic_alias_maximum,
-            :topic_alias,
-            :maximum_qos,
-            :retain_available,
-            :user_property,
-            :maximum_packet_size,
-            :wildcard_subscription_available,
-            :subscription_identifier_available,
-            :shared_subscription_available
-          ]) do
-      list(10, lazy(do: gen_property_value(properties)))
+          list(
+            5,
+            oneof([
+              :payload_format_indicator,
+              :message_expiry_interval,
+              :content_type,
+              :response_topic,
+              :correlation_data,
+              :subscription_identifier,
+              :session_expiry_interval,
+              :assigned_client_identifier,
+              :server_keep_alive,
+              :authentication_method,
+              :authentication_data,
+              :request_problem_information,
+              :will_delay_interval,
+              :request_response_information,
+              :response_information,
+              :server_reference,
+              :reason_string,
+              :receive_maximum,
+              :topic_alias_maximum,
+              :topic_alias,
+              :maximum_qos,
+              :retain_available,
+              :user_property,
+              :maximum_packet_size,
+              :wildcard_subscription_available,
+              :subscription_identifier_available,
+              :shared_subscription_available
+            ])
+          ) do
+      Enum.map(properties, &gen_property_value/1)
     end
   end
 

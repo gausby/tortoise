@@ -12,7 +12,8 @@ defmodule Tortoise.Package.Publish do
           payload: Tortoise.payload(),
           identifier: Tortoise.package_identifier(),
           dup: boolean(),
-          retain: boolean()
+          retain: boolean(),
+          properties: [{any(), any()}]
         }
   defstruct __META__: %Package.Meta{opcode: @opcode, flags: 0},
             identifier: nil,
@@ -20,12 +21,13 @@ defmodule Tortoise.Package.Publish do
             payload: nil,
             qos: 0,
             dup: false,
-            retain: false
+            retain: false,
+            properties: []
 
   @spec decode(binary()) :: t
   def decode(<<@opcode::4, 0::1, 0::2, retain::1, length_prefixed_payload::binary>>) do
     payload = drop_length_prefix(length_prefixed_payload)
-    {topic, payload} = decode_message(payload)
+    {topic, properties, payload} = decode_message(payload)
 
     %__MODULE__{
       qos: 0,
@@ -33,7 +35,8 @@ defmodule Tortoise.Package.Publish do
       dup: false,
       retain: retain == 1,
       topic: topic,
-      payload: payload
+      payload: payload,
+      properties: properties
     }
   end
 
@@ -41,7 +44,7 @@ defmodule Tortoise.Package.Publish do
         <<@opcode::4, dup::1, qos::integer-size(2), retain::1, length_prefixed_payload::binary>>
       ) do
     payload = drop_length_prefix(length_prefixed_payload)
-    {topic, identifier, payload} = decode_message_with_id(payload)
+    {topic, identifier, properties, payload} = decode_message_with_id(payload)
 
     %__MODULE__{
       qos: qos,
@@ -49,7 +52,8 @@ defmodule Tortoise.Package.Publish do
       dup: dup == 1,
       retain: retain == 1,
       topic: topic,
-      payload: payload
+      payload: payload,
+      properties: properties
     }
   end
 
@@ -62,14 +66,16 @@ defmodule Tortoise.Package.Publish do
     end
   end
 
-  defp decode_message(<<topic_length::big-integer-size(16), msg::binary>>) do
-    <<topic::binary-size(topic_length), payload::binary>> = msg
-    {topic, nullify(payload)}
+  defp decode_message(<<topic_length::big-integer-size(16), package::binary>>) do
+    <<topic::binary-size(topic_length), rest::binary>> = package
+    {properties, payload} = Package.parse_variable_length(rest)
+    {topic, Package.Properties.decode(properties), nullify(payload)}
   end
 
-  defp decode_message_with_id(<<topic_length::big-integer-size(16), msg::binary>>) do
-    <<topic::binary-size(topic_length), identifier::big-integer-size(16), payload::binary>> = msg
-    {topic, identifier, nullify(payload)}
+  defp decode_message_with_id(<<topic_length::big-integer-size(16), package::binary>>) do
+    <<topic::binary-size(topic_length), identifier::big-integer-size(16), rest::binary>> = package
+    {properties, payload} = Package.parse_variable_length(rest)
+    {topic, identifier, Package.Properties.decode(properties), nullify(payload)}
   end
 
   defp nullify(""), do: nil
@@ -82,6 +88,7 @@ defmodule Tortoise.Package.Publish do
         Package.Meta.encode(%{t.__META__ | flags: encode_flags(t)}),
         Package.variable_length_encode([
           Package.length_encode(t.topic),
+          Package.Properties.encode(t.properties),
           encode_payload(t)
         ])
       ]
@@ -94,6 +101,7 @@ defmodule Tortoise.Package.Publish do
         Package.variable_length_encode([
           Package.length_encode(t.topic),
           <<identifier::big-integer-size(16)>>,
+          Package.Properties.encode(t.properties),
           encode_payload(t)
         ])
       ]
