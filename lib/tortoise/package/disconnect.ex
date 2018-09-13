@@ -3,6 +3,8 @@ defmodule Tortoise.Package.Disconnect do
 
   @opcode 14
 
+  # @allowed_properties [:reason_string, :server_reference, :session_expiry_interval, :user_property]
+
   alias Tortoise.Package
 
   @type reason ::

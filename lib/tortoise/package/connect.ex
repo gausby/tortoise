@@ -3,6 +3,8 @@ defmodule Tortoise.Package.Connect do
 
   @opcode 1
 
+  # @allowed_properties [:authentication_data, :authentication_method, :maximum_packet_size, :receive_maximum, :request_problem_information, :request_response_information, :session_expiry_interval, :topic_alias_maximum, :user_property]
+
   alias Tortoise.Package
 
   @opaque t :: %__MODULE__{

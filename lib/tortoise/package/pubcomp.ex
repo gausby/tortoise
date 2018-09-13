@@ -3,6 +3,8 @@ defmodule Tortoise.Package.Pubcomp do
 
   @opcode 7
 
+  @allowed_properties [:reason_string, :user_property]
+
   alias Tortoise.Package
 
   @opaque t :: %__MODULE__{

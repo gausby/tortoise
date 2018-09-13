@@ -3,6 +3,8 @@ defmodule Tortoise.Package.Puback do
 
   @opcode 4
 
+  # @allowed_properties [:reason_string, :user_property]
+
   alias Tortoise.Package
 
   @opaque t :: %__MODULE__{

@@ -3,6 +3,8 @@ defmodule Tortoise.Package.Suback do
 
   @opcode 9
 
+  # @allowed_properties [:reason_string, :user_property]
+
   alias Tortoise.Package
 
   @type qos :: 0 | 1 | 2

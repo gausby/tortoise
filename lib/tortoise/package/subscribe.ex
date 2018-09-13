@@ -3,6 +3,8 @@ defmodule Tortoise.Package.Subscribe do
 
   @opcode 8
 
+  # @allowed_properties [:subscription_identifier, :user_property]
+
   alias Tortoise.Package
 
   @type qos :: 0 | 1 | 2

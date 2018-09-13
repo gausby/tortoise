@@ -3,6 +3,8 @@ defmodule Tortoise.Package.Unsubscribe do
 
   @opcode 10
 
+  # @allowed_properties [:user_property]
+
   alias Tortoise.Package
 
   @type topic :: binary()

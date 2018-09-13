@@ -3,6 +3,8 @@ defmodule Tortoise.Package.Connack do
 
   @opcode 2
 
+  # @allowed_properties [:assigned_client_identifier, :authentication_data, :authentication_method, :maximum_packet_size, :maximum_qos, :reason_string, :receive_maximum, :response_information, :retain_available, :server_keep_alive, :server_reference, :session_expiry_interval, :shared_subscription_available, :subscription_identifier_available, :topic_alias_maximum, :user_property, :wildcard_subscription_available]
+
   alias Tortoise.Package
 
   @type status :: :accepted | {:refused, refusal_reasons()}
