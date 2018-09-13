@@ -294,6 +294,15 @@ defmodule Tortoise.TestGenerators do
     end
   end
 
+  def gen_auth() do
+    let auth <-
+          %Package.Auth{
+            reason: oneof([:success, :continue_authentication, :re_authenticate])
+          } do
+      %Package.Auth{auth | properties: gen_properties(auth)}
+    end
+  end
+
   def gen_properties(%Package.Disconnect{reason: :normal_disconnection}) do
     []
   end

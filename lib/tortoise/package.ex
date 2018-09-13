@@ -18,6 +18,7 @@ defmodule Tortoise.Package do
             | Package.Pingreq.t()
             | Package.Pingresp.t()
             | Package.Disconnect.t()
+            | Package.Auth.t()
 
   defdelegate encode(data), to: Tortoise.Encodable
   defdelegate decode(data), to: Tortoise.Decodable
