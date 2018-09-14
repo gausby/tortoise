@@ -163,7 +163,7 @@ defmodule Tortoise.TestGenerators do
           payload: oneof([non_empty(binary()), nil]),
           retain: bool()
       }
-      |> gen_properties()
+      |> gen_publish_properties()
     end
   end
 
@@ -177,6 +177,25 @@ defmodule Tortoise.TestGenerators do
       qos: qos,
       dup: bool()
     }
+  end
+
+  defp gen_publish_properties(%Package.Publish{} = publish) do
+    allowed_properties = [
+      :payload_format_indicator,
+      :message_expiry_interval,
+      :topic_alias,
+      :response_topic,
+      :correlation_data,
+      :user_property,
+      :subscription_identifier,
+      :content_type
+    ]
+
+    let properties <- list(5, oneof(allowed_properties)) do
+      # @todo only user_properties and subscription_identifiers are allowed multiple times
+      properties = Enum.map(properties, &gen_property_value/1)
+      %Package.Publish{publish | properties: properties}
+    end
   end
 
   @doc """
@@ -302,10 +321,6 @@ defmodule Tortoise.TestGenerators do
           } do
       %Package.Auth{auth | properties: gen_properties(auth)}
     end
-  end
-
-  def gen_properties(%Package.Publish{} = publish) do
-    %Package.Publish{publish | properties: gen_properties()}
   end
 
   def gen_properties(%Package.Disconnect{reason: :normal_disconnection}) do

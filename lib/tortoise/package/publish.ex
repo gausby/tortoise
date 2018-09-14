@@ -3,6 +3,17 @@ defmodule Tortoise.Package.Publish do
 
   @opcode 3
 
+  @allowed_properties [
+    :payload_format_indicator,
+    :message_expiry_interval,
+    :topic_alias,
+    :response_topic,
+    :correlation_data,
+    :user_property,
+    :subscription_identifier,
+    :content_type
+  ]
+
   alias Tortoise.Package
 
   @type t :: %__MODULE__{
@@ -69,13 +80,31 @@ defmodule Tortoise.Package.Publish do
   defp decode_message(<<topic_length::big-integer-size(16), package::binary>>) do
     <<topic::binary-size(topic_length), rest::binary>> = package
     {properties, payload} = Package.parse_variable_length(rest)
-    {topic, Package.Properties.decode(properties), nullify(payload)}
+    properties = Package.Properties.decode(properties)
+
+    case Keyword.split(properties, @allowed_properties) do
+      {^properties, []} ->
+        {topic, properties, nullify(payload)}
+
+      {_, _violations} ->
+        # todo !
+        {topic, properties, nullify(payload)}
+    end
   end
 
   defp decode_message_with_id(<<topic_length::big-integer-size(16), package::binary>>) do
     <<topic::binary-size(topic_length), identifier::big-integer-size(16), rest::binary>> = package
     {properties, payload} = Package.parse_variable_length(rest)
-    {topic, identifier, Package.Properties.decode(properties), nullify(payload)}
+    properties = Package.Properties.decode(properties)
+
+    case Keyword.split(properties, @allowed_properties) do
+      {^properties, []} ->
+        {topic, identifier, properties, nullify(payload)}
+
+      {_, _violations} ->
+        # todo !
+        {topic, identifier, properties, nullify(payload)}
+    end
   end
 
   defp nullify(""), do: nil
