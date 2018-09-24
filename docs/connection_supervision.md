@@ -1,9 +1,9 @@
 # Connection Supervision
 
 An important aspect of building an Elixir application is setting up a
-supervision structure that ensure the application will continue
-working if parts of the system should reach an erroneous state and
-need to get restarted into a known working state. To do this one need
+supervision structure that ensures the application will continue
+to work if parts of the system should reach an erroneous state and
+need to get restarted into a known working state. To do this one needs
 to group the processes the application consist of in a manner such
 that processes belonging together will start and terminate together.
 
@@ -14,7 +14,6 @@ connections; or by starting the connections needed directly in an
 application supervisor. This document will describe the ways of
 supervision, and give an overview for when to use a given supervision
 strategy.
-
 
 ## Linked Connection
 
@@ -31,14 +30,13 @@ Tortoise.Connection.start_link(
 
 As with any other linked process both process will terminate if either
 terminate, as described in the `Process.link/1` documentation. This
-mean that any stored state in the process that own the MQTT connection
+means that any stored state in the process that owns the MQTT connection
 will disappear with the process if the connection process
 terminates. Therefore it is not recommended to link a connection
-process like this outside of experimenting in `IEx`, but instead run
-it inside of a supervisor process. When properly supervised connection
-terminations the crash will be contained, allowing the other processes
+process like this outside of experimenting in `IEx`, but instead to run
+it inside of a supervisor process. When properly supervised connections
+terminate, the crash will be contained, allowing the other processes
 to keep their state.
-
 
 ## Supervising a connection
 
@@ -72,7 +70,7 @@ end
 ```
 
 The great thing about this approach is that the connection can live in
-the same supervision tree as the rest of the application that depend
+the same supervision tree as the rest of the application that depends
 on that connection. The connection is started, restarted, and stopped
 with the application as a whole, ensuring the connection is closed
 with the processes that depend on it.
@@ -81,11 +79,10 @@ Be sure to set a reasonable connection strategy for the
 supervisor. Refer to the `Supervisor` documentation for more
 information on usage and configuration.
 
-
 ## The `Tortoise.Supervisor`
 
-When `Tortoise` is included as a dependency in the *mix.exs*-file of
-an application `Tortoise` will automatically get started along the
+When `Tortoise` is included as a dependency in the *mix.exs* file of
+an application, `Tortoise` will automatically get started alongside the
 application. During the application start up a dynamic supervisor will
 spawn and register itself under the name `Tortoise.Supervisor`. This
 can be used to start supervised connections that will get restarted if
@@ -106,10 +103,10 @@ Tortoise.Supervisor.start_child(
 
 This is an easy and convenient way of getting started, as everything
 needed to supervise a connection is there when the `Tortoise`
-application has been initialized. One downside is that, while the
+application has been initialized. One downside is that while the
 children are supervised they are not grouped with the application that
-need the connections; they are grouped with the `Tortoise`
-application. To mitigate this a `Tortoise.Supervisor.child_spec/1`
+uses the connections; they are grouped with the `Tortoise`
+application. To mitigate this, a `Tortoise.Supervisor.child_spec/1`
 function is available, which can be used to start the
 `Tortoise.Supervisor` as part of another supervisor.
 
@@ -138,7 +135,7 @@ end
 
 Connections can now, dynamically, be attached to the supervised
 `Tortoise.Supervisor` by calling the
-`Tortoise.Supervisor.start_child/2` function and specifying the name
+`Tortoise.Supervisor.start_child/2` function with the name
 that was given to the supervisor, in this case
 *MyApp.Connection.Supervisor*.
 
@@ -152,27 +149,26 @@ Tortoise.Supervisor.start_child(
 ```
 
 This is the best way of supervising a dynamic set of connections, but
-might be overkill if only one, static connection is needed for the
+might be overkill if only one static connection is needed for the
 application.
-
 
 ## Summary
 
 `Tortoise` makes it possible to spawn connections and supervise them,
-and it is always best practice to supervise a connection to ensure it
+and it is always a best practice to supervise a connection to ensure it
 remains up. Different approaches can be taken depending on the
 situation:
 
-  * If a fixed amount of connections are needed the recommended way is
+  * If a fixed number of connections are needed, the recommended way is
     to attach them directly to a supervision tree, along with the
     processes that depend on said connections using the
-    `Tortoise.Connection.child_spec/1`
+    `Tortoise.Connection.child_spec/1` function.
 
-  * If a dynamic set of connections are needed the recommended way is
+  * If a dynamic set of connections is needed, the recommended way is
     to spawn a named `Tortoise.Supervisor` as part of a supervisor,
-    which hold the processes that depend on the connections, and spawn
+    which holds the processes that depend on the connections, and spawn
     the connections on the dynamic supervisor.
 
-Supervising the connections along the processes that rely on the
-connection ensure that the application can be started and stopped as a
-whole, and makes it possible to recover from faulty state.
+Supervising the connections along the processes that rely on them
+ensures that the application can be started and stopped as a
+whole, and makes it possible to recover from a faulty state.
