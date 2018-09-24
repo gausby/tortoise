@@ -60,71 +60,71 @@ following:
 The higher quality of service specified the more expensive a publish
 or a subscription will be bandwidth wise, as a higher QoS will require
 more protocol messages to fulfill network exchange. That is why some
-brokers administrators choose to configure their broker to refuse
-higher quality of services for some topics, or some subscriptions. In
+broker administrators choose to configure their broker to refuse
+a higher quality of service for some topics, or some subscriptions. In
 the case of subscriptions it can happen that a lower QoS than the one
 requested is accepted.
 
-**Notice**: Placing a subscription with QoS=2 does not mean that the
-client will receive messages received as QoS=2, it will receive all
+**Note**: Placing a subscription with QoS=2 does not mean that the
+client will receive messages with QoS=2, it will receive all
 messages published to that topic regardless of QoS; the message
 exchange between the broker and the client will use the specified QoS
 in the subscription.
 
-When a message is published to the broker the client sending the
+When a message is published to the broker, the client sending the
 message can specify that the broker should retain the message; if so
 the broker will keep the message and dispatch it to clients when they
 subscribe to the topic.
 
 It is also possible for a client to specify a *last will message* when
 connecting to the broker. The broker will keep this message and
-dispatch it to the specified topic when the client disconnect abruptly
+dispatch it to the specified topic when the client disconnects abruptly
 from the broker.
 
 ## The Tortoise MQTT Client
 
 Tortoise aims to hide the MQTT semantics from the user, and expose an
-interface that should be familiar to a Elixir developer. This means
-the message exchanges needed to complete a publish-, or retrieval of a
+interface that should be familiar to an Elixir developer. This means
+the message exchanges needed to complete a publish or retrieval of a
 message on a subscription with a QoS>0 should be handled in the
 background and the details of the protocol should not bleed through to
 the user.
 
 While the goal of the project is to hide the details of the MQTT
-protocol from the user another goal is not to restrict the user in any
-way. This means Tortoise will attempt to map Elixir semantics to the
-MQTT semantics, which should be possible because both systems deals
+protocol from the user, another goal is not to restrict the user in any
+way. This means Tortoise will attempt to map Elixir semantics to
+MQTT semantics, which should be possible because both systems deal
 with message passing:
 
   - A publish with QoS=0 works like a cast; send and forget.
 
-  - A publish with QoS>0 result in a message exchange between the
+  - A publish with QoS>0 results in a message exchange between the
     sender and the receiver; to keep track of these messages the MQTT
-    protocol specify that these messages should have an identifier
+    protocol specifies that these messages should have an identifier
     assigned, a random 16-bit number. The user of Tortoise will never
     see this random 16-bit number, but instead an Erlang reference
     will get returned from the publish function, which makes it
     possible to await and pattern match for the return.
 
   - Further more, when it comes to publishing messages; the client
-    should make sure that messages with a QoS>0 is delivered, so if
+    should make sure that messages with a QoS>0 are delivered, so if
     the client is offline it should store these messages and send them
     when the client is back online.
 
   - A callback behaviour is specified allowing the user to implement
-    custom behavior for when the client connects; disconnects; accept
-    a subscription; acknowledge an unsubscribe; and receive a message
+    custom behavior for when the client connects; disconnects; accepts
+    a subscription; acknowledges an unsubscribe; and receives a message
     on one of the subscribed topics.
 
 If the design of Tortoise is a hindrance to creating something with
 MQTT (within reason) it should be considered a bug, and it should be
-discussed how we should map that behaviour to the Elixir semantics.
+discussed how we should map that behaviour to Elixir semantics.
 
 ## Summary
 
 MQTT is a protocol implementing a PubSub allowing one or multiple
 clients to subscribe to topics, using topic filters, and clients to
-publish messages to topics. Tortoise is a MQTT client that aims to map
-the MQTT semantics to Elixir so sending and receiving messages using a
+publish messages to topics. Tortoise is an MQTT client that aims to map
+MQTT semantics to Elixir so sending and receiving messages using an
 MQTT broker feels like any other kind of message passing, and awaiting
 results feels natural to the Elixir ecosystem.
