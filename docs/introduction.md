@@ -106,7 +106,7 @@ with message passing:
     will get returned from the publish function, which makes it
     possible to await and pattern match for the return.
 
-  - Further more, when it comes to publishing messages; the client
+  - Furthermore, when it comes to publishing messages; the client
     should make sure that messages with a QoS>0 are delivered, so if
     the client is offline it should store these messages and send them
     when the client is back online.
