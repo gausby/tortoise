@@ -69,7 +69,7 @@ defmodule Tortoise.Connection.InflightTest do
       Inflight.update(client_id, {:received, %Package.Puback{identifier: 1}})
 
       # the calling process should get a result response
-      assert_receive {{Tortoise, ^client_id}, ^ref, :ok}
+      assert_receive {{Tortoise, ^client_id}, {Package.Publish, ^ref}, :ok}
     end
   end
 
@@ -125,7 +125,7 @@ defmodule Tortoise.Connection.InflightTest do
 
       # When we receive the pubcomp message we should respond the caller
       Inflight.update(client_id, {:received, %Package.Pubcomp{identifier: 1}})
-      assert_receive {{Tortoise, ^client_id}, ^ref, :ok}
+      assert_receive {{Tortoise, ^client_id}, {Package.Publish, ^ref}, :ok}
     end
   end
 
@@ -157,7 +157,7 @@ defmodule Tortoise.Connection.InflightTest do
 
       Inflight.update(client_id, {:received, suback})
 
-      assert_receive {{Tortoise, ^client_id}, ^ref, _}
+      assert_receive {{Tortoise, ^client_id}, {Package.Subscribe, ^ref}, _}
     end
   end
 
@@ -184,7 +184,7 @@ defmodule Tortoise.Connection.InflightTest do
       # when receiving the suback we should respond to the caller
       Inflight.update(client_id, {:received, %Package.Unsuback{identifier: 1}})
 
-      assert_receive {{Tortoise, ^client_id}, ^ref, _}
+      assert_receive {{Tortoise, ^client_id}, {Package.Unsubscribe, ^ref}, _}
     end
   end
 

@@ -7,14 +7,15 @@ defmodule Tortoise.Connection.Inflight do
 
   use GenStateMachine
 
-  @enforce_keys [:client_id]
-  defstruct client_id: nil, pending: %{}, order: []
+  @enforce_keys [:client_id, :parent]
+  defstruct client_id: nil, parent: nil, pending: %{}, order: []
 
   alias __MODULE__, as: State
 
   # Client API
   def start_link(opts) do
     client_id = Keyword.fetch!(opts, :client_id)
+
     GenStateMachine.start_link(__MODULE__, opts, name: via_name(client_id))
   end
 
@@ -81,11 +82,14 @@ defmodule Tortoise.Connection.Inflight do
   @impl true
   def init(opts) do
     client_id = Keyword.fetch!(opts, :client_id)
-    initial_data = %State{client_id: client_id}
+    parent_pid = Keyword.fetch!(opts, :parent)
+    initial_data = %State{client_id: client_id, parent: parent_pid}
 
     next_actions = [
       {:next_event, :internal, :post_init}
     ]
+
+    {:ok, _} = Tortoise.Events.register(client_id, :status)
 
     {:ok, :disconnected, initial_data, next_actions}
   end
@@ -94,7 +98,6 @@ defmodule Tortoise.Connection.Inflight do
   def handle_event(:internal, :post_init, :disconnected, data) do
     case Connection.connection(data.client_id, active: true) do
       {:ok, {_transport, _socket} = connection} ->
-        {:ok, _} = Tortoise.Events.register(data.client_id, :status)
         {:next_state, {:connected, connection}, data}
 
       {:error, :timeout} ->
@@ -267,9 +270,9 @@ defmodule Tortoise.Connection.Inflight do
         :internal,
         {:onward_publish, %Package.Publish{qos: 2} = publish},
         _,
-        %State{} = data
+        %State{client_id: client_id, parent: parent_pid} = data
       ) do
-    :ok = Controller.handle_onward(data.client_id, publish)
+    send(parent_pid, {{__MODULE__, client_id}, publish})
     :keep_state_and_data
   end
 
@@ -307,13 +310,13 @@ defmodule Tortoise.Connection.Inflight do
 
   def handle_event(
         :internal,
-        {:execute, %Track{pending: [[{:respond, caller}, _] | _]} = track},
+        {:execute, %Track{pending: [[{:respond, {pid, ref}}, _] | _]} = track},
         _state,
         %State{client_id: client_id} = data
       ) do
     case Track.result(track) do
       {:ok, result} ->
-        :ok = Controller.handle_result(client_id, {caller, track.type, result})
+        send(pid, {{Tortoise, client_id}, {track.type, ref}, result})
         {:keep_state, handle_next(track, data)}
     end
   end
@@ -330,6 +333,7 @@ defmodule Tortoise.Connection.Inflight do
       :ok ->
         :ok = transport.close(socket)
         reply = {:reply, from, :ok}
+
         {:next_state, :draining, data, reply}
     end
   end

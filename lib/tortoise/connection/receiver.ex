@@ -3,16 +3,19 @@ defmodule Tortoise.Connection.Receiver do
 
   use GenStateMachine
 
-  alias Tortoise.Connection.Controller
-  alias Tortoise.Events
+  alias Tortoise.{Events, Transport}
 
-  defstruct client_id: nil, transport: nil, socket: nil, buffer: <<>>
+  defstruct client_id: nil, transport: nil, socket: nil, buffer: <<>>, parent: nil
   alias __MODULE__, as: State
 
   def start_link(opts) do
     client_id = Keyword.fetch!(opts, :client_id)
 
-    data = %State{client_id: client_id}
+    data = %State{
+      client_id: client_id,
+      transport: Keyword.fetch!(opts, :transport),
+      parent: Keyword.fetch!(opts, :parent)
+    }
 
     GenStateMachine.start_link(__MODULE__, data, name: via_name(client_id))
   end
@@ -29,6 +32,10 @@ defmodule Tortoise.Connection.Receiver do
       restart: :permanent,
       shutdown: 500
     }
+  end
+
+  def connect(client_id) do
+    GenStateMachine.call(via_name(client_id), :connect)
   end
 
   def handle_socket(client_id, {transport, socket}) do
@@ -49,10 +56,14 @@ defmodule Tortoise.Connection.Receiver do
     {:ok, :disconnected, data}
   end
 
+  def terminate(_reason, _state) do
+    :ok
+  end
+
   @impl true
   # receiving data on the network connection
   def handle_event(:info, {transport, socket, tcp_data}, _, %{socket: socket} = data)
-      when transport in [:tcp, :ssl] do
+      when transport in [:tcp, :ssl, ScriptedTransport] do
     next_actions = [
       {:next_event, :internal, :activate_socket},
       {:next_event, :internal, :consume_buffer}
@@ -70,7 +81,6 @@ defmodule Tortoise.Connection.Receiver do
   def handle_event(:info, {transport, socket}, _state, %{socket: socket} = data)
       when transport in [:tcp_closed, :ssl_closed] do
     # should we empty the buffer?
-
     # communicate to the world that we have dropped the connection
     :ok = Events.dispatch(data.client_id, :status, :down)
     {:next_state, :disconnected, %{data | socket: nil}}
@@ -81,8 +91,13 @@ defmodule Tortoise.Connection.Receiver do
     {:stop, :no_transport}
   end
 
-  def handle_event(:internal, :activate_socket, _state_name, data) do
-    case data.transport.setopts(data.socket, active: :once) do
+  def handle_event(
+        :internal,
+        :activate_socket,
+        _state_name,
+        %State{transport: %Transport{type: transport}} = data
+      ) do
+    case transport.setopts(data.socket, active: :once) do
       :ok ->
         :keep_state_and_data
 
@@ -93,7 +108,7 @@ defmodule Tortoise.Connection.Receiver do
   end
 
   # consume buffer
-  def handle_event(:internal, :consume_buffer, _state_name, %{buffer: <<>>}) do
+  def handle_event(:internal, :consume_buffer, state_name, %{buffer: <<>>}) do
     :keep_state_and_data
   end
 
@@ -146,7 +161,7 @@ defmodule Tortoise.Connection.Receiver do
   end
 
   def handle_event(:internal, {:emit, package}, _, data) do
-    :ok = Controller.handle_incoming(data.client_id, package)
+    send(data.parent, {:incoming, package})
     :keep_state_and_data
   end
 
@@ -163,6 +178,56 @@ defmodule Tortoise.Connection.Receiver do
     new_data = %State{data | transport: transport, socket: socket, buffer: <<>>}
 
     {:next_state, new_state, new_data, next_actions}
+  end
+
+  def handle_event({:call, from}, {:handle_socket, _transport, _socket}, current_state, data) do
+    next_actions = [{:reply, from, {:error, :not_ready}}]
+    reason = {:got_socket_in_wrong_state, current_state}
+    {:stop_and_reply, reason, next_actions, data}
+  end
+
+  # connect
+  def handle_event(
+        {:call, from},
+        :connect,
+        :disconnected,
+        %State{
+          transport: %Transport{type: transport, host: host, port: port, opts: opts}
+        } = data
+      ) do
+    Events.dispatch(data.client_id, :status, :connecting)
+
+    case transport.connect(host, port, opts, 10000) do
+      {:ok, socket} ->
+        new_state = {:connected, :receiving_fixed_header}
+
+        next_actions = [
+          {:reply, from, {:ok, {transport, socket}}},
+          {:next_event, :internal, :activate_socket},
+          {:next_event, :internal, :consume_buffer}
+        ]
+
+        # better reset the buffer
+        new_data = %State{data | socket: socket, buffer: <<>>}
+        {:next_state, new_state, new_data, next_actions}
+
+      {:error, reason} ->
+        next_actions = [{:reply, from, {:error, connection_error(reason)}}]
+        {:next_state, :disconnected, data, next_actions}
+    end
+  end
+
+  defp connection_error(reason) do
+    case reason do
+      {:options, {:cacertfile, []}} ->
+        {:stop, :no_cacartfile_specified}
+
+      :nxdomain ->
+        {:retry, :nxdomain}
+
+      :econnrefused ->
+        {:retry, :econnrefused}
+    end
   end
 
   defp parse_fixed_header(<<_::8, 0::1, length::7, _::binary>>) do

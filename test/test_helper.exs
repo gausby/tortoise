@@ -101,7 +101,8 @@ defmodule Tortoise.TestGenerators do
               topic: gen_topic(),
               payload: oneof([non_empty(binary()), nil]),
               qos: gen_qos(),
-              retain: bool()
+              retain: bool(),
+              properties: [receive_maximum: 201]
             }
           ]) do
       # zero byte client id is allowed, but clean session should be set to true
@@ -118,9 +119,10 @@ defmodule Tortoise.TestGenerators do
             client_id: binary(),
             user_name: oneof([nil, utf8()]),
             password: oneof([nil, utf8()]),
-            clean_session: bool(),
+            clean_start: bool(),
             keep_alive: choose(0, 65535),
-            will: will
+            will: will,
+            properties: [receive_maximum: 201]
           } do
         connect
       end
@@ -133,14 +135,30 @@ defmodule Tortoise.TestGenerators do
   def gen_connack() do
     let connack <- %Package.Connack{
           session_present: bool(),
-          status:
+          reason:
             oneof([
-              :accepted,
-              {:refused, :unacceptable_protocol_version},
-              {:refused, :identifier_rejected},
-              {:refused, :server_unavailable},
+              :success,
+              {:refused, :unspecified_error},
+              {:refused, :malformed_packet},
+              {:refused, :protocol_error},
+              {:refused, :implementation_specific_error},
+              {:refused, :unsupported_protocol_version},
+              {:refused, :client_identifier_not_valid},
               {:refused, :bad_user_name_or_password},
-              {:refused, :not_authorized}
+              {:refused, :not_authorized},
+              {:refused, :server_unavailable},
+              {:refused, :server_busy},
+              {:refused, :banned},
+              {:refused, :bad_authentication_method},
+              {:refused, :topic_name_invalid},
+              {:refused, :packet_too_large},
+              {:refused, :quota_exceeded},
+              {:refused, :payload_format_invalid},
+              {:refused, :retain_not_supported},
+              {:refused, :qos_not_supported},
+              {:refused, :use_another_server},
+              {:refused, :server_moved},
+              {:refused, :connection_rate_exceeded}
             ])
         } do
       connack
@@ -207,16 +225,52 @@ defmodule Tortoise.TestGenerators do
   def gen_subscribe() do
     let subscribe <- %Package.Subscribe{
           identifier: gen_identifier(),
-          topics: non_empty(list({gen_topic_filter(), gen_qos()}))
+          topics: non_empty(list({gen_topic_filter(), gen_subscribe_opts()})),
+          # todo, add properties
+          properties: []
         } do
       subscribe
+    end
+  end
+
+  # @todo improve this generator
+  def gen_subscribe_opts() do
+    let {qos, no_local, retain_as_published, retain_handling} <-
+          {gen_qos(), bool(), bool(), choose(0, 3)} do
+      [
+        qos: qos,
+        no_local: no_local,
+        retain_as_published: retain_as_published,
+        retain_handling: retain_handling
+      ]
     end
   end
 
   def gen_suback() do
     let suback <- %Package.Suback{
           identifier: choose(0x0001, 0xFFFF),
-          acks: non_empty(list(oneof([{:ok, gen_qos()}, {:error, :access_denied}])))
+          acks:
+            non_empty(
+              list(
+                oneof([
+                  {:ok, gen_qos()},
+                  {:error,
+                   oneof([
+                     :unspecified_error,
+                     :implementation_specific_error,
+                     :not_authorized,
+                     :topic_filter_invalid,
+                     :packet_identifier_in_use,
+                     :quota_exceeded,
+                     :shared_subscriptions_not_supported,
+                     :subscription_identifiers_not_supported,
+                     :wildcard_subscriptions_not_supported
+                   ])}
+                ])
+              )
+            ),
+          # todo, add generators for [:reason_string, :user_property]
+          properties: []
         } do
       suback
     end
@@ -228,7 +282,8 @@ defmodule Tortoise.TestGenerators do
   def gen_unsubscribe() do
     let unsubscribe <- %Package.Unsubscribe{
           identifier: gen_identifier(),
-          topics: non_empty(list(gen_topic_filter()))
+          topics: non_empty(list(gen_topic_filter())),
+          properties: []
         } do
       unsubscribe
     end
@@ -236,15 +291,37 @@ defmodule Tortoise.TestGenerators do
 
   def gen_unsuback() do
     let unsuback <- %Package.Unsuback{
-          identifier: gen_identifier()
+          identifier: gen_identifier(),
+          results:
+            non_empty(
+              list(
+                oneof([
+                  :success,
+                  {:error,
+                   oneof([
+                     :no_subscription_existed,
+                     :unspecified_error,
+                     :implementation_specific_error,
+                     :not_authorized,
+                     :topic_filter_invalid,
+                     :packet_identifier_in_use
+                   ])}
+                ])
+              )
+            ),
+          # todo, generate :reason_string and :user_property
+          properties: []
         } do
       unsuback
     end
   end
 
   def gen_puback() do
+    # todo, make this generator generate properties and other reasons
     let puback <- %Package.Puback{
-          identifier: gen_identifier()
+          identifier: gen_identifier(),
+          reason: :success,
+          properties: []
         } do
       puback
     end
@@ -252,23 +329,31 @@ defmodule Tortoise.TestGenerators do
 
   def gen_pubcomp() do
     let pubcomp <- %Package.Pubcomp{
-          identifier: gen_identifier()
+          identifier: gen_identifier(),
+          reason: {:refused, :packet_identifier_not_found},
+          properties: []
         } do
       pubcomp
     end
   end
 
   def gen_pubrel() do
+    # todo, improve this generator
     let pubrel <- %Package.Pubrel{
-          identifier: gen_identifier()
+          identifier: gen_identifier(),
+          reason: :success,
+          properties: []
         } do
       pubrel
     end
   end
 
   def gen_pubrec() do
+    # todo, improve this generator
     let pubrec <- %Package.Pubrec{
-          identifier: gen_identifier()
+          identifier: gen_identifier(),
+          reason: :success,
+          properties: []
         } do
       pubrec
     end

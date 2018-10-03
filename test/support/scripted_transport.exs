@@ -188,7 +188,14 @@ defmodule Tortoise.Integration.ScriptedTransport do
   end
 
   def handle_call({:connect, opts, _timeout}, {client_pid, _ref}, %State{client: nil} = state) do
-    state = %State{state | client: client_pid, status: :open, opts: opts}
+    state = %State{
+      state
+      | client: client_pid,
+        status: :open,
+        opts: opts,
+        controlling_process: client_pid
+    }
+
     Kernel.send(state.test_process, {__MODULE__, :connected})
     {:reply, {:ok, self()}, setup_next(state)}
   end
@@ -268,10 +275,26 @@ defmodule Tortoise.Integration.ScriptedTransport do
     state
   end
 
-  defp setup_next(%State{script: [{:dispatch, package} | remaining]} = state) do
+  defp setup_next(%State{script: [{:dispatch, package} | remaining], opts: opts} = state) do
     data = IO.iodata_to_binary(Tortoise.Package.encode(package))
     buffer = state.buffer <> data
-    %State{state | script: remaining, buffer: buffer}
+
+    case Keyword.pop(opts, :active, false) do
+      {false, opts} ->
+        opts = [{:active, false} | opts]
+        %State{state | opts: opts, script: remaining, buffer: buffer}
+
+      {true, opts} ->
+        opts = [{:active, true} | opts]
+        Kernel.send(state.controlling_process, {ScriptedTransport, self(), buffer})
+        %State{state | opts: opts, script: remaining, buffer: <<>>}
+
+      {:once, opts} ->
+        opts = [{:active, false} | opts]
+        Kernel.send(state.controlling_process, {ScriptedTransport, self(), buffer})
+        %State{state | opts: opts, script: remaining, buffer: <<>>}
+    end
+    |> setup_next()
   end
 
   defp setup_next(%State{script: [{:expect, _} | _]} = state) do

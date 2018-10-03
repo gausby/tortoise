@@ -5,16 +5,29 @@ defmodule Tortoise.Connection do
   Todo.
   """
 
-  use GenServer
+  use GenStateMachine
 
   require Logger
 
-  defstruct [:client_id, :connect, :server, :status, :backoff, :subscriptions, :keep_alive, :opts]
+  defstruct [
+    :client_id,
+    :connect,
+    :server,
+    :backoff,
+    :subscriptions,
+    :keep_alive,
+    :opts,
+    :pending_refs,
+    :connection,
+    :ping,
+    :handler
+  ]
+
   alias __MODULE__, as: State
 
-  alias Tortoise.{Transport, Connection, Package, Events}
-  alias Tortoise.Connection.{Inflight, Controller, Receiver, Backoff}
-  alias Tortoise.Package.{Connect, Connack}
+  alias Tortoise.{Handler, Transport, Package, Events}
+  alias Tortoise.Connection.{Inflight, Backoff}
+  alias Tortoise.Package.Connect
 
   @doc """
   Start a connection process and link it to the current process.
@@ -44,7 +57,7 @@ defmodule Tortoise.Connection do
       keep_alive: Keyword.get(connection_opts, :keep_alive, 60),
       will: Keyword.get(connection_opts, :will),
       # if we re-spawn from here it means our state is gone
-      clean_session: true
+      clean_start: true
     }
 
     backoff = Keyword.get(connection_opts, :backoff, [])
@@ -62,10 +75,18 @@ defmodule Tortoise.Connection do
       end
 
     # @todo, validate that the handler is valid
-    connection_opts = Keyword.take(connection_opts, [:client_id, :handler])
-    initial = {server, connect, backoff, subscriptions, connection_opts}
+    handler =
+      opts
+      |> Keyword.get(:handler, %Handler{module: Handler.Default, initial_args: []})
+      |> Handler.new()
+
+    connection_opts = [
+      {:transport, server} | Keyword.take(connection_opts, [:client_id])
+    ]
+
+    initial = {server, connect, backoff, subscriptions, handler, connection_opts}
     opts = Keyword.merge(opts, name: via_name(client_id))
-    GenServer.start_link(__MODULE__, initial, opts)
+    GenStateMachine.start_link(__MODULE__, initial, opts)
   end
 
   @doc false
@@ -99,7 +120,7 @@ defmodule Tortoise.Connection do
   """
   @spec disconnect(Tortoise.client_id()) :: :ok
   def disconnect(client_id) do
-    GenServer.call(via_name(client_id), :disconnect)
+    GenStateMachine.call(via_name(client_id), :disconnect)
   end
 
   @doc """
@@ -110,7 +131,7 @@ defmodule Tortoise.Connection do
   """
   @spec subscriptions(Tortoise.client_id()) :: Tortoise.Package.Subscribe.t()
   def subscriptions(client_id) do
-    GenServer.call(via_name(client_id), :subscriptions)
+    GenStateMachine.call(via_name(client_id), :subscriptions)
   end
 
   @doc """
@@ -146,7 +167,7 @@ defmodule Tortoise.Connection do
     caller = {_, ref} = {self(), make_ref()}
     {identifier, opts} = Keyword.pop_first(opts, :identifier, nil)
     subscribe = Enum.into(topics, %Package.Subscribe{identifier: identifier})
-    GenServer.cast(via_name(client_id), {:subscribe, caller, subscribe, opts})
+    GenStateMachine.cast(via_name(client_id), {:subscribe, caller, subscribe, opts})
     {:ok, ref}
   end
 
@@ -233,7 +254,7 @@ defmodule Tortoise.Connection do
     caller = {_, ref} = {self(), make_ref()}
     {identifier, opts} = Keyword.pop_first(opts, :identifier, nil)
     unsubscribe = %Package.Unsubscribe{identifier: identifier, topics: topics}
-    GenServer.cast(via_name(client_id), {:unsubscribe, caller, unsubscribe, opts})
+    GenStateMachine.cast(via_name(client_id), {:unsubscribe, caller, unsubscribe, opts})
     {:ok, ref}
   end
 
@@ -290,7 +311,11 @@ defmodule Tortoise.Connection do
   PubSub.
   """
   @spec ping(Tortoise.client_id()) :: {:ok, reference()}
-  defdelegate ping(client_id), to: Tortoise.Connection.Controller
+  def ping(client_id) do
+    ref = make_ref()
+    :ok = GenStateMachine.cast(via_name(client_id), {:ping, {self(), ref}})
+    {:ok, ref}
+  end
 
   @doc """
   Ping the server and await the ping latency reply.
@@ -346,306 +371,416 @@ defmodule Tortoise.Connection do
     unless active?, do: Events.unregister(client_id, :connection)
   end
 
+  @doc false
+  @spec subscribe_all(Tortoise.client_id()) :: :ok
+  def subscribe_all(client_id) do
+    GenStateMachine.cast(via_name(client_id), :subscribe_all)
+  end
+
   # Callbacks
   @impl true
-  def init(
-        {transport, %Connect{client_id: client_id} = connect, backoff_opts, subscriptions, opts}
-      ) do
-    state = %State{
-      client_id: client_id,
+  def init({transport, connect, backoff_opts, subscriptions, handler, opts}) do
+    data = %State{
+      client_id: connect.client_id,
       server: transport,
       connect: connect,
       backoff: Backoff.new(backoff_opts),
       subscriptions: subscriptions,
       opts: opts,
-      status: :down
+      pending_refs: %{},
+      ping: :queue.new(),
+      handler: handler
     }
 
-    Tortoise.Registry.put_meta(via_name(client_id), :connecting)
-    Tortoise.Events.register(client_id, :status)
+    case Handler.execute(handler, :init) do
+      {:ok, %Handler{} = updated_handler} ->
+        {:ok, _pid} = Tortoise.Events.register(data.client_id, :status)
 
-    # eventually, switch to handle_continue
-    send(self(), :connect)
-    {:ok, state}
+        next_events = [{:next_event, :internal, :connect}]
+        updated_data = %State{data | handler: updated_handler}
+        {:ok, :connecting, updated_data, next_events}
+
+        # todo, handle ignore from handler:init/1
+    end
   end
 
   @impl true
-  def terminate(_reason, state) do
-    :ok = Tortoise.Registry.delete_meta(via_name(state.connect.client_id))
-    :ok = Events.dispatch(state.client_id, :status, :terminated)
+  def terminate(reason, _state, %State{handler: handler}) do
+    _ignored = Handler.execute(handler, {:terminate, reason})
     :ok
   end
 
   @impl true
-  def handle_info(:connect, state) do
-    # make sure we will not fall for a keep alive timeout while we reconnect
-    state = cancel_keep_alive(state)
+  def handle_event(:info, {:incoming, package}, _, _data) when is_binary(package) do
+    next_actions = [{:next_event, :internal, {:received, Package.decode(package)}}]
+    {:keep_state_and_data, next_actions}
+  end
 
-    with {%Connack{status: :accepted} = connack, socket} <-
-           do_connect(state.server, state.connect),
-         {:ok, state} = init_connection(socket, state) do
-      # we are connected; reset backoff state, etc
-      state =
-        %State{state | backoff: Backoff.reset(state.backoff)}
-        |> update_connection_status(:up)
-        |> reset_keep_alive()
+  # connection acknowledgement
+  def handle_event(
+        :internal,
+        {:received, %Package.Connack{reason: :success} = connack},
+        # :handshake,
+        :connecting,
+        %State{server: %Transport{type: transport}, connection: {transport, socket}} = data
+      ) do
+    connection = {transport, socket}
+    :ok = Tortoise.Registry.put_meta(via_name(data.client_id), connection)
+    :ok = Events.dispatch(data.client_id, :connection, connection)
+    :ok = Events.dispatch(data.client_id, :status, :connected)
 
-      case connack do
-        %Connack{session_present: true} ->
-          {:noreply, state}
+    case connack do
+      %Package.Connack{session_present: true} ->
+        {:next_state, :connected, data}
 
-        %Connack{session_present: false} ->
-          :ok = Inflight.reset(state.client_id)
-          unless Enum.empty?(state.subscriptions), do: send(self(), :subscribe)
-          {:noreply, state}
-      end
+      %Package.Connack{session_present: false} ->
+        caller = {self(), make_ref()}
+
+        next_actions = [
+          {:next_event, :cast, {:subscribe, caller, data.subscriptions, []}}
+        ]
+
+        {:next_state, :connected, data, next_actions}
+    end
+  end
+
+  def handle_event(
+        :internal,
+        {:received, %Package.Connack{reason: {:refused, reason}}},
+        # :handshake,
+        :connecting,
+        %State{} = data
+      ) do
+    {:stop, {:connection_failed, reason}, data}
+  end
+
+  def handle_event(
+        :internal,
+        {:received, package},
+        # :handshake,
+        :connecting,
+        %State{} = data
+      ) do
+    reason = %{expected: [Package.Connack, Package.Auth], got: package}
+    {:stop, {:protocol_violation, reason}, data}
+  end
+
+  # publish packages
+  def handle_event(
+        :internal,
+        {:received, %Package.Publish{qos: 0, dup: false} = publish},
+        _,
+        %State{handler: handler} = data
+      ) do
+    case Handler.execute(handler, {:publish, publish}) do
+      {:ok, updated_handler} ->
+        {:keep_state, %State{data | handler: updated_handler}}
+
+        # handle stop
+    end
+  end
+
+  # incoming publish QoS=1 ---------------------------------------------
+  def handle_event(
+        :internal,
+        {:received, %Package.Publish{qos: 1} = publish},
+        :connected,
+        %State{client_id: client_id, handler: handler} = data
+      ) do
+    :ok = Inflight.track(client_id, {:incoming, publish})
+
+    case Handler.execute(handler, {:publish, publish}) do
+      {:ok, updated_handler} ->
+        {:keep_state, %State{data | handler: updated_handler}}
+    end
+  end
+
+  # outgoing publish QoS=1 ---------------------------------------------
+  def handle_event(
+        :internal,
+        {:received, %Package.Puback{} = puback},
+        _,
+        %State{client_id: client_id}
+      ) do
+    :ok = Inflight.update(client_id, {:received, puback})
+    :keep_state_and_data
+  end
+
+  # incoming publish QoS=2 ---------------------------------------------
+  def handle_event(
+        :internal,
+        {:received, %Package.Publish{qos: 2} = publish},
+        :connected,
+        %State{client_id: client_id}
+      ) do
+    :ok = Inflight.track(client_id, {:incoming, publish})
+    :keep_state_and_data
+  end
+
+  def handle_event(
+        :internal,
+        {:received, %Package.Pubrel{} = pubrel},
+        :connected,
+        %State{client_id: client_id}
+      ) do
+    :ok = Inflight.update(client_id, {:received, pubrel})
+    :keep_state_and_data
+  end
+
+  # an incoming publish with QoS=2 will get parked in the inflight
+  # manager process, which will onward it to the controller, making
+  # sure we will only dispatch it once to the publish-handler.
+  def handle_event(
+        :info,
+        {{Inflight, client_id}, %Package.Publish{qos: 2} = publish},
+        _,
+        %State{client_id: client_id, handler: handler} = data
+      ) do
+    case Handler.execute(handler, {:publish, publish}) do
+      {:ok, updated_handler} ->
+        {:keep_state, %State{data | handler: updated_handler}}
+    end
+  end
+
+  # outgoing publish QoS=2 ---------------------------------------------
+  def handle_event(
+        :internal,
+        {:received, %Package.Pubrec{} = pubrec},
+        :connected,
+        %State{client_id: client_id}
+      ) do
+    :ok = Inflight.update(client_id, {:received, pubrec})
+    :keep_state_and_data
+  end
+
+  def handle_event(
+        :internal,
+        {:received, %Package.Pubcomp{} = pubcomp},
+        :connected,
+        %State{client_id: client_id}
+      ) do
+    :ok = Inflight.update(client_id, {:received, pubcomp})
+    :keep_state_and_data
+  end
+
+  # subscription logic
+  def handle_event(
+        :cast,
+        {:subscribe, caller, subscribe, _opts},
+        :connected,
+        %State{client_id: client_id} = data
+      ) do
+    unless Enum.empty?(subscribe) do
+      {:ok, ref} = Inflight.track(client_id, {:outgoing, subscribe})
+      pending = Map.put_new(data.pending_refs, ref, caller)
+
+      {:keep_state, %State{data | pending_refs: pending}}
     else
-      %Connack{status: {:refused, reason}} ->
-        {:stop, {:connection_failed, reason}, state}
-
-      {:error, reason} ->
-        {timeout, state} = Map.get_and_update(state, :backoff, &Backoff.next/1)
-
-        case categorize_error(reason) do
-          :connectivity ->
-            Process.send_after(self(), :connect, timeout)
-            {:noreply, state}
-
-          :other ->
-            {:stop, reason, state}
-        end
+      :keep_state_and_data
     end
   end
 
-  def handle_info(:subscribe, %State{subscriptions: subscriptions} = state) do
-    client_id = state.connect.client_id
+  def handle_event(:cast, {:subscribe, _, _, _}, _state_name, _data) do
+    {:keep_state_and_data, [:postpone]}
+  end
 
-    case Enum.empty?(subscriptions) do
-      true ->
-        # nothing to subscribe to, just continue
-        {:noreply, state}
+  def handle_event(
+        :internal,
+        {:received, %Package.Suback{} = suback},
+        :connected,
+        data
+      ) do
+    :ok = Inflight.update(data.client_id, {:received, suback})
+    :keep_state_and_data
+  end
 
-      false ->
-        # subscribe to the predefined topics
-        case Inflight.track_sync(client_id, {:outgoing, subscriptions}, 5000) do
-          {:error, :timeout} ->
-            {:stop, :subscription_timeout, state}
-
-          result ->
-            case handle_suback_result(result, state) do
-              {:ok, updated_state} ->
-                {:noreply, updated_state}
-
-              {:error, reasons} ->
-                error = {:unable_to_subscribe, reasons}
-                {:stop, error, state}
-            end
-        end
+  def handle_event(
+        :info,
+        {{Tortoise, client_id}, {Package.Subscribe, ref}, result},
+        _current_state,
+        %State{client_id: client_id, pending_refs: %{} = pending} = data
+      ) do
+    case Map.pop(pending, ref) do
+      {{pid, msg_ref}, updated_pending} when is_pid(pid) and is_reference(msg_ref) ->
+        unless pid == self(), do: send(pid, {{Tortoise, client_id}, msg_ref, :ok})
+        subscriptions = Enum.into(result[:ok] ++ result[:warn], data.subscriptions)
+        {:keep_state, %State{data | subscriptions: subscriptions, pending_refs: updated_pending}}
     end
   end
 
-  def handle_info(:ping, %State{} = state) do
-    case Controller.ping_sync(state.connect.client_id, 5000) do
-      {:ok, round_trip_time} ->
-        Events.dispatch(state.connect.client_id, :ping_response, round_trip_time)
-        state = reset_keep_alive(state)
-        {:noreply, state}
+  def handle_event(:cast, {:unsubscribe, caller, unsubscribe, opts}, :connected, data) do
+    client_id = data.client_id
+    _timeout = Keyword.get(opts, :timeout, 5000)
 
-      {:error, :timeout} ->
-        {:stop, :ping_timeout, state}
+    {:ok, ref} = Inflight.track(client_id, {:outgoing, unsubscribe})
+    pending = Map.put_new(data.pending_refs, ref, caller)
+
+    {:keep_state, %State{data | pending_refs: pending}}
+  end
+
+  def handle_event(
+        :internal,
+        {:received, %Package.Unsuback{} = unsuback},
+        :connected,
+        data
+      ) do
+    :ok = Inflight.update(data.client_id, {:received, unsuback})
+    :keep_state_and_data
+  end
+
+  def handle_event(
+        :info,
+        {{Tortoise, client_id}, {Package.Unsubscribe, ref}, unsubbed},
+        _current_state,
+        %State{client_id: client_id, pending_refs: %{} = pending} = data
+      ) do
+    case Map.pop(pending, ref) do
+      {{pid, msg_ref}, updated_pending} when is_pid(pid) and is_reference(msg_ref) ->
+        topics = Keyword.drop(data.subscriptions.topics, unsubbed)
+        subscriptions = %Package.Subscribe{data.subscriptions | topics: topics}
+        unless pid == self(), do: send(pid, {{Tortoise, client_id}, msg_ref, :ok})
+        {:keep_state, %State{data | pending_refs: updated_pending, subscriptions: subscriptions}}
     end
   end
 
-  # dropping connection
-  def handle_info({transport, _socket}, state) when transport in [:tcp_closed, :ssl_closed] do
-    Logger.error("Socket closed before we handed it to the receiver")
-    # communicate that we are down
-    :ok = Events.dispatch(state.client_id, :status, :down)
-    {:noreply, state}
+  def handle_event({:call, from}, :subscriptions, _, %State{subscriptions: subscriptions}) do
+    next_actions = [{:reply, from, subscriptions}]
+    {:keep_state_and_data, next_actions}
   end
 
-  # react to connection status change events
-  def handle_info(
+  # connection logic ===================================================
+  def handle_event(
+        :internal,
+        :connect,
+        :connecting,
+        %State{connect: connect, backoff: backoff} = data
+      ) do
+    :ok = Tortoise.Registry.put_meta(via_name(data.client_id), :connecting)
+
+    with :ok = start_connection_supervisor([{:parent, self()} | data.opts]),
+         {:ok, {transport, socket}} <- Tortoise.Connection.Receiver.connect(data.client_id),
+         :ok = transport.send(socket, Package.encode(data.connect)) do
+      new_data = %State{
+        data
+        | connect: %Connect{connect | clean_start: false},
+          connection: {transport, socket}
+      }
+
+      # {:next_state, :handshake, new_state}
+      {:keep_state, new_data}
+    else
+      {:error, {:stop, reason}} ->
+        {:stop, reason, data}
+
+      {:error, {:retry, _reason}} ->
+        # {timeout, updated_data} = Map.get_and_update(data, :backoff, &Backoff.next/1)
+        next_actions = [{:next_event, :internal, :connect}]
+        {:keep_state, data, next_actions}
+    end
+  end
+
+  # system state changes; we need to react to connection down messages
+  def handle_event(
+        :info,
+        {{Tortoise, client_id}, :status, current_state},
+        current_state,
+        %State{} = data
+      ) do
+    :keep_state_and_data
+  end
+
+  def handle_event(
+        :info,
         {{Tortoise, client_id}, :status, status},
-        %{client_id: client_id, status: current} = state
+        _current_state,
+        %State{handler: handler, client_id: client_id} = data
       ) do
     case status do
-      ^current ->
-        {:noreply, state}
-
-      :up ->
-        {:noreply, %State{state | status: status}}
-
       :down ->
-        send(self(), :connect)
-        {:noreply, %State{state | status: status}}
-    end
-  end
+        next_actions = [{:next_event, :internal, :connect}]
 
-  @impl true
-  def handle_call(:subscriptions, _from, state) do
-    {:reply, state.subscriptions, state}
-  end
+        case Handler.execute(handler, {:connection, status}) do
+          {:ok, updated_handler} ->
+            updated_data = %State{data | handler: updated_handler}
+            {:next_state, :connecting, updated_data, next_actions}
+        end
 
-  def handle_call(:disconnect, from, state) do
-    :ok = Events.dispatch(state.client_id, :status, :terminating)
-    :ok = Inflight.drain(state.client_id)
-    :ok = Controller.stop(state.client_id)
-    :ok = GenServer.reply(from, :ok)
-    {:stop, :shutdown, state}
-  end
-
-  @impl true
-  def handle_cast({:subscribe, {caller_pid, ref}, subscribe, opts}, state) do
-    client_id = state.connect.client_id
-    timeout = Keyword.get(opts, :timeout, 5000)
-
-    case Inflight.track_sync(client_id, {:outgoing, subscribe}, timeout) do
-      {:error, :timeout} = error ->
-        send(caller_pid, {{Tortoise, client_id}, ref, error})
-        {:noreply, state}
-
-      result ->
-        case handle_suback_result(result, state) do
-          {:ok, updated_state} ->
-            send(caller_pid, {{Tortoise, client_id}, ref, :ok})
-            {:noreply, updated_state}
-
-          {:error, reasons} ->
-            error = {:unable_to_subscribe, reasons}
-            send(caller_pid, {{Tortoise, client_id}, ref, {:error, reasons}})
-            {:stop, error, state}
+      _otherwise ->
+        case Handler.execute(handler, {:connection, status}) do
+          {:ok, updated_handler} ->
+            {:keep_state, %State{data | handler: updated_handler}}
         end
     end
   end
 
-  def handle_cast({:unsubscribe, {caller_pid, ref}, unsubscribe, opts}, state) do
-    client_id = state.connect.client_id
-    timeout = Keyword.get(opts, :timeout, 5000)
+  # disconnect protocol messages ---------------------------------------
+  def handle_event(
+        {:call, from},
+        :disconnect,
+        :connected,
+        %State{client_id: client_id} = data
+      ) do
+    :ok = Events.dispatch(client_id, :status, :terminating)
 
-    case Inflight.track_sync(client_id, {:outgoing, unsubscribe}, timeout) do
-      {:error, :timeout} = error ->
-        send(caller_pid, {{Tortoise, client_id}, ref, error})
-        {:noreply, state}
+    :ok = Inflight.drain(client_id)
 
-      unsubbed ->
-        topics = Keyword.drop(state.subscriptions.topics, unsubbed)
-        subscriptions = %Package.Subscribe{state.subscriptions | topics: topics}
-        send(caller_pid, {{Tortoise, client_id}, ref, :ok})
-        {:noreply, %State{state | subscriptions: subscriptions}}
-    end
+    {:stop_and_reply, :shutdown, [{:reply, from, :ok}], data}
   end
 
-  # Helpers
-  defp handle_suback_result(%{:error => []} = results, %State{} = state) do
-    subscriptions = Enum.into(results[:ok], state.subscriptions)
-    {:ok, %State{state | subscriptions: subscriptions}}
+  def handle_event(
+        {:call, _from},
+        :disconnect,
+        _,
+        %State{}
+      ) do
+    {:keep_state_and_data, [:postpone]}
   end
 
-  defp handle_suback_result(%{:error => errors}, %State{}) do
-    {:error, errors}
+  # ping handling ------------------------------------------------------
+  def handle_event(
+        :cast,
+        {:ping, caller},
+        :connected,
+        %State{connection: {transport, socket}} = data
+      ) do
+    time = System.monotonic_time(:microsecond)
+    apply(transport, :send, [socket, Package.encode(%Package.Pingreq{})])
+    ping = :queue.in({caller, time}, data.ping)
+    {:keep_state, %State{data | ping: ping}}
   end
 
-  defp reset_keep_alive(%State{keep_alive: nil} = state) do
-    ref = Process.send_after(self(), :ping, state.connect.keep_alive * 1000)
-    %State{state | keep_alive: ref}
+  # def handle_event(:cast, {:ping, _}, _, %State{}) do
+  #   {:keep_state_and_data, [:postpone]}
+  # end
+
+  def handle_event(
+        :internal,
+        {:received, %Package.Pingresp{}},
+        :connected,
+        %State{ping: ping} = data
+      ) do
+    {{:value, {{caller, ref}, start_time}}, ping} = :queue.out(ping)
+    round_trip_time = System.monotonic_time(:microsecond) - start_time
+    send(caller, {Tortoise, {:ping_response, ref, round_trip_time}})
+    {:keep_state, %State{data | ping: ping}}
   end
 
-  defp reset_keep_alive(%State{keep_alive: previous_ref} = state) do
-    # Cancel the previous timer, just in case one was already set
-    _ = Process.cancel_timer(previous_ref)
-    ref = Process.send_after(self(), :ping, state.connect.keep_alive * 1000)
-    %State{state | keep_alive: ref}
-  end
-
-  defp cancel_keep_alive(%State{keep_alive: nil} = state) do
-    state
-  end
-
-  defp cancel_keep_alive(%State{keep_alive: keep_alive_ref} = state) do
-    _ = Process.cancel_timer(keep_alive_ref)
-    %State{state | keep_alive: nil}
-  end
-
-  # dispatch connection status if the connection status change
-  defp update_connection_status(%State{status: same} = state, same) do
-    state
-  end
-
-  defp update_connection_status(%State{} = state, status) do
-    :ok = Events.dispatch(state.connect.client_id, :status, status)
-    %State{state | status: status}
-  end
-
-  defp do_connect(server, %Connect{} = connect) do
-    %Transport{type: transport, host: host, port: port, opts: opts} = server
-
-    with {:ok, socket} <- transport.connect(host, port, opts, 10000),
-         :ok = transport.send(socket, Package.encode(connect)),
-         {:ok, packet} <- transport.recv(socket, 4, 5000) do
-      try do
-        case Package.decode(packet) do
-          %Connack{status: :accepted} = connack ->
-            {connack, socket}
-
-          %Connack{status: {:refused, _reason}} = connack ->
-            connack
-        end
-      catch
-        :error, {:badmatch, _unexpected} ->
-          violation = %{expected: Connect, got: packet}
-          {:error, {:protocol_violation, violation}}
-      end
-    else
-      {:error, :econnrefused} ->
-        {:error, {:connection_refused, host, port}}
-
-      {:error, :nxdomain} ->
-        {:error, {:nxdomain, host, port}}
-
-      {:error, {:options, {:cacertfile, []}}} ->
-        {:error, :no_cacartfile_specified}
-
-      {:error, :closed} ->
-        {:error, :server_closed_connection}
-    end
-  end
-
-  defp init_connection(socket, %State{opts: opts, server: transport, connect: connect} = state) do
-    connection = {transport.type, socket}
-    :ok = start_connection_supervisor(opts)
-    :ok = Receiver.handle_socket(connect.client_id, connection)
-    :ok = Tortoise.Registry.put_meta(via_name(connect.client_id), connection)
-    :ok = Events.dispatch(connect.client_id, :connection, connection)
-
-    # set clean session to false for future reconnect attempts
-    connect = %Connect{connect | clean_session: false}
-    {:ok, %State{state | connect: connect}}
+  def handle_event(
+        :internal,
+        {:received, package},
+        _current_state,
+        %State{} = data
+      ) do
+    {:stop, {:protocol_violation, {:unexpected_package, package}}, data}
   end
 
   defp start_connection_supervisor(opts) do
-    case Connection.Supervisor.start_link(opts) do
+    case Tortoise.Connection.Supervisor.start_link(opts) do
       {:ok, _pid} ->
         :ok
 
       {:error, {:already_started, _pid}} ->
         :ok
     end
-  end
-
-  defp categorize_error({:nxdomain, _host, _port}) do
-    :connectivity
-  end
-
-  defp categorize_error({:connection_refused, _host, _port}) do
-    :connectivity
-  end
-
-  defp categorize_error(:server_closed_connection) do
-    :connectivity
-  end
-
-  defp categorize_error(_other) do
-    :other
   end
 end

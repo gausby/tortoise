@@ -147,28 +147,30 @@ defmodule Tortoise.Connection.ControllerTest do
   describe "Connection Control Packets" do
     setup [:setup_controller]
 
-    test "receiving a connect from the server is a protocol violation",
-         %{controller_pid: pid} = context do
-      Process.flag(:trap_exit, true)
-      # receiving a connect from the server is a protocol violation
-      connect = %Package.Connect{client_id: "foo"}
-      Controller.handle_incoming(context.client_id, connect)
+    # done
+    # test "receiving a connect from the server is a protocol violation",
+    #      %{controller_pid: pid} = context do
+    #   Process.flag(:trap_exit, true)
+    #   # receiving a connect from the server is a protocol violation
+    #   connect = %Package.Connect{client_id: "foo"}
+    #   Controller.handle_incoming(context.client_id, connect)
 
-      assert_receive {:EXIT, ^pid,
-                      {:protocol_violation, {:unexpected_package_from_remote, ^connect}}}
-    end
+    #   assert_receive {:EXIT, ^pid,
+    #                   {:protocol_violation, {:unexpected_package_from_remote, ^connect}}}
+    # end
 
-    test "receiving a connack at this point is a protocol violation",
-         %{controller_pid: pid} = context do
-      Process.flag(:trap_exit, true)
-      # receiving a connack from the server *after* the connection has
-      # been acknowledged is a protocol violation
-      connack = %Package.Connack{status: :accepted}
-      Controller.handle_incoming(context.client_id, connack)
+    # done
+    # test "receiving a connack at this point is a protocol violation",
+    #      %{controller_pid: pid} = context do
+    #   Process.flag(:trap_exit, true)
+    #   # receiving a connack from the server *after* the connection has
+    #   # been acknowledged is a protocol violation
+    #   connack = %Package.Connack{reason: :success}
+    #   Controller.handle_incoming(context.client_id, connack)
 
-      assert_receive {:EXIT, ^pid,
-                      {:protocol_violation, {:unexpected_package_from_remote, ^connack}}}
-    end
+    #   assert_receive {:EXIT, ^pid,
+    #                   {:protocol_violation, {:unexpected_package_from_remote, ^connack}}}
+    # end
 
     test "receiving a disconnect from the server is a protocol violation",
          %{controller_pid: pid} = context do
@@ -214,15 +216,16 @@ defmodule Tortoise.Connection.ControllerTest do
       assert_receive {:ping_result, _time}
     end
 
-    test "receiving a ping request", %{controller_pid: pid} = context do
-      Process.flag(:trap_exit, true)
-      # receiving a ping request from the server is a protocol violation
-      pingreq = %Package.Pingreq{}
-      Controller.handle_incoming(context.client_id, pingreq)
+    # done
+    # test "receiving a ping request", %{controller_pid: pid} = context do
+    #   Process.flag(:trap_exit, true)
+    #   # receiving a ping request from the server is a protocol violation
+    #   pingreq = %Package.Pingreq{}
+    #   Controller.handle_incoming(context.client_id, pingreq)
 
-      assert_receive {:EXIT, ^pid,
-                      {:protocol_violation, {:unexpected_package_from_remote, ^pingreq}}}
-    end
+    #   assert_receive {:EXIT, ^pid,
+    #                   {:protocol_violation, {:unexpected_package_from_remote, ^pingreq}}}
+    # end
 
     test "ping request reports are sent in the correct order", context do
       # send two ping requests to the server
@@ -289,7 +292,7 @@ defmodule Tortoise.Connection.ControllerTest do
       # the server will send back an ack message
       Controller.handle_incoming(client_id, %Package.Puback{identifier: 1})
       # the caller should get a message in its mailbox
-      assert_receive {{Tortoise, ^client_id}, ^ref, :ok}
+      assert_receive {{Tortoise, ^client_id}, {Package.Publish, ^ref}, :ok}
     end
 
     test "outgoing publish with qos 1 sync call", context do
@@ -383,7 +386,7 @@ defmodule Tortoise.Connection.ControllerTest do
       # receive pubcomp
       Controller.handle_incoming(client_id, %Package.Pubcomp{identifier: 1})
       # the caller should get a message in its mailbox
-      assert_receive {{Tortoise, ^client_id}, ^ref, :ok}
+      assert_receive {{Tortoise, ^client_id}, {Package.Publish, ^ref}, :ok}
     end
   end
 
@@ -408,7 +411,7 @@ defmodule Tortoise.Connection.ControllerTest do
       # the server will send back a subscription acknowledgement message
       :ok = Controller.handle_incoming(client_id, suback)
 
-      assert_receive {{Tortoise, ^client_id}, ^ref, _}
+      assert_receive {{Tortoise, ^client_id}, {Package.Subscribe, ^ref}, _}
       # the client callback module should get the subscribe notifications in order
       assert_receive %TestHandler{subscriptions: [{"foo", :ok}]}
       assert_receive %TestHandler{subscriptions: [{"bar", :ok} | _]}

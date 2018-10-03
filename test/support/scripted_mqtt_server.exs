@@ -58,6 +58,11 @@ defmodule Tortoise.Integration.ScriptedMqttServer do
     end
   end
 
+  def handle_call({:enact, script}, {pid, _} = caller, %State{client_pid: pid} = state) do
+    GenServer.reply(caller, {:ok, state.server_info})
+    next_action(%State{state | script: state.script ++ script})
+  end
+
   def handle_call({:enact, script}, {pid, _} = caller, state) do
     GenServer.reply(caller, {:ok, state.server_info})
     {:ok, client} = state.transport.accept(state.server_socket, 200)

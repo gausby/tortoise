@@ -5,9 +5,9 @@ defmodule Tortoise.ConnectionTest do
   use ExUnit.Case, async: true
   doctest Tortoise.Connection
 
-  alias Tortoise.Integration.ScriptedMqttServer
-  alias Tortoise.Integration.ScriptedTransport
+  alias Tortoise.Integration.{ScriptedMqttServer, ScriptedTransport}
   alias Tortoise.Connection
+  alias Tortoise.Connection.Inflight
   alias Tortoise.Package
 
   setup context do
@@ -46,14 +46,39 @@ defmodule Tortoise.ConnectionTest do
      }}
   end
 
+  def setup_connection_and_perform_handshake(%{
+        client_id: client_id,
+        scripted_mqtt_server: scripted_mqtt_server
+      }) do
+    script = [
+      {:receive, %Package.Connect{client_id: client_id}},
+      {:send, %Package.Connack{reason: :success, session_present: false}}
+    ]
+
+    {:ok, {ip, port}} = ScriptedMqttServer.enact(scripted_mqtt_server, script)
+
+    opts = [
+      client_id: client_id,
+      server: {Tortoise.Transport.Tcp, [host: ip, port: port]},
+      handler: {Tortoise.Handler.Default, []}
+    ]
+
+    assert {:ok, connection_pid} = Connection.start_link(opts)
+
+    assert_receive {ScriptedMqttServer, {:received, %Package.Connect{}}}
+    assert_receive {ScriptedMqttServer, :completed}
+
+    {:ok, %{connection_pid: connection_pid}}
+  end
+
   describe "successful connect" do
     setup [:setup_scripted_mqtt_server]
 
     test "without present state", context do
       client_id = context.client_id
 
-      connect = %Package.Connect{client_id: client_id, clean_session: true}
-      expected_connack = %Package.Connack{status: :accepted, session_present: false}
+      connect = %Package.Connect{client_id: client_id, clean_start: true}
+      expected_connack = %Package.Connack{reason: :success, session_present: false}
 
       script = [{:receive, connect}, {:send, expected_connack}]
 
@@ -73,15 +98,15 @@ defmodule Tortoise.ConnectionTest do
     test "reconnect with present state", context do
       client_id = context.client_id
 
-      connect = %Package.Connect{client_id: client_id, clean_session: true}
-      reconnect = %Package.Connect{connect | clean_session: false}
+      connect = %Package.Connect{client_id: client_id, clean_start: true}
+      reconnect = %Package.Connect{connect | clean_start: false}
 
       script = [
         {:receive, connect},
-        {:send, %Package.Connack{status: :accepted, session_present: false}},
+        {:send, %Package.Connack{reason: :success, session_present: false}},
         :disconnect,
         {:receive, reconnect},
-        {:send, %Package.Connack{status: :accepted, session_present: true}}
+        {:send, %Package.Connack{reason: :success, session_present: true}}
       ]
 
       {:ok, {ip, port}} = ScriptedMqttServer.enact(context.scripted_mqtt_server, script)
@@ -102,7 +127,7 @@ defmodule Tortoise.ConnectionTest do
   describe "unsuccessful connect" do
     setup [:setup_scripted_mqtt_server]
 
-    test "unacceptable protocol version", context do
+    test "unsupported protocol version", context do
       Process.flag(:trap_exit, true)
       client_id = context.client_id
 
@@ -110,7 +135,7 @@ defmodule Tortoise.ConnectionTest do
 
       script = [
         {:receive, connect},
-        {:send, %Package.Connack{status: {:refused, :unacceptable_protocol_version}}}
+        {:send, %Package.Connack{reason: {:refused, :unsupported_protocol_version}}}
       ]
 
       true = Process.unlink(context.scripted_mqtt_server)
@@ -126,15 +151,15 @@ defmodule Tortoise.ConnectionTest do
 
       assert_receive {ScriptedMqttServer, {:received, ^connect}}
       assert_receive {ScriptedMqttServer, :completed}
-      assert_receive {:EXIT, ^pid, {:connection_failed, :unacceptable_protocol_version}}
+      assert_receive {:EXIT, ^pid, {:connection_failed, :unsupported_protocol_version}}
     end
 
-    test "identifier rejected", context do
+    test "reject client identifier", context do
       Process.flag(:trap_exit, true)
       client_id = context.client_id
 
       connect = %Package.Connect{client_id: client_id}
-      expected_connack = %Package.Connack{status: {:refused, :identifier_rejected}}
+      expected_connack = %Package.Connack{reason: {:refused, :client_identifier_not_valid}}
 
       script = [{:receive, connect}, {:send, expected_connack}]
       {:ok, {ip, port}} = ScriptedMqttServer.enact(context.scripted_mqtt_server, script)
@@ -148,7 +173,7 @@ defmodule Tortoise.ConnectionTest do
       assert {:ok, pid} = Connection.start_link(opts)
       assert_receive {ScriptedMqttServer, {:received, ^connect}}
       assert_receive {ScriptedMqttServer, :completed}
-      assert_receive {:EXIT, ^pid, {:connection_failed, :identifier_rejected}}
+      assert_receive {:EXIT, ^pid, {:connection_failed, :client_identifier_not_valid}}
     end
 
     test "server unavailable", context do
@@ -156,7 +181,7 @@ defmodule Tortoise.ConnectionTest do
       client_id = context.client_id
 
       connect = %Package.Connect{client_id: client_id}
-      expected_connack = %Package.Connack{status: {:refused, :server_unavailable}}
+      expected_connack = %Package.Connack{reason: {:refused, :server_unavailable}}
 
       script = [{:receive, connect}, {:send, expected_connack}]
       {:ok, {ip, port}} = ScriptedMqttServer.enact(context.scripted_mqtt_server, script)
@@ -178,8 +203,7 @@ defmodule Tortoise.ConnectionTest do
       client_id = context.client_id
 
       connect = %Package.Connect{client_id: client_id}
-      expected_connack = %Package.Connack{status: {:refused, :bad_user_name_or_password}}
-
+      expected_connack = %Package.Connack{reason: {:refused, :bad_user_name_or_password}}
       script = [{:receive, connect}, {:send, expected_connack}]
       {:ok, {ip, port}} = ScriptedMqttServer.enact(context.scripted_mqtt_server, script)
 
@@ -200,7 +224,7 @@ defmodule Tortoise.ConnectionTest do
       client_id = context.client_id
 
       connect = %Package.Connect{client_id: client_id}
-      expected_connack = %Package.Connack{status: {:refused, :not_authorized}}
+      expected_connack = %Package.Connack{reason: {:refused, :not_authorized}}
 
       script = [{:receive, connect}, {:send, expected_connack}]
       {:ok, {ip, port}} = ScriptedMqttServer.enact(context.scripted_mqtt_server, script)
@@ -225,14 +249,14 @@ defmodule Tortoise.ConnectionTest do
     test "successful subscription", context do
       client_id = context.client_id
 
-      connect = %Package.Connect{client_id: client_id, clean_session: true}
+      connect = %Package.Connect{client_id: client_id, clean_start: true}
       subscription_foo = Enum.into([{"foo", 0}], %Package.Subscribe{identifier: 1})
       subscription_bar = Enum.into([{"bar", 1}], %Package.Subscribe{identifier: 2})
       subscription_baz = Enum.into([{"baz", 2}], %Package.Subscribe{identifier: 3})
 
       script = [
         {:receive, connect},
-        {:send, %Package.Connack{status: :accepted, session_present: false}},
+        {:send, %Package.Connack{reason: :success, session_present: false}},
         # subscribe to foo with qos 0
         {:receive, subscription_foo},
         {:send, %Package.Suback{identifier: 1, acks: [{:ok, 0}]}},
@@ -283,13 +307,13 @@ defmodule Tortoise.ConnectionTest do
     test "successful unsubscribe", context do
       client_id = context.client_id
 
-      connect = %Package.Connect{client_id: client_id, clean_session: true}
+      connect = %Package.Connect{client_id: client_id, clean_start: true}
       unsubscribe_foo = %Package.Unsubscribe{identifier: 2, topics: ["foo"]}
       unsubscribe_bar = %Package.Unsubscribe{identifier: 3, topics: ["bar"]}
 
       script = [
         {:receive, connect},
-        {:send, %Package.Connack{status: :accepted, session_present: false}},
+        {:send, %Package.Connack{reason: :success, session_present: false}},
         {:receive, %Package.Subscribe{topics: [{"foo", 0}, {"bar", 2}], identifier: 1}},
         {:send, %Package.Suback{acks: [ok: 0, ok: 2], identifier: 1}},
         # unsubscribe foo
@@ -339,8 +363,8 @@ defmodule Tortoise.ConnectionTest do
     test "successful connect", context do
       client_id = context.client_id
 
-      connect = %Package.Connect{client_id: client_id, clean_session: true}
-      expected_connack = %Package.Connack{status: :accepted, session_present: false}
+      connect = %Package.Connect{client_id: client_id, clean_start: true}
+      expected_connack = %Package.Connack{reason: :success, session_present: false}
 
       script = [{:receive, connect}, {:send, expected_connack}]
       {:ok, {ip, port}} = ScriptedMqttServer.enact(context.scripted_mqtt_server, script)
@@ -369,8 +393,8 @@ defmodule Tortoise.ConnectionTest do
     test "successful connect (no certificate verification)", context do
       client_id = context.client_id
 
-      connect = %Package.Connect{client_id: client_id, clean_session: true}
-      expected_connack = %Package.Connack{status: :accepted, session_present: false}
+      connect = %Package.Connect{client_id: client_id, clean_start: true}
+      expected_connack = %Package.Connack{reason: :success, session_present: false}
 
       script = [{:receive, connect}, {:send, expected_connack}]
       {:ok, {ip, port}} = ScriptedMqttServer.enact(context.scripted_mqtt_server, script)
@@ -424,8 +448,8 @@ defmodule Tortoise.ConnectionTest do
     test "nxdomain", context do
       client_id = context.client_id
 
-      connect = %Package.Connect{client_id: client_id, clean_session: true}
-      expected_connack = %Package.Connack{status: :accepted, session_present: false}
+      connect = %Package.Connect{client_id: client_id, clean_start: true}
+      expected_connack = %Package.Connack{reason: :success, session_present: false}
       refusal = {:error, :nxdomain}
 
       {:ok, _} =
@@ -462,8 +486,8 @@ defmodule Tortoise.ConnectionTest do
       Process.flag(:trap_exit, true)
       client_id = context.client_id
 
-      connect = %Package.Connect{client_id: client_id, clean_session: true}
-      expected_connack = %Package.Connack{status: :accepted, session_present: false}
+      connect = %Package.Connect{client_id: client_id, clean_start: true}
+      expected_connack = %Package.Connack{reason: :success, session_present: false}
       refusal = {:error, :econnrefused}
 
       {:ok, _pid} =
@@ -478,7 +502,7 @@ defmodule Tortoise.ConnectionTest do
             {:refute_connection, refusal},
             {:refute_connection, refusal},
             # finally start accepting connections again
-            {:expect, %Package.Connect{connect | clean_session: false}},
+            {:expect, %Package.Connect{connect | clean_start: false}},
             {:dispatch, expected_connack}
           ]
         )
@@ -503,7 +527,7 @@ defmodule Tortoise.ConnectionTest do
       Process.flag(:trap_exit, true)
       client_id = context.client_id
 
-      connect = %Package.Connect{client_id: client_id, clean_session: true}
+      connect = %Package.Connect{client_id: client_id, clean_start: true}
 
       {:ok, _pid} =
         ScriptedTransport.start_link(
@@ -523,8 +547,9 @@ defmodule Tortoise.ConnectionTest do
 
       assert_receive {ScriptedTransport, :connected}
       assert_receive {ScriptedTransport, {:received, %Package.Connect{}}}
+
       assert_receive {:EXIT, ^pid, {:protocol_violation, violation}}
-      assert %{expected: Tortoise.Package.Connect, got: _} = violation
+      assert %{expected: [Tortoise.Package.Connack, Tortoise.Package.Auth], got: _} = violation
       assert_receive {ScriptedTransport, :completed}
     end
   end
@@ -539,8 +564,8 @@ defmodule Tortoise.ConnectionTest do
     test "receive a socket from a connection", context do
       client_id = context.client_id
 
-      connect = %Package.Connect{client_id: client_id, clean_session: true}
-      expected_connack = %Package.Connack{status: :accepted, session_present: false}
+      connect = %Package.Connect{client_id: client_id, clean_start: true}
+      expected_connack = %Package.Connack{reason: :success, session_present: false}
 
       script = [{:receive, connect}, {:send, expected_connack}]
 
@@ -564,7 +589,7 @@ defmodule Tortoise.ConnectionTest do
     test "timeout on a socket from a connection", context do
       client_id = context.client_id
 
-      connect = %Package.Connect{client_id: client_id, clean_session: true}
+      connect = %Package.Connect{client_id: client_id, clean_start: true}
 
       script = [{:receive, connect}, :pause]
 
@@ -595,7 +620,7 @@ defmodule Tortoise.ConnectionTest do
       client_id = context.client_id
 
       connect = %Package.Connect{client_id: client_id}
-      expected_connack = %Package.Connack{status: :accepted, session_present: false}
+      expected_connack = %Package.Connack{reason: :success, session_present: false}
       disconnect = %Package.Disconnect{}
 
       script = [{:receive, connect}, {:send, expected_connack}, {:receive, disconnect}]
@@ -610,12 +635,204 @@ defmodule Tortoise.ConnectionTest do
 
       assert {:ok, pid} = Connection.start_link(opts)
       assert_receive {ScriptedMqttServer, {:received, ^connect}}
-
       assert :ok = Tortoise.Connection.disconnect(client_id)
+
       assert_receive {ScriptedMqttServer, {:received, ^disconnect}}
       assert_receive {:EXIT, ^pid, :shutdown}
 
       assert_receive {ScriptedMqttServer, :completed}
+    end
+  end
+
+  describe "ping" do
+    setup [:setup_scripted_mqtt_server]
+
+    test "send pingreq and receive a pingresp", context do
+      Process.flag(:trap_exit, true)
+      client_id = context.client_id
+
+      connect = %Package.Connect{client_id: client_id}
+      expected_connack = %Package.Connack{reason: :success, session_present: false}
+      ping_request = %Package.Pingreq{}
+      expected_pingresp = %Package.Pingresp{}
+
+      script = [
+        {:receive, connect},
+        {:send, expected_connack},
+        {:receive, ping_request},
+        {:send, expected_pingresp}
+      ]
+
+      {:ok, {ip, port}} = ScriptedMqttServer.enact(context.scripted_mqtt_server, script)
+
+      opts = [
+        client_id: client_id,
+        server: {Tortoise.Transport.Tcp, [host: ip, port: port]},
+        handler: {Tortoise.Handler.Default, []}
+      ]
+
+      {:ok, _pid} = Tortoise.Events.register(client_id, :status)
+
+      assert {:ok, pid} = Connection.start_link(opts)
+      assert_receive {ScriptedMqttServer, {:received, ^connect}}
+
+      # assure that we are connected
+      assert_receive {{Tortoise, ^client_id}, :status, :connected}
+
+      {:ok, ref} = Connection.ping(client_id)
+      assert_receive {ScriptedMqttServer, {:received, ^ping_request}}
+
+      assert_receive {Tortoise, {:ping_response, ^ref, _}}
+      assert_receive {ScriptedMqttServer, :completed}
+    end
+  end
+
+  describe "Protocol violations" do
+    setup [:setup_scripted_mqtt_server, :setup_connection_and_perform_handshake]
+
+    test "Receiving a connect from the server is a protocol violation", context do
+      Process.flag(:trap_exit, true)
+      unexpected_connect = %Package.Connect{client_id: "foo"}
+      script = [{:send, unexpected_connect}]
+
+      {:ok, _} = ScriptedMqttServer.enact(context.scripted_mqtt_server, script)
+      pid = context.connection_pid
+
+      assert_receive {:EXIT, ^pid,
+                      {:protocol_violation, {:unexpected_package, ^unexpected_connect}}}
+    end
+
+    test "Receiving a connack after the handshake is a protocol violation", context do
+      Process.flag(:trap_exit, true)
+      unexpected_connack = %Package.Connack{reason: :success}
+      script = [{:send, unexpected_connack}]
+
+      {:ok, _} = ScriptedMqttServer.enact(context.scripted_mqtt_server, script)
+      pid = context.connection_pid
+
+      assert_receive {:EXIT, ^pid,
+                      {:protocol_violation, {:unexpected_package, ^unexpected_connack}}}
+    end
+
+    test "Receiving a ping request from the server is a protocol violation", context do
+      Process.flag(:trap_exit, true)
+      unexpected_pingreq = %Package.Pingreq{}
+      script = [{:send, unexpected_pingreq}]
+
+      {:ok, _} = ScriptedMqttServer.enact(context.scripted_mqtt_server, script)
+      pid = context.connection_pid
+
+      assert_receive {:EXIT, ^pid,
+                      {:protocol_violation, {:unexpected_package, ^unexpected_pingreq}}}
+    end
+  end
+
+  describe "Publish with QoS=0" do
+    setup [:setup_scripted_mqtt_server, :setup_connection_and_perform_handshake]
+
+    test "Receiving a publish", context do
+      Process.flag(:trap_exit, true)
+      publish = %Package.Publish{topic: "foo/bar", qos: 0}
+
+      script = [{:send, publish}]
+
+      {:ok, _} = ScriptedMqttServer.enact(context.scripted_mqtt_server, script)
+      pid = context.connection_pid
+
+      refute_receive {:EXIT, ^pid, {:protocol_violation, {:unexpected_package, ^publish}}}
+      assert_receive {ScriptedMqttServer, :completed}
+    end
+  end
+
+  describe "Publish with QoS=1" do
+    setup [:setup_scripted_mqtt_server, :setup_connection_and_perform_handshake]
+
+    test "incoming publish with QoS=1", context do
+      Process.flag(:trap_exit, true)
+      publish = %Package.Publish{identifier: 1, topic: "foo/bar", qos: 1}
+      expected_puback = %Package.Puback{identifier: 1}
+
+      script = [
+        {:send, publish},
+        {:receive, expected_puback}
+      ]
+
+      {:ok, _} = ScriptedMqttServer.enact(context.scripted_mqtt_server, script)
+      assert_receive {ScriptedMqttServer, :completed}
+    end
+
+    test "outgoing publish with QoS=1", context do
+      Process.flag(:trap_exit, true)
+      publish = %Package.Publish{identifier: 1, topic: "foo/bar", qos: 1}
+      puback = %Package.Puback{identifier: 1}
+
+      script = [
+        {:receive, publish},
+        {:send, puback}
+      ]
+
+      {:ok, _} = ScriptedMqttServer.enact(context.scripted_mqtt_server, script)
+      pid = context.connection_pid
+
+      client_id = context.client_id
+      assert {:ok, ref} = Inflight.track(client_id, {:outgoing, publish})
+
+      refute_receive {:EXIT, ^pid, {:protocol_violation, {:unexpected_package, _}}}
+      assert_receive {ScriptedMqttServer, {:received, ^publish}}
+      assert_receive {ScriptedMqttServer, :completed}
+      assert_receive {{Tortoise, ^client_id}, {Package.Publish, ^ref}, :ok}
+    end
+  end
+
+  describe "Publish with QoS=2" do
+    setup [:setup_scripted_mqtt_server, :setup_connection_and_perform_handshake]
+
+    test "incoming publish with QoS=2", context do
+      Process.flag(:trap_exit, true)
+      publish = %Package.Publish{identifier: 1, topic: "foo/bar", qos: 2}
+      expected_pubrec = %Package.Pubrec{identifier: 1}
+      pubrel = %Package.Pubrel{identifier: 1}
+      expected_pubcomp = %Package.Pubcomp{identifier: 1}
+
+      script = [
+        {:send, publish},
+        {:receive, expected_pubrec},
+        {:send, pubrel},
+        {:receive, expected_pubcomp}
+      ]
+
+      {:ok, _} = ScriptedMqttServer.enact(context.scripted_mqtt_server, script)
+      pid = context.connection_pid
+
+      refute_receive {:EXIT, ^pid, {:protocol_violation, {:unexpected_package, _}}}
+      assert_receive {ScriptedMqttServer, :completed}
+    end
+
+    test "outgoing publish with QoS=2", context do
+      Process.flag(:trap_exit, true)
+      publish = %Package.Publish{identifier: 1, topic: "foo/bar", qos: 2}
+      pubrec = %Package.Pubrec{identifier: 1}
+      pubrel = %Package.Pubrel{identifier: 1}
+      pubcomp = %Package.Pubcomp{identifier: 1}
+
+      script = [
+        {:receive, publish},
+        {:send, pubrec},
+        {:receive, pubrel},
+        {:send, pubcomp}
+      ]
+
+      {:ok, _} = ScriptedMqttServer.enact(context.scripted_mqtt_server, script)
+      pid = context.connection_pid
+
+      client_id = context.client_id
+      assert {:ok, ref} = Inflight.track(client_id, {:outgoing, publish})
+
+      refute_receive {:EXIT, ^pid, {:protocol_violation, {:unexpected_package, _}}}
+      assert_receive {ScriptedMqttServer, {:received, ^publish}}
+      assert_receive {ScriptedMqttServer, {:received, ^pubrel}}
+      assert_receive {ScriptedMqttServer, :completed}
+      assert_receive {{Tortoise, ^client_id}, {Package.Publish, ^ref}, :ok}
     end
   end
 end

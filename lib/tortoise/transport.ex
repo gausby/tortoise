@@ -68,4 +68,9 @@ defmodule Tortoise.Transport do
   @callback shutdown(socket(), :read | :write | :read_write) :: :ok | {:error, atom()}
 
   @callback close(socket()) :: :ok
+
+  # todo
+  @callback format_error(term()) :: term()
+
+  @optional_callbacks format_error: 1
 end
