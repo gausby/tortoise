@@ -51,8 +51,7 @@ defmodule Tortoise.Package.Disconnect do
   @spec decode(binary()) :: t
   def decode(<<@opcode::4, 0::4, 0::8>>) do
     # If the Remaining Length is less than 1 the value of 0x00 (Normal
-    # disconnection) is used; this makes it compatible with the MQTT
-    # 3.1.1 disconnect package as well.
+    # disconnection) is used
     %__MODULE__{reason: coerce_reason_code(0x00)}
   end
 
@@ -111,9 +110,6 @@ defmodule Tortoise.Package.Disconnect do
   # Protocols ----------------------------------------------------------
   defimpl Tortoise.Encodable do
     def encode(%Package.Disconnect{reason: :normal_disconnection, properties: []} = t) do
-      # if reason is 0x00 and properties are empty we are allowed to
-      # just return a zero; this will also make the disconnect package
-      # compatible with the MQTT 3.1.1 disconnect package.
       [Package.Meta.encode(t.__META__), 0]
     end
 

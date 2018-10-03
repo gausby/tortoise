@@ -3,7 +3,17 @@ defmodule Tortoise.Package.Connect do
 
   @opcode 1
 
-  # @allowed_properties [:authentication_data, :authentication_method, :maximum_packet_size, :receive_maximum, :request_problem_information, :request_response_information, :session_expiry_interval, :topic_alias_maximum, :user_property]
+  @allowed_properties [
+    :authentication_data,
+    :authentication_method,
+    :maximum_packet_size,
+    :receive_maximum,
+    :request_problem_information,
+    :request_response_information,
+    :session_expiry_interval,
+    :topic_alias_maximum,
+    :user_property
+  ]
 
   alias Tortoise.Package
 
@@ -13,56 +23,100 @@ defmodule Tortoise.Package.Connect do
             protocol_version: non_neg_integer(),
             user_name: binary() | nil,
             password: binary() | nil,
-            clean_session: boolean(),
+            clean_start: boolean(),
             keep_alive: non_neg_integer(),
             client_id: Tortoise.client_id(),
-            will: Package.Publish.t() | nil
+            will: Package.Publish.t() | nil,
+            properties: [{any(), any()}]
           }
   @enforce_keys [:client_id]
   defstruct __META__: %Package.Meta{opcode: @opcode},
             protocol: "MQTT",
-            protocol_version: 0b00000100,
+            protocol_version: 0b00000101,
             user_name: nil,
             password: nil,
-            clean_session: true,
+            clean_start: true,
             keep_alive: 60,
             client_id: nil,
-            will: nil
+            will: nil,
+            properties: []
 
   @spec decode(binary()) :: t
   def decode(<<@opcode::4, 0::4, variable::binary>>) do
-    <<4::big-integer-size(16), "MQTT", 4::8, user_name::1, password::1, will_retain::1,
-      will_qos::2, will::1, clean_session::1, 0::1, keep_alive::big-integer-size(16),
-      package::binary>> = drop_length(variable)
+    <<
+      4::big-integer-size(16),
+      "MQTT",
+      5::8,
+      user_name::1,
+      password::1,
+      will_retain::1,
+      will_qos::2,
+      will::1,
+      clean_start::1,
+      0::1,
+      keep_alive::big-integer-size(16),
+      rest::binary
+    >> = drop_length(variable)
 
-    options =
-      [
-        client_id: 1,
-        will_topic: will,
-        will_payload: will,
-        user_name: user_name,
-        password: password
-      ]
-      |> Enum.filter(fn {_, present} -> present == 1 end)
-      |> Enum.map(fn {value, 1} -> value end)
-      |> Enum.zip(decode_length_prefixed(package))
+    {properties, package} = Package.parse_variable_length(rest)
+    properties = Package.Properties.decode(properties)
+
+    payload =
+      decode_payload(
+        [
+          client_id: true,
+          will_properties: will == 1,
+          will_topic: will == 1,
+          will_payload: will == 1,
+          user_name: user_name == 1,
+          password: password == 1
+        ],
+        package
+      )
 
     %__MODULE__{
-      client_id: options[:client_id],
-      user_name: options[:user_name],
-      password: options[:password],
+      client_id: payload[:client_id],
+      user_name: payload[:user_name],
+      password: payload[:password],
       will:
         if will == 1 do
           %Package.Publish{
-            topic: options[:will_topic],
-            payload: nullify(options[:will_payload]),
+            topic: payload[:will_topic],
+            payload: nullify(payload[:will_payload]),
             qos: will_qos,
-            retain: will_retain == 1
+            retain: will_retain == 1,
+            properties: payload[:will_properties]
           }
         end,
-      clean_session: clean_session == 1,
-      keep_alive: keep_alive
+      clean_start: clean_start == 1,
+      keep_alive: keep_alive,
+      properties: properties
     }
+  end
+
+  defp decode_payload([], <<>>) do
+    []
+  end
+
+  defp decode_payload([{_ignored, false} | remaining_fields], payload) do
+    decode_payload(remaining_fields, payload)
+  end
+
+  defp decode_payload(
+         [{:will_properties, true} | remaining_fields],
+         payload
+       ) do
+    {properties, rest} = Package.parse_variable_length(payload)
+    value = Package.Properties.decode(properties)
+    [{:will_properties, value}] ++ decode_payload(remaining_fields, rest)
+  end
+
+  defp decode_payload(
+         [{field, true} | remaining_fields],
+         <<length::big-integer-size(16), payload::binary>>
+       ) do
+    <<value::binary-size(length), rest::binary>> = payload
+    [{field, value}] ++ decode_payload(remaining_fields, rest)
   end
 
   defp nullify(""), do: nil
@@ -77,13 +131,6 @@ defmodule Tortoise.Package.Connect do
     end
   end
 
-  defp decode_length_prefixed(<<>>), do: []
-
-  defp decode_length_prefixed(<<length::big-integer-size(16), payload::binary>>) do
-    <<item::binary-size(length), rest::binary>> = payload
-    [item] ++ decode_length_prefixed(rest)
-  end
-
   defimpl Tortoise.Encodable do
     def encode(%Package.Connect{client_id: client_id} = t)
         when is_binary(client_id) do
@@ -93,6 +140,7 @@ defmodule Tortoise.Package.Connect do
           protocol_header(t),
           connection_flags(t),
           keep_alive(t),
+          Package.Properties.encode(t.properties),
           payload(t)
         ])
       ]
@@ -117,7 +165,7 @@ defmodule Tortoise.Package.Connect do
         0::integer-size(2),
         # will flag
         flag(0)::integer-size(1),
-        flag(f.clean_session)::integer-size(1),
+        flag(f.clean_start)::integer-size(1),
         # reserved bit
         0::1
       >>
@@ -130,7 +178,7 @@ defmodule Tortoise.Package.Connect do
         flag(f.will.retain)::integer-size(1),
         f.will.qos::integer-size(2),
         flag(f.will.topic)::integer-size(1),
-        flag(f.clean_session)::integer-size(1),
+        flag(f.clean_start)::integer-size(1),
         # reserved bit
         0::1
       >>
@@ -147,11 +195,25 @@ defmodule Tortoise.Package.Connect do
     end
 
     defp payload(f) do
-      will_payload = encode_payload(f.will.payload)
+      options = [
+        f.client_id,
+        f.will.properties,
+        f.will.topic,
+        encode_payload(f.will.payload),
+        f.user_name,
+        f.password
+      ]
 
-      [f.client_id, f.will.topic, will_payload, f.user_name, f.password]
-      |> Enum.filter(&is_binary/1)
-      |> Enum.map(&Package.length_encode/1)
+      for data <- options,
+          data != nil do
+        case data do
+          data when is_binary(data) ->
+            Package.length_encode(data)
+
+          data when is_list(data) ->
+            Package.Properties.encode(data)
+        end
+      end
     end
 
     defp encode_payload(nil), do: ""

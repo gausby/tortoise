@@ -13,6 +13,8 @@ defmodule Tortoise.Package.Properties do
 
   # User properties are special; we will allow them to be encoded as
   # binaries to make the interface a bit cleaner to the end user
+  #
+  # Todo, revert this decision
   defp encode_property({key, value}) when is_binary(key) do
     [0x26, length_encode(key), length_encode(value)]
   end

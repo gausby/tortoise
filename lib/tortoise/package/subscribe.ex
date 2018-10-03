@@ -8,24 +8,37 @@ defmodule Tortoise.Package.Subscribe do
   alias Tortoise.Package
 
   @type qos :: 0 | 1 | 2
-  @type topic :: {binary(), qos}
+  @type topic :: {binary(), topic_opts}
+  @type topic_opts :: [
+          {:qos, qos},
+          {:no_local, boolean()},
+          {:retain_as_published, boolean()},
+          {:retain_handling, 0 | 1 | 2}
+        ]
   @type topics :: [topic]
 
   @opaque t :: %__MODULE__{
             __META__: Package.Meta.t(),
             identifier: Tortoise.package_identifier(),
-            topics: topics()
+            topics: topics(),
+            properties: []
           }
   defstruct __META__: %Package.Meta{opcode: @opcode, flags: 0b0010},
             identifier: nil,
-            topics: []
+            topics: [],
+            properties: []
 
   @spec decode(binary()) :: t
   def decode(<<@opcode::4, 0b0010::4, length_prefixed_payload::binary>>) do
     payload = drop_length(length_prefixed_payload)
-    <<identifier::big-integer-size(16), topics::binary>> = payload
-    topic_list = decode_topics(topics)
-    %__MODULE__{identifier: identifier, topics: topic_list}
+    <<identifier::big-integer-size(16), rest::binary>> = payload
+    {properties, topics} = Package.parse_variable_length(rest)
+
+    %__MODULE__{
+      identifier: identifier,
+      topics: decode_topics(topics),
+      properties: Package.Properties.decode(properties)
+    }
   end
 
   defp drop_length(payload) do
@@ -40,8 +53,25 @@ defmodule Tortoise.Package.Subscribe do
   defp decode_topics(<<>>), do: []
 
   defp decode_topics(<<length::big-integer-size(16), rest::binary>>) do
-    <<topic::binary-size(length), return_code::integer-size(8), rest::binary>> = rest
-    [{topic, return_code}] ++ decode_topics(rest)
+    <<
+      topic::binary-size(length),
+      # reserved
+      0::2,
+      retain_handling::2,
+      retain_as_published::1,
+      no_local::1,
+      qos::2,
+      rest::binary
+    >> = rest
+
+    opts = [
+      qos: qos,
+      no_local: no_local == 1,
+      retain_as_published: retain_as_published == 1,
+      retain_handling: retain_handling
+    ]
+
+    [{topic, opts}] ++ decode_topics(rest)
   end
 
   # PROTOCOLS ==========================================================
@@ -49,25 +79,37 @@ defmodule Tortoise.Package.Subscribe do
     def encode(
           %Package.Subscribe{
             identifier: identifier,
-            # a valid subscribe package has at least one topic/qos pair
-            topics: [{<<_topic_filter::binary>>, qos} | _]
+            # a valid subscribe package has at least one topic/qos_opts pair
+            topics: [{<<_topic_filter::binary>>, opts} | _]
           } = t
         )
-        when identifier in 0x0001..0xFFFF and qos in 0..2 do
+        when identifier in 0x0001..0xFFFF and is_list(opts) do
       [
         Package.Meta.encode(t.__META__),
         Package.variable_length_encode([
           <<identifier::big-integer-size(16)>>,
+          Package.Properties.encode(t.properties),
           encode_topics(t.topics)
         ])
       ]
     end
 
     defp encode_topics(topics) do
-      Enum.map(topics, fn {topic, qos} ->
-        [Package.length_encode(topic), <<0::6, qos::2>>]
+      Enum.map(topics, fn {topic, opts} ->
+        qos = Keyword.get(opts, :qos, 0)
+        no_local = Keyword.get(opts, :no_local, false)
+        retain_as_published = Keyword.get(opts, :retain_as_published, false)
+        retain_handling = Keyword.get(opts, :retain_handling, 1)
+
+        [
+          Package.length_encode(topic),
+          <<0::2, retain_handling::2, flag(retain_as_published)::1, flag(no_local)::1, qos::2>>
+        ]
       end)
     end
+
+    defp flag(f) when f in [0, nil, false], do: 0
+    defp flag(_), do: 1
   end
 
   defimpl Enumerable do
@@ -93,6 +135,7 @@ defmodule Tortoise.Package.Subscribe do
     def into(%Package.Subscribe{topics: topics} = source) do
       {Enum.into(topics, %{}),
        fn
+         # @todo, switch to opts instead of qos
          acc, {:cont, {<<topic::binary>>, qos}} when qos in 0..2 ->
            # if a topic filter repeat in the input we will pick the
            # biggest one
