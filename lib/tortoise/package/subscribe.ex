@@ -135,14 +135,16 @@ defmodule Tortoise.Package.Subscribe do
     def into(%Package.Subscribe{topics: topics} = source) do
       {Enum.into(topics, %{}),
        fn
-         # @todo, switch to opts instead of qos
+         acc, {:cont, {<<topic::binary>>, opts}} when is_list(opts) ->
+           Map.put(acc, topic, opts)
+
          acc, {:cont, {<<topic::binary>>, qos}} when qos in 0..2 ->
-           # if a topic filter repeat in the input we will pick the
-           # biggest one
-           Map.update(acc, topic, qos, &max(&1, qos))
+           # if the subscription already exist in the data structure
+           # we will just overwrite the existing one and the options
+           Map.put(acc, topic, qos: qos)
 
          acc, {:cont, <<topic::binary>>} ->
-           Map.put_new(acc, topic, 0)
+           Map.put(acc, topic, qos: 0)
 
          acc, :done ->
            %{source | topics: Map.to_list(acc)}
