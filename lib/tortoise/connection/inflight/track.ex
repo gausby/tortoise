@@ -216,10 +216,11 @@ defmodule Tortoise.Connection.Inflight.Track do
   def result(%State{
         type: Package.Unsubscribe,
         status: [
-          {:received, _},
+          {:received, %Package.Unsuback{results: _results}},
           {:dispatch, %Package.Unsubscribe{topics: topics}} | _other
         ]
       }) do
+    # todo, merge the unsuback results with the topic list
     {:ok, topics}
   end
 
