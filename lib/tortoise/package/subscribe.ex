@@ -117,6 +117,18 @@ defmodule Tortoise.Package.Subscribe do
       Enumerable.List.reduce(topics, acc, fun)
     end
 
+    def member?(%Package.Subscribe{topics: topics}, {<<topic::binary>>, qos})
+        when is_integer(qos) do
+      matcher = fn {current_topic, opts} ->
+        topic == current_topic && opts[:qos] == qos
+      end
+
+      case Enum.find(topics, matcher) do
+        nil -> {:ok, false}
+        _ -> {:ok, true}
+      end
+    end
+
     def member?(%Package.Subscribe{topics: topics}, value) do
       {:ok, Enum.member?(topics, value)}
     end
