@@ -620,7 +620,7 @@ defmodule Tortoise.Connection do
 
   def handle_event(
         :internal,
-        {:received, %Package.Unsuback{} = unsuback},
+        {:received, %Package.Unsuback{results: [_ | _]} = unsuback},
         :connected,
         data
       ) do
@@ -628,6 +628,7 @@ defmodule Tortoise.Connection do
     :keep_state_and_data
   end
 
+  # todo; handle the unsuback error cases !
   def handle_event(
         :info,
         {{Tortoise, client_id}, {Package.Unsubscribe, ref}, unsubbed},
