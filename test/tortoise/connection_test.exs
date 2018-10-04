@@ -250,9 +250,30 @@ defmodule Tortoise.ConnectionTest do
       client_id = context.client_id
 
       connect = %Package.Connect{client_id: client_id, clean_start: true}
-      subscription_foo = Enum.into([{"foo", 0}], %Package.Subscribe{identifier: 1})
-      subscription_bar = Enum.into([{"bar", 1}], %Package.Subscribe{identifier: 2})
-      subscription_baz = Enum.into([{"baz", 2}], %Package.Subscribe{identifier: 3})
+
+      default_subscription_opts = [
+        no_local: false,
+        retain_as_published: false,
+        retain_handling: 1
+      ]
+
+      subscription_foo =
+        Enum.into(
+          [{"foo", [{:qos, 0} | default_subscription_opts]}],
+          %Package.Subscribe{identifier: 1}
+        )
+
+      subscription_bar =
+        Enum.into(
+          [{"bar", [{:qos, 1} | default_subscription_opts]}],
+          %Package.Subscribe{identifier: 2}
+        )
+
+      subscription_baz =
+        Enum.into(
+          [{"baz", [{:qos, 2} | default_subscription_opts]}],
+          %Package.Subscribe{identifier: 3}
+        )
 
       script = [
         {:receive, connect},
@@ -314,19 +335,32 @@ defmodule Tortoise.ConnectionTest do
       script = [
         {:receive, connect},
         {:send, %Package.Connack{reason: :success, session_present: false}},
-        {:receive, %Package.Subscribe{topics: [{"foo", 0}, {"bar", 2}], identifier: 1}},
+        {:receive,
+         %Package.Subscribe{
+           topics: [
+             {"foo", [qos: 0, no_local: false, retain_as_published: false, retain_handling: 1]},
+             {"bar", [qos: 2, no_local: false, retain_as_published: false, retain_handling: 1]}
+           ],
+           identifier: 1
+         }},
         {:send, %Package.Suback{acks: [ok: 0, ok: 2], identifier: 1}},
         # unsubscribe foo
         {:receive, unsubscribe_foo},
-        {:send, %Package.Unsuback{identifier: 2}},
+        {:send, %Package.Unsuback{results: [:success], identifier: 2}},
         # unsubscribe bar
         {:receive, unsubscribe_bar},
-        {:send, %Package.Unsuback{identifier: 3}}
+        {:send, %Package.Unsuback{results: [:success], identifier: 3}}
       ]
 
       {:ok, {ip, port}} = ScriptedMqttServer.enact(context.scripted_mqtt_server, script)
 
-      subscribe = %Package.Subscribe{topics: [{"foo", 0}, {"bar", 2}], identifier: 1}
+      subscribe = %Package.Subscribe{
+        topics: [
+          {"foo", [qos: 0, no_local: false, retain_as_published: false, retain_handling: 1]},
+          {"bar", [qos: 2, no_local: false, retain_as_published: false, retain_handling: 1]}
+        ],
+        identifier: 1
+      }
 
       opts = [
         client_id: client_id,
@@ -344,7 +378,7 @@ defmodule Tortoise.ConnectionTest do
       :ok = Tortoise.Connection.unsubscribe_sync(client_id, "foo", identifier: 2)
       assert_receive {ScriptedMqttServer, {:received, ^unsubscribe_foo}}
 
-      assert %Package.Subscribe{topics: [{"bar", 2}]} =
+      assert %Package.Subscribe{topics: [{"bar", qos: 2}]} =
                Tortoise.Connection.subscriptions(client_id)
 
       # and unsubscribe from bar
@@ -352,7 +386,6 @@ defmodule Tortoise.ConnectionTest do
       assert_receive {{Tortoise, ^client_id}, ^ref, :ok}
       assert_receive {ScriptedMqttServer, {:received, ^unsubscribe_bar}}
       assert %Package.Subscribe{topics: []} = Tortoise.Connection.subscriptions(client_id)
-
       assert_receive {ScriptedMqttServer, :completed}
     end
   end
