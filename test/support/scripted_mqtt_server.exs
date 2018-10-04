@@ -82,7 +82,7 @@ defmodule Tortoise.Integration.ScriptedMqttServer do
         next_action(%State{state | script: script})
 
       otherwise ->
-        throw({:unexpected_package, otherwise})
+        {:stop, {:unexpected_package, otherwise}, state}
     end
   end
 
