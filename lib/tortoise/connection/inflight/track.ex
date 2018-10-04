@@ -234,14 +234,17 @@ defmodule Tortoise.Connection.Inflight.Track do
     result =
       List.zip([topics, acks])
       |> Enum.reduce(%{error: [], warn: [], ok: []}, fn
-        {{topic, level}, {:ok, level}}, %{ok: oks} = acc ->
-          %{acc | ok: oks ++ [{topic, level}]}
+        {{topic, opts}, {:ok, actual}}, %{ok: oks, warn: warns} = acc ->
+          case Keyword.get(opts, :qos) do
+            ^actual ->
+              %{acc | ok: oks ++ [{topic, actual}]}
 
-        {{topic, requested}, {:ok, actual}}, %{warn: warns} = acc ->
-          %{acc | warn: warns ++ [{topic, [requested: requested, accepted: actual]}]}
+            requested ->
+              %{acc | warn: warns ++ [{topic, [requested: requested, accepted: actual]}]}
+          end
 
-        {{topic, level}, {:error, :access_denied}}, %{error: errors} = acc ->
-          %{acc | error: errors ++ [{:access_denied, {topic, level}}]}
+        {{topic, opts}, {:error, reason}}, %{error: errors} = acc ->
+          %{acc | error: errors ++ [{:reason, {topic, opts}}]}
       end)
 
     {:ok, result}
