@@ -76,7 +76,7 @@ defmodule Tortoise.Connection do
 
     # @todo, validate that the handler is valid
     handler =
-      opts
+      connection_opts
       |> Keyword.get(:handler, %Handler{module: Handler.Default, initial_args: []})
       |> Handler.new()
 
