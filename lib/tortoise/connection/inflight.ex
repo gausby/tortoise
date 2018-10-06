@@ -23,6 +23,12 @@ defmodule Tortoise.Connection.Inflight do
     Tortoise.Registry.via_name(__MODULE__, client_id)
   end
 
+  def whereis(client_id) do
+    __MODULE__
+    |> Tortoise.Registry.reg_name(client_id)
+    |> Registry.whereis_name()
+  end
+
   def stop(client_id) do
     GenStateMachine.stop(via_name(client_id))
   end

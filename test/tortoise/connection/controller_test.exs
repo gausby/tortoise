@@ -114,20 +114,6 @@ defmodule Tortoise.Connection.ControllerTest do
   end
 
   # tests --------------------------------------------------------------
-  test "life cycle", context do
-    handler = %Tortoise.Handler{
-      module: __MODULE__.TestHandler,
-      initial_args: [context.client_id, self()]
-    }
-
-    opts = [client_id: context.client_id, handler: handler]
-    assert {:ok, pid} = Controller.start_link(opts)
-    assert Process.alive?(pid)
-    assert :ok = Controller.stop(context.client_id)
-    refute Process.alive?(pid)
-    assert_receive {:terminating, :normal}
-  end
-
   describe "Connection callback" do
     setup [:setup_controller]
 

@@ -14,6 +14,12 @@ defmodule Tortoise.Connection.Supervisor do
     Tortoise.Registry.via_name(__MODULE__, client_id)
   end
 
+  def whereis(client_id) do
+    __MODULE__
+    |> Tortoise.Registry.reg_name(client_id)
+    |> Registry.whereis_name()
+  end
+
   @impl true
   def init(opts) do
     children = [

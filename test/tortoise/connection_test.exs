@@ -668,12 +668,23 @@ defmodule Tortoise.ConnectionTest do
 
       assert {:ok, pid} = Connection.start_link(opts)
       assert_receive {ScriptedMqttServer, {:received, ^connect}}
+
+      cs_pid = Connection.Supervisor.whereis(client_id)
+      cs_ref = Process.monitor(cs_pid)
+
+      inflight_pid = Connection.Inflight.whereis(client_id)
+      receiver_pid = Connection.Receiver.whereis(client_id)
+
       assert :ok = Tortoise.Connection.disconnect(client_id)
 
       assert_receive {ScriptedMqttServer, {:received, ^disconnect}}
       assert_receive {:EXIT, ^pid, :shutdown}
 
       assert_receive {ScriptedMqttServer, :completed}
+
+      assert_receive {:DOWN, ^cs_ref, :process, ^cs_pid, :shutdown}
+      refute Process.alive?(inflight_pid)
+      refute Process.alive?(receiver_pid)
     end
   end
 
