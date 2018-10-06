@@ -703,7 +703,7 @@ defmodule Tortoise.ConnectionTest do
 
       {:ok, ref} = Connection.ping(context.client_id)
       assert_receive {ScriptedMqttServer, {:received, ^ping_request}}
-      assert_receive {Tortoise, {:ping_response, ^ref, _}}
+      assert_receive {{Tortoise, ^client_id}, {Package.Pingreq, ^ref}, _}
     end
 
     test "ping_sync/2", %{client_id: client_id} = context do

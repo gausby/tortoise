@@ -333,7 +333,7 @@ defmodule Tortoise.Connection do
     {:ok, ref} = ping(client_id)
 
     receive do
-      {Tortoise, {:ping_response, ^ref, round_trip_time}} ->
+      {{Tortoise, ^client_id}, {Package.Pingreq, ^ref}, round_trip_time} ->
         {:ok, round_trip_time}
 
       otherwise ->
@@ -771,11 +771,11 @@ defmodule Tortoise.Connection do
         :internal,
         {:received, %Package.Pingresp{}},
         :connected,
-        %State{ping: ping} = data
+        %State{client_id: client_id, ping: ping} = data
       ) do
     {{:value, {{caller, ref}, start_time}}, ping} = :queue.out(ping)
     round_trip_time = System.monotonic_time(:microsecond) - start_time
-    send(caller, {Tortoise, {:ping_response, ref, round_trip_time}})
+    send(caller, {{Tortoise, client_id}, {Package.Pingreq, ref}, round_trip_time})
     {:keep_state, %State{data | ping: ping}}
   end
 
