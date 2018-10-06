@@ -201,16 +201,6 @@ defmodule Tortoise.Connection.ControllerTest do
   describe "Publish Control Packets with Quality of Service level 1" do
     setup [:setup_connection, :setup_controller, :setup_inflight]
 
-    test "incoming publish with qos 1", context do
-      # receive a publish message with a qos of 1
-      publish = %Package.Publish{identifier: 1, topic: "a", qos: 1}
-      Controller.handle_incoming(context.client_id, publish)
-
-      # a puback message should get transmitted
-      {:ok, package} = :gen_tcp.recv(context.server, 0, 200)
-      assert %Package.Puback{identifier: 1} = Package.decode(package)
-    end
-
     test "outgoing publish with qos 1", context do
       client_id = context.client_id
       publish = %Package.Publish{identifier: 1, topic: "a", qos: 1}
