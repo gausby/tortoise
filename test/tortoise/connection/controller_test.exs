@@ -409,36 +409,6 @@ defmodule Tortoise.Connection.ControllerTest do
       # the callback module should get the error
       assert_receive {:subscription_error, {"foo", :access_denied}}
     end
-
-    test "Receiving a subscribe package is a protocol violation",
-         %{controller_pid: pid} = context do
-      Process.flag(:trap_exit, true)
-      # receiving a subscribe from the server is a protocol violation
-      subscribe = %Package.Subscribe{
-        identifier: 1,
-        topics: [{"foo/bar", 0}]
-      }
-
-      Controller.handle_incoming(context.client_id, subscribe)
-
-      assert_receive {:EXIT, ^pid,
-                      {:protocol_violation, {:unexpected_package_from_remote, ^subscribe}}}
-    end
-
-    test "Receiving an unsubscribe package is a protocol violation",
-         %{controller_pid: pid} = context do
-      Process.flag(:trap_exit, true)
-      # receiving an unsubscribe from the server is a protocol violation
-      unsubscribe = %Package.Unsubscribe{
-        identifier: 1,
-        topics: ["foo/bar"]
-      }
-
-      Controller.handle_incoming(context.client_id, unsubscribe)
-
-      assert_receive {:EXIT, ^pid,
-                      {:protocol_violation, {:unexpected_package_from_remote, ^unsubscribe}}}
-    end
   end
 
   describe "next actions" do

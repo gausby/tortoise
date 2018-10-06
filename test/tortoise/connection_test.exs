@@ -766,6 +766,42 @@ defmodule Tortoise.ConnectionTest do
       assert_receive {:EXIT, ^pid,
                       {:protocol_violation, {:unexpected_package, ^unexpected_pingreq}}}
     end
+
+    test "Receiving a subscribe package from the server is a protocol violation", context do
+      Process.flag(:trap_exit, true)
+
+      unexpected_subscribe = %Package.Subscribe{
+        topics: [
+          {"foo/bar", [qos: 0, no_local: false, retain_as_published: false, retain_handling: 1]}
+        ],
+        identifier: 1
+      }
+
+      script = [{:send, unexpected_subscribe}]
+
+      {:ok, _} = ScriptedMqttServer.enact(context.scripted_mqtt_server, script)
+      pid = context.connection_pid
+
+      assert_receive {:EXIT, ^pid,
+                      {:protocol_violation, {:unexpected_package, ^unexpected_subscribe}}}
+    end
+
+    test "Receiving an unsubscribe package from the server is a protocol violation", context do
+      Process.flag(:trap_exit, true)
+
+      unexpected_unsubscribe = %Package.Unsubscribe{
+        topics: ["foo/bar"],
+        identifier: 1
+      }
+
+      script = [{:send, unexpected_unsubscribe}]
+
+      {:ok, _} = ScriptedMqttServer.enact(context.scripted_mqtt_server, script)
+      pid = context.connection_pid
+
+      assert_receive {:EXIT, ^pid,
+                      {:protocol_violation, {:unexpected_package, ^unexpected_unsubscribe}}}
+    end
   end
 
   describe "Publish with QoS=0" do
