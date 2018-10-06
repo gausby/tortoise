@@ -3,23 +3,7 @@ defmodule Tortoise.Connection.Controller do
 
   require Logger
 
-  alias Tortoise.{Package, Connection, Handler}
-  alias Tortoise.Connection.Inflight
-
-  alias Tortoise.Package.{
-    Connect,
-    Connack,
-    Disconnect,
-    Publish,
-    Puback,
-    Pubrec,
-    Pubrel,
-    Pubcomp,
-    Subscribe,
-    Suback,
-    Unsubscribe,
-    Unsuback
-  }
+  alias Tortoise.{Package, Handler}
 
   use GenServer
 
@@ -56,11 +40,6 @@ defmodule Tortoise.Connection.Controller do
     GenServer.call(via_name(client_id), :info)
   end
 
-  @doc false
-  def handle_incoming(client_id, package) do
-    GenServer.cast(via_name(client_id), {:incoming, package})
-  end
-
   # Server callbacks
   @impl true
   def init(%State{handler: handler} = opts) do
@@ -84,42 +63,6 @@ defmodule Tortoise.Connection.Controller do
   end
 
   @impl true
-  def handle_cast({:incoming, <<package::binary>>}, state) do
-    package
-    |> Package.decode()
-    |> handle_package(state)
-  end
-
-  # allow for passing in already decoded packages into the controller,
-  # this allow us to test the controller without having to pass in
-  # binaries
-  def handle_cast({:incoming, %{:__META__ => _} = package}, state) do
-    handle_package(package, state)
-  end
-
-  def handle_cast(
-        {:result, {Package.Subscribe, subacks}},
-        %State{handler: handler} = state
-      ) do
-    case Handler.execute(handler, {:subscribe, subacks}) do
-      {:ok, updated_handler} ->
-        {:noreply, %State{state | handler: updated_handler}}
-    end
-  end
-
-  def handle_cast(
-        {:result, {Package.Unsubscribe, unsubacks}},
-        %State{handler: handler} = state
-      ) do
-    case Handler.execute(handler, {:unsubscribe, unsubacks}) do
-      {:ok, updated_handler} ->
-        {:noreply, %State{state | handler: updated_handler}}
-    end
-  end
-
-  # an incoming publish with QoS=2 will get parked in the inflight
-  # manager process, which will onward it to the controller, making
-  # sure we will only dispatch it once to the publish-handler.
   def handle_cast(
         {:onward, %Package.Publish{qos: 2, dup: false} = publish},
         %State{handler: handler} = state
@@ -131,42 +74,6 @@ defmodule Tortoise.Connection.Controller do
   end
 
   @impl true
-  def handle_info({:next_action, {:subscribe, topic, opts} = action}, state) do
-    {qos, opts} = Keyword.pop_first(opts, :qos, 0)
-
-    case Tortoise.Connection.subscribe(state.client_id, [{topic, qos}], opts) do
-      {:ok, ref} ->
-        updated_awaiting = Map.put_new(state.awaiting, ref, action)
-        {:noreply, %State{state | awaiting: updated_awaiting}}
-    end
-  end
-
-  def handle_info({:next_action, {:unsubscribe, topic} = action}, state) do
-    case Tortoise.Connection.unsubscribe(state.client_id, topic) do
-      {:ok, ref} ->
-        updated_awaiting = Map.put_new(state.awaiting, ref, action)
-        {:noreply, %State{state | awaiting: updated_awaiting}}
-    end
-  end
-
-  # connection changes
-  def handle_info(
-        {{Tortoise, client_id}, :status, same},
-        %State{client_id: client_id, status: same} = state
-      ) do
-    {:noreply, state}
-  end
-
-  def handle_info(
-        {{Tortoise, client_id}, :status, new_status},
-        %State{client_id: client_id, handler: handler} = state
-      ) do
-    case Handler.execute(handler, {:connection, new_status}) do
-      {:ok, updated_handler} ->
-        {:noreply, %State{state | handler: updated_handler, status: new_status}}
-    end
-  end
-
   def handle_info({{Tortoise, client_id}, ref, result}, %{client_id: client_id} = state) do
     case {result, Map.pop(state.awaiting, ref)} do
       {_, {nil, _}} ->
@@ -176,109 +83,5 @@ defmodule Tortoise.Connection.Controller do
       {:ok, {_action, updated_awaiting}} ->
         {:noreply, %State{state | awaiting: updated_awaiting}}
     end
-  end
-
-  # QoS LEVEL 0 ========================================================
-  # commands -----------------------------------------------------------
-  defp handle_package(
-         %Publish{qos: 0, dup: false} = publish,
-         %State{handler: handler} = state
-       ) do
-    case Handler.execute(handler, {:publish, publish}) do
-      {:ok, updated_handler} ->
-        {:noreply, %State{state | handler: updated_handler}}
-
-        # handle stop
-    end
-  end
-
-  # QoS LEVEL 1 ========================================================
-  # commands -----------------------------------------------------------
-  defp handle_package(
-         %Publish{qos: 1} = publish,
-         %State{handler: handler} = state
-       ) do
-    :ok = Inflight.track(state.client_id, {:incoming, publish})
-
-    case Handler.execute(handler, {:publish, publish}) do
-      {:ok, updated_handler} ->
-        {:noreply, %State{state | handler: updated_handler}}
-    end
-  end
-
-  # response -----------------------------------------------------------
-  defp handle_package(%Puback{} = puback, state) do
-    :ok = Inflight.update(state.client_id, {:received, puback})
-    {:noreply, state}
-  end
-
-  # QoS LEVEL 2 ========================================================
-  # commands -----------------------------------------------------------
-  defp handle_package(%Publish{qos: 2} = publish, %State{} = state) do
-    :ok = Inflight.track(state.client_id, {:incoming, publish})
-    {:noreply, state}
-  end
-
-  defp handle_package(%Pubrel{} = pubrel, state) do
-    :ok = Inflight.update(state.client_id, {:received, pubrel})
-    {:noreply, state}
-  end
-
-  # response -----------------------------------------------------------
-  defp handle_package(%Pubrec{} = pubrec, state) do
-    :ok = Inflight.update(state.client_id, {:received, pubrec})
-    {:noreply, state}
-  end
-
-  defp handle_package(%Pubcomp{} = pubcomp, state) do
-    :ok = Inflight.update(state.client_id, {:received, pubcomp})
-    {:noreply, state}
-  end
-
-  # SUBSCRIBING ========================================================
-  # command ------------------------------------------------------------
-  defp handle_package(%Subscribe{} = subscribe, state) do
-    # not a server! (yet)
-    {:stop, {:protocol_violation, {:unexpected_package_from_remote, subscribe}}, state}
-  end
-
-  # response -----------------------------------------------------------
-  defp handle_package(%Suback{} = suback, state) do
-    :ok = Inflight.update(state.client_id, {:received, suback})
-    {:noreply, state}
-  end
-
-  # UNSUBSCRIBING ======================================================
-  # command ------------------------------------------------------------
-  defp handle_package(%Unsubscribe{} = unsubscribe, state) do
-    # not a server
-    {:stop, {:protocol_violation, {:unexpected_package_from_remote, unsubscribe}}, state}
-  end
-
-  # response -----------------------------------------------------------
-  defp handle_package(%Unsuback{} = unsuback, state) do
-    :ok = Inflight.update(state.client_id, {:received, unsuback})
-    {:noreply, state}
-  end
-
-  # CONNECTING =========================================================
-  # command ------------------------------------------------------------
-  defp handle_package(%Connect{} = connect, state) do
-    # not a server!
-    {:stop, {:protocol_violation, {:unexpected_package_from_remote, connect}}, state}
-  end
-
-  # response -----------------------------------------------------------
-  defp handle_package(%Connack{} = connack, state) do
-    # receiving a connack at this point would be a protocol violation
-    {:stop, {:protocol_violation, {:unexpected_package_from_remote, connack}}, state}
-  end
-
-  # DISCONNECTING ======================================================
-  # command ------------------------------------------------------------
-  defp handle_package(%Disconnect{} = disconnect, state) do
-    # This should be allowed when we implement MQTT 5. Remember there
-    # is a test that assert this as a protocol violation!
-    {:stop, {:protocol_violation, {:unexpected_package_from_remote, disconnect}}, state}
   end
 end

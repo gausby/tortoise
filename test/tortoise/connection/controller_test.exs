@@ -133,31 +133,6 @@ defmodule Tortoise.Connection.ControllerTest do
   describe "Connection Control Packets" do
     setup [:setup_controller]
 
-    # done
-    # test "receiving a connect from the server is a protocol violation",
-    #      %{controller_pid: pid} = context do
-    #   Process.flag(:trap_exit, true)
-    #   # receiving a connect from the server is a protocol violation
-    #   connect = %Package.Connect{client_id: "foo"}
-    #   Controller.handle_incoming(context.client_id, connect)
-
-    #   assert_receive {:EXIT, ^pid,
-    #                   {:protocol_violation, {:unexpected_package_from_remote, ^connect}}}
-    # end
-
-    # done
-    # test "receiving a connack at this point is a protocol violation",
-    #      %{controller_pid: pid} = context do
-    #   Process.flag(:trap_exit, true)
-    #   # receiving a connack from the server *after* the connection has
-    #   # been acknowledged is a protocol violation
-    #   connack = %Package.Connack{reason: :success}
-    #   Controller.handle_incoming(context.client_id, connack)
-
-    #   assert_receive {:EXIT, ^pid,
-    #                   {:protocol_violation, {:unexpected_package_from_remote, ^connack}}}
-    # end
-
     test "receiving a disconnect from the server is a protocol violation",
          %{controller_pid: pid} = context do
       Process.flag(:trap_exit, true)
