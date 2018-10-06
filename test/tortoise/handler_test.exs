@@ -149,7 +149,11 @@ defmodule Tortoise.HandlerTest do
 
   describe "execute subscribe/2" do
     test "return ok", context do
-      subscribe = %Package.Subscribe{identifier: 1, topics: [{"foo", 0}, {"bar", 1}, {"baz", 0}]}
+      subscribe = %Package.Subscribe{
+        identifier: 1,
+        topics: [{"foo", qos: 0}, {"bar", qos: 1}, {"baz", qos: 0}]
+      }
+
       suback = %Package.Suback{identifier: 1, acks: [ok: 0, ok: 0, error: :access_denied]}
       caller = {self(), make_ref()}
 

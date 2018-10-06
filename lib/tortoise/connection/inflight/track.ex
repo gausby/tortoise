@@ -244,7 +244,7 @@ defmodule Tortoise.Connection.Inflight.Track do
           end
 
         {{topic, opts}, {:error, reason}}, %{error: errors} = acc ->
-          %{acc | error: errors ++ [{:reason, {topic, opts}}]}
+          %{acc | error: errors ++ [{reason, {topic, opts}}]}
       end)
 
     {:ok, result}
