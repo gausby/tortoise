@@ -57,11 +57,11 @@ defmodule Tortoise.Connection.Inflight do
   end
 
   @doc false
-  def track_sync(client_id, {:outgoing, _} = command, timeout \\ :infinity) do
+  def track_sync(client_id, {:outgoing, %Package.Publish{}} = command, timeout \\ :infinity) do
     {:ok, ref} = track(client_id, command)
 
     receive do
-      {{Tortoise, ^client_id}, ^ref, result} ->
+      {{Tortoise, ^client_id}, {Package.Publish, ^ref}, result} ->
         result
     after
       timeout -> {:error, :timeout}

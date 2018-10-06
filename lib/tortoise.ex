@@ -315,14 +315,16 @@ defmodule Tortoise do
                | {:identifier, package_identifier()}
                | {:timeout, timeout()}
   def publish_sync(client_id, topic, payload \\ nil, opts \\ []) do
-    timeout = Keyword.get(opts, :timeout, :infinity)
+    {opts, properties} = Keyword.split(opts, [:retain, :qos])
     qos = Keyword.get(opts, :qos, 0)
+    timeout = Keyword.get(opts, :timeout, :infinity)
 
     publish = %Package.Publish{
       topic: topic,
       qos: qos,
       payload: payload,
-      retain: Keyword.get(opts, :retain, false)
+      retain: Keyword.get(opts, :retain, false),
+      properties: properties
     }
 
     with {:ok, {transport, socket}} <- Connection.connection(client_id) do
