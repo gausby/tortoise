@@ -678,44 +678,41 @@ defmodule Tortoise.ConnectionTest do
   end
 
   describe "ping" do
-    setup [:setup_scripted_mqtt_server]
+    setup [:setup_scripted_mqtt_server, :setup_connection_and_perform_handshake]
 
-    test "send pingreq and receive a pingresp", context do
-      Process.flag(:trap_exit, true)
-      client_id = context.client_id
-
-      connect = %Package.Connect{client_id: client_id}
-      expected_connack = %Package.Connack{reason: :success, session_present: false}
-      ping_request = %Package.Pingreq{}
-      expected_pingresp = %Package.Pingresp{}
-
-      script = [
-        {:receive, connect},
-        {:send, expected_connack},
-        {:receive, ping_request},
-        {:send, expected_pingresp}
-      ]
-
-      {:ok, {ip, port}} = ScriptedMqttServer.enact(context.scripted_mqtt_server, script)
-
-      opts = [
-        client_id: client_id,
-        server: {Tortoise.Transport.Tcp, [host: ip, port: port]},
-        handler: {Tortoise.Handler.Default, []}
-      ]
-
-      {:ok, _pid} = Tortoise.Events.register(client_id, :status)
-
-      assert {:ok, pid} = Connection.start_link(opts)
-      assert_receive {ScriptedMqttServer, {:received, ^connect}}
-
-      # assure that we are connected
+    test "send pingreq and receive a pingresp", %{client_id: client_id} = context do
+      {:ok, _} = Tortoise.Events.register(client_id, :status)
       assert_receive {{Tortoise, ^client_id}, :status, :connected}
 
-      {:ok, ref} = Connection.ping(client_id)
-      assert_receive {ScriptedMqttServer, {:received, ^ping_request}}
+      ping_request = %Package.Pingreq{}
+      expected_pingresp = %Package.Pingresp{}
+      script = [{:receive, ping_request}, {:send, expected_pingresp}]
 
+      {:ok, _} = ScriptedMqttServer.enact(context.scripted_mqtt_server, script)
+
+      {:ok, ref} = Connection.ping(context.client_id)
+      assert_receive {ScriptedMqttServer, {:received, ^ping_request}}
       assert_receive {Tortoise, {:ping_response, ^ref, _}}
+    end
+
+    test "ping_sync/2", %{client_id: client_id} = context do
+      {:ok, _} = Tortoise.Events.register(client_id, :status)
+      assert_receive {{Tortoise, ^client_id}, :status, :connected}
+
+      ping_request = %Package.Pingreq{}
+      expected_pingresp = %Package.Pingresp{}
+      script = [{:receive, ping_request}, {:send, expected_pingresp}]
+
+      {:ok, _} = ScriptedMqttServer.enact(context.scripted_mqtt_server, script)
+
+      {parent, ref} = {self(), make_ref()}
+
+      spawn_link(fn ->
+        send(parent, {{:child_result, ref}, Connection.ping_sync(client_id)})
+      end)
+
+      assert_receive {ScriptedMqttServer, {:received, ^ping_request}}
+      assert_receive {{:child_result, ^ref}, {:ok, time}}
       assert_receive {ScriptedMqttServer, :completed}
     end
   end

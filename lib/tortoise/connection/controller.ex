@@ -18,16 +18,13 @@ defmodule Tortoise.Connection.Controller do
     Subscribe,
     Suback,
     Unsubscribe,
-    Unsuback,
-    Pingreq,
-    Pingresp
+    Unsuback
   }
 
   use GenServer
 
   @enforce_keys [:client_id, :handler]
   defstruct client_id: nil,
-            ping: :queue.new(),
             status: :down,
             awaiting: %{},
             handler: %Handler{module: Handler.Default, initial_args: []}
@@ -59,45 +56,9 @@ defmodule Tortoise.Connection.Controller do
     GenServer.call(via_name(client_id), :info)
   end
 
-  @spec ping(Tortoise.client_id()) :: {:ok, reference()}
-  def ping(client_id) do
-    ref = make_ref()
-    :ok = GenServer.cast(via_name(client_id), {:ping, {self(), ref}})
-    {:ok, ref}
-  end
-
-  @spec ping_sync(Tortoise.client_id(), timeout()) :: {:ok, reference()} | {:error, :timeout}
-  def ping_sync(client_id, timeout \\ :infinity) do
-    {:ok, ref} = ping(client_id)
-
-    receive do
-      {Tortoise, {:ping_response, ^ref, round_trip_time}} ->
-        {:ok, round_trip_time}
-    after
-      timeout ->
-        {:error, :timeout}
-    end
-  end
-
   @doc false
   def handle_incoming(client_id, package) do
     GenServer.cast(via_name(client_id), {:incoming, package})
-  end
-
-  @doc false
-  def handle_result(client_id, {{pid, ref}, Package.Publish, result}) do
-    send(pid, {{Tortoise, client_id}, ref, result})
-    :ok
-  end
-
-  def handle_result(client_id, {{pid, ref}, type, result}) do
-    send(pid, {{Tortoise, client_id}, ref, result})
-    GenServer.cast(via_name(client_id), {:result, {type, result}})
-  end
-
-  @doc false
-  def handle_onward(client_id, %Package.Publish{} = publish) do
-    GenServer.cast(via_name(client_id), {:onward, publish})
   end
 
   # Server callbacks
@@ -134,18 +95,6 @@ defmodule Tortoise.Connection.Controller do
   # binaries
   def handle_cast({:incoming, %{:__META__ => _} = package}, state) do
     handle_package(package, state)
-  end
-
-  def handle_cast({:ping, caller}, state) do
-    with {:ok, {transport, socket}} <- Connection.connection(state.client_id) do
-      time = System.monotonic_time(:microsecond)
-      apply(transport, :send, [socket, Package.encode(%Package.Pingreq{})])
-      ping = :queue.in({caller, time}, state.ping)
-      {:noreply, %State{state | ping: ping}}
-    else
-      {:error, :unknown_connection} ->
-        {:stop, :unknown_connection, state}
-    end
   end
 
   def handle_cast(
@@ -310,26 +259,6 @@ defmodule Tortoise.Connection.Controller do
   defp handle_package(%Unsuback{} = unsuback, state) do
     :ok = Inflight.update(state.client_id, {:received, unsuback})
     {:noreply, state}
-  end
-
-  # PING MESSAGES ======================================================
-  # command ------------------------------------------------------------
-  defp handle_package(%Pingresp{}, %State{ping: ping} = state)
-       when is_nil(ping) or ping == {[], []} do
-    {:noreply, state}
-  end
-
-  defp handle_package(%Pingresp{}, %State{ping: ping} = state) do
-    {{:value, {{caller, ref}, start_time}}, ping} = :queue.out(ping)
-    round_trip_time = System.monotonic_time(:microsecond) - start_time
-    send(caller, {Tortoise, {:ping_response, ref, round_trip_time}})
-    {:noreply, %State{state | ping: ping}}
-  end
-
-  # response -----------------------------------------------------------
-  defp handle_package(%Pingreq{} = pingreq, state) do
-    # not a server!
-    {:stop, {:protocol_violation, {:unexpected_package_from_remote, pingreq}}, state}
   end
 
   # CONNECTING =========================================================

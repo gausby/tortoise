@@ -329,8 +329,21 @@ defmodule Tortoise.Connection do
   response.
   """
   @spec ping_sync(Tortoise.client_id(), timeout()) :: {:ok, reference()} | {:error, :timeout}
-  defdelegate ping_sync(client_id, timeout \\ :infinity),
-    to: Tortoise.Connection.Controller
+  def ping_sync(client_id, timeout \\ :infinity) do
+    {:ok, ref} = ping(client_id)
+
+    receive do
+      {Tortoise, {:ping_response, ^ref, round_trip_time}} ->
+        {:ok, round_trip_time}
+
+      otherwise ->
+        IO.inspect(otherwise)
+        :ok
+    after
+      timeout ->
+        {:error, :timeout}
+    end
+  end
 
   @doc false
   @spec connection(Tortoise.client_id(), [opts]) ::

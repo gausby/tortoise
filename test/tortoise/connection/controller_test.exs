@@ -108,7 +108,7 @@ defmodule Tortoise.Connection.ControllerTest do
   end
 
   def setup_inflight(context) do
-    opts = [client_id: context.client_id]
+    opts = [client_id: context.client_id, parent: self()]
     {:ok, pid} = Inflight.start_link(opts)
     {:ok, %{inflight_pid: pid}}
   end
@@ -182,61 +182,6 @@ defmodule Tortoise.Connection.ControllerTest do
 
       assert_receive {:EXIT, ^pid,
                       {:protocol_violation, {:unexpected_package_from_remote, ^disconnect}}}
-    end
-  end
-
-  describe "Ping Control Packets" do
-    setup [:setup_connection, :setup_controller]
-
-    test "send a ping request", context do
-      # send a ping request to the server
-      assert {:ok, ping_ref} = Controller.ping(context.client_id)
-      # assert that the server receives a ping request package
-      {:ok, package} = :gen_tcp.recv(context.server, 0, 200)
-      assert %Package.Pingreq{} = Package.decode(package)
-      # the server will respond with an pingresp (ping response)
-      Controller.handle_incoming(context.client_id, %Package.Pingresp{})
-      assert_receive {Tortoise, {:ping_response, ^ping_ref, _ping_time}}
-    end
-
-    test "send a sync ping request", context do
-      # send a ping request to the server
-      parent = self()
-
-      spawn_link(fn ->
-        {:ok, time} = Controller.ping_sync(context.client_id)
-        send(parent, {:ping_result, time})
-      end)
-
-      # assert that the server receives a ping request package
-      {:ok, package} = :gen_tcp.recv(context.server, 0, 200)
-      assert %Package.Pingreq{} = Package.decode(package)
-      # the server will respond with an pingresp (ping response)
-      Controller.handle_incoming(context.client_id, %Package.Pingresp{})
-      assert_receive {:ping_result, _time}
-    end
-
-    # done
-    # test "receiving a ping request", %{controller_pid: pid} = context do
-    #   Process.flag(:trap_exit, true)
-    #   # receiving a ping request from the server is a protocol violation
-    #   pingreq = %Package.Pingreq{}
-    #   Controller.handle_incoming(context.client_id, pingreq)
-
-    #   assert_receive {:EXIT, ^pid,
-    #                   {:protocol_violation, {:unexpected_package_from_remote, ^pingreq}}}
-    # end
-
-    test "ping request reports are sent in the correct order", context do
-      # send two ping requests to the server
-      assert {:ok, first_ping_ref} = Controller.ping(context.client_id)
-      assert {:ok, second_ping_ref} = Controller.ping(context.client_id)
-
-      # the controller should respond to ping requests in FIFO order
-      Controller.handle_incoming(context.client_id, %Package.Pingresp{})
-      assert_receive {Tortoise, {:ping_response, ^first_ping_ref, _}}
-      Controller.handle_incoming(context.client_id, %Package.Pingresp{})
-      assert_receive {Tortoise, {:ping_response, ^second_ping_ref, _}}
     end
   end
 
