@@ -10,7 +10,7 @@ defmodule Tortoise.PipeTest do
   end
 
   def setup_inflight(context) do
-    opts = [client_id: context.client_id]
+    opts = [client_id: context.client_id, parent: self()]
     {:ok, inflight_pid} = Inflight.start_link(opts)
     {:ok, %{inflight_pid: inflight_pid}}
   end
