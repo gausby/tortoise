@@ -25,7 +25,7 @@ defmodule Tortoise.Connection.InflightTest do
   end
 
   def setup_inflight(context) do
-    {:ok, pid} = Inflight.start_link(client_id: context.client_id)
+    {:ok, pid} = Inflight.start_link(client_id: context.client_id, parent: self())
     {:ok, %{inflight_pid: pid}}
   end
 
@@ -33,7 +33,7 @@ defmodule Tortoise.Connection.InflightTest do
     setup [:setup_connection]
 
     test "start/stop", context do
-      assert {:ok, pid} = Inflight.start_link(client_id: context.client_id)
+      assert {:ok, pid} = Inflight.start_link(client_id: context.client_id, parent: self())
       assert Process.alive?(pid)
       assert :ok = Inflight.stop(pid)
       refute Process.alive?(pid)
@@ -133,9 +133,15 @@ defmodule Tortoise.Connection.InflightTest do
     setup [:setup_connection, :setup_inflight]
 
     test "subscription", %{client_id: client_id} = context do
+      opts = [no_local: false, retain_as_published: false, retain_handling: 1]
+
       subscribe = %Package.Subscribe{
         identifier: 1,
-        topics: [{"foo", 0}, {"bar", 1}, {"baz", 2}]
+        topics: [
+          {"foo", [{:qos, 0} | opts]},
+          {"bar", [{:qos, 1} | opts]},
+          {"baz", [{:qos, 2} | opts]}
+        ]
       }
 
       {:ok, ref} = Inflight.track(client_id, {:outgoing, subscribe})
