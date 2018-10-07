@@ -1,5 +1,3 @@
-Code.require_file("./support/test_tcp_tunnel.exs", __DIR__)
-
 defmodule Tortoise.TestGenerators do
   @moduledoc """
   EQC generators for generating variables and data structures useful

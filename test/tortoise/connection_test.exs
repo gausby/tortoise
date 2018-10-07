@@ -1,7 +1,3 @@
-Code.require_file("../support/scripted_mqtt_server.exs", __DIR__)
-Code.require_file("../support/scripted_transport.exs", __DIR__)
-Code.require_file("../support/test_handler.exs", __DIR__)
-
 defmodule Tortoise.ConnectionTest do
   use ExUnit.Case, async: true
   doctest Tortoise.Connection
