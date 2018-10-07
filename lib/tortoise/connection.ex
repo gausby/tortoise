@@ -335,10 +335,6 @@ defmodule Tortoise.Connection do
     receive do
       {{Tortoise, ^client_id}, {Package.Pingreq, ^ref}, round_trip_time} ->
         {:ok, round_trip_time}
-
-      otherwise ->
-        IO.inspect(otherwise)
-        :ok
     after
       timeout ->
         {:error, :timeout}
@@ -698,7 +694,7 @@ defmodule Tortoise.Connection do
         :info,
         {{Tortoise, client_id}, :status, current_state},
         current_state,
-        %State{} = data
+        %State{}
       ) do
     :keep_state_and_data
   end

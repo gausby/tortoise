@@ -1,5 +1,6 @@
 Code.require_file("../support/scripted_mqtt_server.exs", __DIR__)
 Code.require_file("../support/scripted_transport.exs", __DIR__)
+Code.require_file("../support/test_handler.exs", __DIR__)
 
 defmodule Tortoise.ConnectionTest do
   use ExUnit.Case, async: true
@@ -60,7 +61,7 @@ defmodule Tortoise.ConnectionTest do
     opts = [
       client_id: client_id,
       server: {Tortoise.Transport.Tcp, [host: ip, port: port]},
-      handler: {Tortoise.Handler.Default, []}
+      handler: {TestHandler, [parent: self()]}
     ]
 
     assert {:ok, connection_pid} = Connection.start_link(opts)
@@ -660,10 +661,12 @@ defmodule Tortoise.ConnectionTest do
 
       {:ok, {ip, port}} = ScriptedMqttServer.enact(context.scripted_mqtt_server, script)
 
+      handler = {TestHandler, [parent: self()]}
+
       opts = [
         client_id: client_id,
         server: {Tortoise.Transport.Tcp, [host: ip, port: port]},
-        handler: {Tortoise.Handler.Default, []}
+        handler: handler
       ]
 
       assert {:ok, pid} = Connection.start_link(opts)
@@ -685,6 +688,10 @@ defmodule Tortoise.ConnectionTest do
       assert_receive {:DOWN, ^cs_ref, :process, ^cs_pid, :shutdown}
       refute Process.alive?(inflight_pid)
       refute Process.alive?(receiver_pid)
+
+      # The user defined handler should have had its init/1 triggered
+      {handler_mod, handler_init_opts} = handler
+      assert_receive {{^handler_mod, :init}, ^handler_init_opts}
     end
   end
 
@@ -738,9 +745,11 @@ defmodule Tortoise.ConnectionTest do
 
       {:ok, _} = ScriptedMqttServer.enact(context.scripted_mqtt_server, script)
       pid = context.connection_pid
+      expected_reason = {:protocol_violation, {:unexpected_package, unexpected_connect}}
+      assert_receive {:EXIT, ^pid, ^expected_reason}
 
-      assert_receive {:EXIT, ^pid,
-                      {:protocol_violation, {:unexpected_package, ^unexpected_connect}}}
+      # the terminate/2 callback should get triggered
+      assert_receive {{TestHandler, :terminate}, ^expected_reason}
     end
 
     test "Receiving a connack after the handshake is a protocol violation", context do
@@ -750,9 +759,11 @@ defmodule Tortoise.ConnectionTest do
 
       {:ok, _} = ScriptedMqttServer.enact(context.scripted_mqtt_server, script)
       pid = context.connection_pid
+      expected_reason = {:protocol_violation, {:unexpected_package, unexpected_connack}}
+      assert_receive {:EXIT, ^pid, ^expected_reason}
 
-      assert_receive {:EXIT, ^pid,
-                      {:protocol_violation, {:unexpected_package, ^unexpected_connack}}}
+      # the terminate/2 callback should get triggered
+      assert_receive {{TestHandler, :terminate}, ^expected_reason}
     end
 
     test "Receiving a ping request from the server is a protocol violation", context do
@@ -762,9 +773,11 @@ defmodule Tortoise.ConnectionTest do
 
       {:ok, _} = ScriptedMqttServer.enact(context.scripted_mqtt_server, script)
       pid = context.connection_pid
+      expected_reason = {:protocol_violation, {:unexpected_package, unexpected_pingreq}}
+      assert_receive {:EXIT, ^pid, ^expected_reason}
 
-      assert_receive {:EXIT, ^pid,
-                      {:protocol_violation, {:unexpected_package, ^unexpected_pingreq}}}
+      # the terminate/2 callback should get triggered
+      assert_receive {{TestHandler, :terminate}, ^expected_reason}
     end
 
     test "Receiving a subscribe package from the server is a protocol violation", context do
@@ -781,9 +794,11 @@ defmodule Tortoise.ConnectionTest do
 
       {:ok, _} = ScriptedMqttServer.enact(context.scripted_mqtt_server, script)
       pid = context.connection_pid
+      expected_reason = {:protocol_violation, {:unexpected_package, unexpected_subscribe}}
+      assert_receive {:EXIT, ^pid, ^expected_reason}
 
-      assert_receive {:EXIT, ^pid,
-                      {:protocol_violation, {:unexpected_package, ^unexpected_subscribe}}}
+      # the terminate/2 callback should get triggered
+      assert_receive {{TestHandler, :terminate}, ^expected_reason}
     end
 
     test "Receiving an unsubscribe package from the server is a protocol violation", context do
@@ -798,9 +813,11 @@ defmodule Tortoise.ConnectionTest do
 
       {:ok, _} = ScriptedMqttServer.enact(context.scripted_mqtt_server, script)
       pid = context.connection_pid
+      expected_reason = {:protocol_violation, {:unexpected_package, unexpected_unsubscribe}}
+      assert_receive {:EXIT, ^pid, ^expected_reason}
 
-      assert_receive {:EXIT, ^pid,
-                      {:protocol_violation, {:unexpected_package, ^unexpected_unsubscribe}}}
+      # the terminate/2 callback should get triggered
+      assert_receive {{TestHandler, :terminate}, ^expected_reason}
     end
   end
 
@@ -818,6 +835,9 @@ defmodule Tortoise.ConnectionTest do
 
       refute_receive {:EXIT, ^pid, {:protocol_violation, {:unexpected_package, ^publish}}}
       assert_receive {ScriptedMqttServer, :completed}
+
+      # the handle message callback should have been called
+      assert_receive {{TestHandler, :handle_message}, %{topic: "foo/bar", payload: nil}}
     end
   end
 
@@ -836,6 +856,9 @@ defmodule Tortoise.ConnectionTest do
 
       {:ok, _} = ScriptedMqttServer.enact(context.scripted_mqtt_server, script)
       assert_receive {ScriptedMqttServer, :completed}
+
+      # the handle message callback should have been called
+      assert_receive {{TestHandler, :handle_message}, %{topic: "foo/bar", payload: nil}}
     end
 
     test "outgoing publish with QoS=1", context do
@@ -883,6 +906,9 @@ defmodule Tortoise.ConnectionTest do
 
       refute_receive {:EXIT, ^pid, {:protocol_violation, {:unexpected_package, _}}}
       assert_receive {ScriptedMqttServer, :completed}
+
+      # the handle message callback should have been called
+      assert_receive {{TestHandler, :handle_message}, %{topic: "foo/bar", payload: nil}}
     end
 
     test "outgoing publish with QoS=2", context do
