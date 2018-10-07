@@ -880,7 +880,36 @@ defmodule Tortoise.ConnectionTest do
       refute_receive {:EXIT, ^pid, {:protocol_violation, {:unexpected_package, _}}}
       assert_receive {ScriptedMqttServer, {:received, ^publish}}
       assert_receive {ScriptedMqttServer, :completed}
+      # the caller should receive an :ok for the ref when it is published
       assert_receive {{Tortoise, ^client_id}, {Package.Publish, ^ref}, :ok}
+    end
+
+    test "outgoing publish with QoS=1 (sync call)", %{client_id: client_id} = context do
+      Process.flag(:trap_exit, true)
+      publish = %Package.Publish{identifier: 1, topic: "foo/bar", qos: 1}
+      puback = %Package.Puback{identifier: 1}
+
+      script = [
+        {:receive, publish},
+        {:send, puback}
+      ]
+
+      {:ok, _} = ScriptedMqttServer.enact(context.scripted_mqtt_server, script)
+
+      # setup a blocking call
+      {parent, test_ref} = {self(), make_ref()}
+
+      spawn_link(fn ->
+        test_result = Inflight.track_sync(client_id, {:outgoing, publish})
+        send(parent, {:sync_call_result, test_ref, test_result})
+      end)
+
+      pid = context.connection_pid
+      refute_receive {:EXIT, ^pid, {:protocol_violation, {:unexpected_package, _}}}
+      assert_receive {ScriptedMqttServer, {:received, ^publish}}
+      assert_receive {ScriptedMqttServer, :completed}
+      # the caller should receive an :ok for the ref when it is published
+      assert_receive {:sync_call_result, ^test_ref, :ok}
     end
   end
 

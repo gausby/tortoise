@@ -130,37 +130,8 @@ defmodule Tortoise.Connection.ControllerTest do
     end
   end
 
-  describe "Connection Control Packets" do
-    setup [:setup_controller]
-
-    test "receiving a disconnect from the server is a protocol violation",
-         %{controller_pid: pid} = context do
-      Process.flag(:trap_exit, true)
-      # receiving a disconnect request from the server is a (3.1.1)
-      # protocol violation
-      disconnect = %Package.Disconnect{}
-      Controller.handle_incoming(context.client_id, disconnect)
-
-      assert_receive {:EXIT, ^pid,
-                      {:protocol_violation, {:unexpected_package_from_remote, ^disconnect}}}
-    end
-  end
-
   describe "publish" do
     setup [:setup_controller]
-
-    test "receive a publish", context do
-      publish = %Package.Publish{
-        topic: "foo/bar/baz",
-        payload: "how do you do?",
-        qos: 0
-      }
-
-      assert :ok = Controller.handle_incoming(context.client_id, publish)
-      topic_list = String.split(publish.topic, "/")
-      payload = publish.payload
-      assert_receive(%TestHandler{received: [{^topic_list, ^payload} | _]})
-    end
 
     test "update callback module state between publishes", context do
       publish = %Package.Publish{topic: "a", qos: 0}
@@ -170,46 +141,6 @@ defmodule Tortoise.Connection.ControllerTest do
       assert_receive %TestHandler{publish_count: 1}
       :ok = Controller.handle_incoming(context.client_id, publish)
       assert_receive %TestHandler{publish_count: 2}
-    end
-  end
-
-  describe "Publish Control Packets with Quality of Service level 1" do
-    setup [:setup_connection, :setup_controller, :setup_inflight]
-
-    test "outgoing publish with qos 1", context do
-      client_id = context.client_id
-      publish = %Package.Publish{identifier: 1, topic: "a", qos: 1}
-      # we will get a reference (not the message id).
-      assert {:ok, ref} = Inflight.track(client_id, {:outgoing, publish})
-
-      # assert that the server receives a publish package
-      {:ok, package} = :gen_tcp.recv(context.server, 0, 200)
-      assert ^publish = Package.decode(package)
-      # the server will send back an ack message
-      Controller.handle_incoming(client_id, %Package.Puback{identifier: 1})
-      # the caller should get a message in its mailbox
-      assert_receive {{Tortoise, ^client_id}, {Package.Publish, ^ref}, :ok}
-    end
-
-    test "outgoing publish with qos 1 sync call", context do
-      client_id = context.client_id
-      publish = %Package.Publish{identifier: 1, topic: "a", qos: 1}
-
-      # setup a blocking call
-      {caller, test_ref} = {self(), make_ref()}
-
-      spawn_link(fn ->
-        test_result = Inflight.track_sync(client_id, {:outgoing, publish})
-        send(caller, {:sync_call_result, test_ref, test_result})
-      end)
-
-      # assert that the server receives a publish package
-      {:ok, package} = :gen_tcp.recv(context.server, 0, 200)
-      assert ^publish = Package.decode(package)
-      # the server will send back an ack message
-      Controller.handle_incoming(client_id, %Package.Puback{identifier: 1})
-      # the blocking call should receive :ok when the message is acked
-      assert_receive {:sync_call_result, ^test_ref, :ok}
     end
   end
 
