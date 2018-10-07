@@ -448,23 +448,30 @@ defmodule Tortoise.Connection do
   def handle_event(
         :internal,
         {:received, %Package.Connack{reason: :success} = connack},
-        # :handshake,
         :connecting,
-        %State{server: %Transport{type: transport}, connection: {transport, socket}} = data
+        %State{
+          client_id: client_id,
+          server: %Transport{type: transport},
+          connection: {transport, _}
+        } = data
       ) do
-    connection = {transport, socket}
-    :ok = Tortoise.Registry.put_meta(via_name(data.client_id), connection)
-    :ok = Events.dispatch(data.client_id, :connection, connection)
-    :ok = Events.dispatch(data.client_id, :status, :connected)
+    :ok = Tortoise.Registry.put_meta(via_name(client_id), data.connection)
+    :ok = Events.dispatch(client_id, :connection, data.connection)
+    :ok = Events.dispatch(client_id, :status, :connected)
 
     case connack do
       %Package.Connack{session_present: true} ->
-        {:next_state, :connected, data}
+        next_actions = [
+          {:next_event, :internal, {:execute_handler, {:connection, :up}}}
+        ]
+
+        {:next_state, :connected, data, next_actions}
 
       %Package.Connack{session_present: false} ->
         caller = {self(), make_ref()}
 
         next_actions = [
+          {:next_event, :internal, {:execute_handler, {:connection, :up}}},
           {:next_event, :cast, {:subscribe, caller, data.subscriptions, []}}
         ]
 
@@ -475,7 +482,6 @@ defmodule Tortoise.Connection do
   def handle_event(
         :internal,
         {:received, %Package.Connack{reason: {:refused, reason}}},
-        # :handshake,
         :connecting,
         %State{} = data
       ) do
@@ -485,7 +491,6 @@ defmodule Tortoise.Connection do
   def handle_event(
         :internal,
         {:received, package},
-        # :handshake,
         :connecting,
         %State{} = data
       ) do

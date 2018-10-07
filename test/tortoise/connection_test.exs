@@ -699,9 +699,13 @@ defmodule Tortoise.ConnectionTest do
       refute Process.alive?(inflight_pid)
       refute Process.alive?(receiver_pid)
 
-      # The user defined handler should have had its init/1 triggered
+      # The user defined handler should have the following callbacks
+      # triggered during this exchange
       {handler_mod, handler_init_opts} = handler
       assert_receive {{^handler_mod, :init}, ^handler_init_opts}
+      assert_receive {{^handler_mod, :connection}, :up}
+      assert_receive {{^handler_mod, :terminate}, :shutdown}
+      refute_receive {{^handler_mod, _}, _}
     end
   end
 

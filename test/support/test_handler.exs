@@ -12,6 +12,11 @@ defmodule TestHandler do
     :ok
   end
 
+  def connection(status, state) do
+    send(state[:parent], {{__MODULE__, :connection}, status})
+    {:ok, state}
+  end
+
   def handle_message(topic, payload, state) do
     data = %{topic: Enum.join(topic, "/"), payload: payload}
     send(state[:parent], {{__MODULE__, :handle_message}, data})
