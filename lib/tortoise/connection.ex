@@ -665,9 +665,8 @@ defmodule Tortoise.Connection do
         :connecting,
         %State{connect: connect, backoff: backoff} = data
       ) do
-    :ok = Tortoise.Registry.put_meta(via_name(data.client_id), :connecting)
-
-    with :ok = start_connection_supervisor([{:parent, self()} | data.opts]),
+    with :ok = Tortoise.Registry.put_meta(via_name(data.client_id), :connecting),
+         :ok = start_connection_supervisor([{:parent, self()} | data.opts]),
          {:ok, {transport, socket}} <- Tortoise.Connection.Receiver.connect(data.client_id),
          :ok = transport.send(socket, Package.encode(data.connect)) do
       new_data = %State{
