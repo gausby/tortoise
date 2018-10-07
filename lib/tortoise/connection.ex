@@ -772,6 +772,7 @@ defmodule Tortoise.Connection do
     {{:value, {{caller, ref}, start_time}}, ping} = :queue.out(ping)
     round_trip_time = System.monotonic_time(:microsecond) - start_time
     send(caller, {{Tortoise, client_id}, {Package.Pingreq, ref}, round_trip_time})
+    :ok = Events.dispatch(client_id, :ping_response, round_trip_time)
     {:keep_state, %State{data | ping: ping}}
   end
 
