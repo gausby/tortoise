@@ -409,7 +409,11 @@ defmodule Tortoise.Connection do
         updated_data = %State{data | handler: updated_handler}
         {:ok, :connecting, updated_data, next_events}
 
-        # todo, handle ignore from handler:init/1
+      :ignore ->
+        :ignore
+
+      {:stop, reason} ->
+        {:stop, reason}
     end
   end
 

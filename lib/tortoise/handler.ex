@@ -294,7 +294,8 @@ defmodule Tortoise.Handler do
                  ignored: term()
 
   @doc false
-  @spec execute(t, action) :: :ok | {:ok, t} | {:error, {:invalid_next_action, term()}}
+  @spec execute(t, action) ::
+          :ok | {:ok, t} | {:error, {:invalid_next_action, term()}} | :ignore | {:stop, term()}
         when action:
                :init
                | {:subscribe, [term()]}
@@ -306,6 +307,12 @@ defmodule Tortoise.Handler do
     case apply(handler.module, :init, [handler.initial_args]) do
       {:ok, initial_state} ->
         {:ok, %__MODULE__{handler | state: initial_state}}
+
+      :ignore ->
+        :ignore
+
+      {:stop, reason} ->
+        {:stop, reason}
     end
   end
 
