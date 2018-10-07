@@ -294,7 +294,7 @@ defmodule Tortoise.ConnectionTest do
       opts = [
         client_id: client_id,
         server: {Tortoise.Transport.Tcp, [host: ip, port: port]},
-        handler: {Tortoise.Handler.Default, []}
+        handler: {TestHandler, [parent: self()]}
       ]
 
       # connection
@@ -305,16 +305,19 @@ defmodule Tortoise.ConnectionTest do
       :ok = Tortoise.Connection.subscribe_sync(client_id, {"foo", 0}, identifier: 1)
       assert_receive {ScriptedMqttServer, {:received, ^subscription_foo}}
       assert Enum.member?(Tortoise.Connection.subscriptions(client_id), {"foo", 0})
+      assert_receive {{TestHandler, :subscription}, %{status: :up, topic_filter: "foo"}}
 
       # subscribe to a bar
       assert {:ok, ref} = Tortoise.Connection.subscribe(client_id, {"bar", 1}, identifier: 2)
       assert_receive {{Tortoise, ^client_id}, ^ref, :ok}
       assert_receive {ScriptedMqttServer, {:received, ^subscription_bar}}
+      assert_receive {{TestHandler, :subscription}, %{status: :up, topic_filter: "bar"}}
 
       # subscribe to a baz
       assert {:ok, ref} = Tortoise.Connection.subscribe(client_id, "baz", qos: 2, identifier: 3)
       assert_receive {{Tortoise, ^client_id}, ^ref, :ok}
       assert_receive {ScriptedMqttServer, {:received, ^subscription_baz}}
+      assert_receive {{TestHandler, :subscription}, %{status: :up, topic_filter: "baz"}}
 
       # foo, bar, and baz should now be in the subscription list
       subscriptions = Tortoise.Connection.subscriptions(client_id)
@@ -366,7 +369,7 @@ defmodule Tortoise.ConnectionTest do
       opts = [
         client_id: client_id,
         server: {Tortoise.Transport.Tcp, [host: ip, port: port]},
-        handler: {Tortoise.Handler.Default, []},
+        handler: {TestHandler, [parent: self()]},
         subscriptions: subscribe
       ]
 
@@ -375,9 +378,14 @@ defmodule Tortoise.ConnectionTest do
 
       assert_receive {ScriptedMqttServer, {:received, ^subscribe}}
 
+      assert_receive {{TestHandler, :subscription}, %{status: :up, topic_filter: "foo"}}
+      assert_receive {{TestHandler, :subscription}, %{status: :up, topic_filter: "bar"}}
+
       # now let us try to unsubscribe from foo
       :ok = Tortoise.Connection.unsubscribe_sync(client_id, "foo", identifier: 2)
       assert_receive {ScriptedMqttServer, {:received, ^unsubscribe_foo}}
+      # the callback handler should get a :down message for the foo subscription
+      assert_receive {{TestHandler, :subscription}, %{status: :down, topic_filter: "foo"}}
 
       assert %Package.Subscribe{topics: [{"bar", qos: 2}]} =
                Tortoise.Connection.subscriptions(client_id)
@@ -386,6 +394,8 @@ defmodule Tortoise.ConnectionTest do
       assert {:ok, ref} = Tortoise.Connection.unsubscribe(client_id, "bar", identifier: 3)
       assert_receive {{Tortoise, ^client_id}, ^ref, :ok}
       assert_receive {ScriptedMqttServer, {:received, ^unsubscribe_bar}}
+      # the callback handler should get a :down message for the bar subscription
+      assert_receive {{TestHandler, :subscription}, %{status: :down, topic_filter: "bar"}}
       assert %Package.Subscribe{topics: []} = Tortoise.Connection.subscriptions(client_id)
       assert_receive {ScriptedMqttServer, :completed}
     end

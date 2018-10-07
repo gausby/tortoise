@@ -424,6 +424,21 @@ defmodule Tortoise.Connection do
   end
 
   @impl true
+  def handle_event(
+        :internal,
+        {:execute_handler, cmd},
+        _,
+        %State{handler: handler} = data
+      ) do
+    case Handler.execute(handler, cmd) do
+      {:ok, %Handler{} = updated_handler} ->
+        updated_data = %State{data | handler: updated_handler}
+        {:keep_state, updated_data}
+
+        # handle stop
+    end
+  end
+
   def handle_event(:info, {:incoming, package}, _, _data) when is_binary(package) do
     next_actions = [{:next_event, :internal, {:received, Package.decode(package)}}]
     {:keep_state_and_data, next_actions}
@@ -617,7 +632,9 @@ defmodule Tortoise.Connection do
       {{pid, msg_ref}, updated_pending} when is_pid(pid) and is_reference(msg_ref) ->
         unless pid == self(), do: send(pid, {{Tortoise, client_id}, msg_ref, :ok})
         subscriptions = Enum.into(result[:ok] ++ result[:warn], data.subscriptions)
-        {:keep_state, %State{data | subscriptions: subscriptions, pending_refs: updated_pending}}
+        updated_data = %State{data | subscriptions: subscriptions, pending_refs: updated_pending}
+        next_actions = [{:next_event, :internal, {:execute_handler, {:subscribe, result}}}]
+        {:keep_state, updated_data, next_actions}
     end
   end
 
@@ -653,7 +670,9 @@ defmodule Tortoise.Connection do
         topics = Keyword.drop(data.subscriptions.topics, unsubbed)
         subscriptions = %Package.Subscribe{data.subscriptions | topics: topics}
         unless pid == self(), do: send(pid, {{Tortoise, client_id}, msg_ref, :ok})
-        {:keep_state, %State{data | pending_refs: updated_pending, subscriptions: subscriptions}}
+        updated_data = %State{data | pending_refs: updated_pending, subscriptions: subscriptions}
+        next_actions = [{:next_event, :internal, {:execute_handler, {:unsubscribe, unsubbed}}}]
+        {:keep_state, updated_data, next_actions}
     end
   end
 
