@@ -42,7 +42,7 @@ defmodule Tortoise.Package.Disconnect do
             __META__: Package.Meta.t(),
             reason: reason(),
             # todo, let this live in the properties module
-            properties: [{atom(), String.t()}]
+            properties: [{atom(), any()}]
           }
   defstruct __META__: %Package.Meta{opcode: @opcode, flags: 0},
             reason: :normal_disconnection,

@@ -807,6 +807,19 @@ defmodule Tortoise.Connection do
 
   def handle_event(
         :internal,
+        {:received, %Package.Disconnect{} = disconnect},
+        _current_state,
+        %State{handler: handler} = data
+      ) do
+    case Handler.execute_disconnect(handler, disconnect) do
+      {:stop, reason, updated_handler} ->
+        {:stop, reason, %State{data | handler: updated_handler}}
+    end
+  end
+
+  # unexpected package
+  def handle_event(
+        :internal,
         {:received, package},
         _current_state,
         %State{} = data

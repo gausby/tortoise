@@ -294,6 +294,18 @@ defmodule Tortoise.Handler do
                  ignored: term()
 
   @doc false
+  @spec execute_disconnect(t, %Package.Disconnect{}) :: {:stop, term(), t}
+  def execute_disconnect(handler, %Package.Disconnect{} = disconnect) do
+    handler.module
+    |> apply(:handle_disconnect, [disconnect, handler.state])
+    |> case do
+      {:stop, reason, updated_state} ->
+        {:stop, reason, %__MODULE__{handler | state: updated_state}}
+    end
+  end
+
+  # legacy, should get converted to execute_*type*(handler)
+  @doc false
   @spec execute(t, action) ::
           :ok | {:ok, t} | {:error, {:invalid_next_action, term()}} | :ignore | {:stop, term()}
         when action:

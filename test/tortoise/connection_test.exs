@@ -977,4 +977,54 @@ defmodule Tortoise.ConnectionTest do
       assert_receive {{Tortoise, ^client_id}, {Package.Publish, ^ref}, :ok}
     end
   end
+
+  describe "Disconnect" do
+    setup [:setup_scripted_mqtt_server, :setup_connection_and_perform_handshake]
+
+    # [x] :normal_disconnection
+    # [ ] :unspecified_error
+    # [ ] :malformed_packet
+    # [ ] :protocol_error
+    # [ ] :implementation_specific_error
+    # [ ] :not_authorized
+    # [ ] :server_busy
+    # [ ] :server_shutting_down
+    # [ ] :keep_alive_timeout
+    # [ ] :session_taken_over
+    # [ ] :topic_filter_invalid
+    # [ ] :topic_name_invalid
+    # [ ] :receive_maximum_exceeded
+    # [ ] :topic_alias_invalid
+    # [ ] :packet_too_large
+    # [ ] :message_rate_too_high
+    # [ ] :quota_exceeded
+    # [ ] :administrative_action
+    # [ ] :payload_format_invalid
+    # [ ] :retain_not_supported
+    # [ ] :qos_not_supported
+    # [ ] :use_another_server (has :server_reference in properties)
+    # [ ] :server_moved (has :server_reference in properties)
+    # [ ] :shared_subscriptions_not_supported
+    # [ ] :connection_rate_exceeded
+    # [ ] :maximum_connect_time
+    # [ ] :subscription_identifiers_not_supported
+    # [ ] :wildcard_subscriptions_not_supported
+
+    test "normal disconnection", context do
+      Process.flag(:trap_exit, true)
+      disconnect = %Package.Disconnect{reason: :normal_disconnection}
+      script = [{:send, disconnect}]
+
+      {:ok, _} = ScriptedMqttServer.enact(context.scripted_mqtt_server, script)
+      pid = context.connection_pid
+
+      refute_receive {:EXIT, ^pid, {:protocol_violation, {:unexpected_package, ^disconnect}}}
+      assert_receive {ScriptedMqttServer, :completed}
+
+      # the handle disconnect callback should have been called
+      assert_receive {{TestHandler, :handle_disconnect}, ^disconnect}
+      # the callback handler will tell it to stop normally
+      assert_receive {:EXIT, ^pid, :normal}
+    end
+  end
 end

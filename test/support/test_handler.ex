@@ -17,6 +17,11 @@ defmodule TestHandler do
     {:ok, state}
   end
 
+  def handle_disconnect(disconnect, state) do
+    send(state[:parent], {{__MODULE__, :handle_disconnect}, disconnect})
+    {:stop, :normal, state}
+  end
+
   def handle_message(topic, payload, state) do
     data = %{topic: Enum.join(topic, "/"), payload: payload}
     send(state[:parent], {{__MODULE__, :handle_message}, data})
