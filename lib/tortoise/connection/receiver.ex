@@ -44,21 +44,9 @@ defmodule Tortoise.Connection.Receiver do
     GenStateMachine.call(via_name(client_id), :connect)
   end
 
-  def handle_socket(client_id, {transport, socket}) do
-    {:ok, pid} = GenStateMachine.call(via_name(client_id), {:handle_socket, transport, socket})
-
-    case transport.controlling_process(socket, pid) do
-      :ok ->
-        :ok
-
-      {:error, reason} when reason in [:closed, :einval] ->
-        # todo, this is an edge case, figure out what to do here
-        :ok
-    end
-  end
-
   @impl true
   def init(%State{} = data) do
+    send(data.parent, {{Tortoise, data.client_id}, __MODULE__, {:ready, self()}})
     {:ok, :disconnected, data}
   end
 
@@ -79,24 +67,7 @@ defmodule Tortoise.Connection.Receiver do
     {:keep_state, new_data, next_actions}
   end
 
-  # Dropped connection: tell the connection process that it should
-  # attempt to get a new network socket; unfortunately we cannot just
-  # monitor the socket port in the connection process as a transport
-  # method such as the SSL based one will pass an opaque data
-  # structure around instead of a port that can be monitored.
-  def handle_event(:info, {transport, socket}, _state, %{socket: socket} = data)
-      when transport in [:tcp_closed, :ssl_closed] do
-    # should we empty the buffer?
-    # communicate to the world that we have dropped the connection
-    :ok = Events.dispatch(data.client_id, :status, :down)
-    {:next_state, :disconnected, %{data | socket: nil}}
-  end
-
   # activate network socket for incoming traffic
-  def handle_event(:internal, :activate_socket, _state_name, %State{transport: nil}) do
-    {:stop, :no_transport}
-  end
-
   def handle_event(
         :internal,
         :activate_socket,
@@ -114,7 +85,7 @@ defmodule Tortoise.Connection.Receiver do
   end
 
   # consume buffer
-  def handle_event(:internal, :consume_buffer, state_name, %{buffer: <<>>}) do
+  def handle_event(:internal, :consume_buffer, _current_name, %{buffer: <<>>}) do
     :keep_state_and_data
   end
 
@@ -201,8 +172,6 @@ defmodule Tortoise.Connection.Receiver do
           transport: %Transport{type: transport, host: host, port: port, opts: opts}
         } = data
       ) do
-    Events.dispatch(data.client_id, :status, :connecting)
-
     case transport.connect(host, port, opts, 10000) do
       {:ok, socket} ->
         new_state = {:connected, :receiving_fixed_header}

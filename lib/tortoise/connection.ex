@@ -20,13 +20,14 @@ defmodule Tortoise.Connection do
     :pending_refs,
     :connection,
     :ping,
-    :handler
+    :handler,
+    :receiver
   ]
 
   alias __MODULE__, as: State
 
   alias Tortoise.{Handler, Transport, Package, Events}
-  alias Tortoise.Connection.{Inflight, Backoff}
+  alias Tortoise.Connection.{Receiver, Inflight, Backoff}
   alias Tortoise.Package.Connect
 
   @doc """
@@ -693,9 +694,11 @@ defmodule Tortoise.Connection do
         :connecting,
         %State{connect: connect, backoff: backoff} = data
       ) do
-    with :ok = Tortoise.Registry.put_meta(via_name(data.client_id), :connecting),
-         :ok = start_connection_supervisor([{:parent, self()} | data.opts]),
-         {:ok, {transport, socket}} <- Tortoise.Connection.Receiver.connect(data.client_id),
+    :ok = Tortoise.Registry.put_meta(via_name(data.client_id), :connecting)
+    :ok = start_connection_supervisor([{:parent, self()} | data.opts])
+    {:ok, data} = await_and_monitor_receiver(data)
+
+    with {:ok, {transport, socket}} <- Receiver.connect(data.client_id),
          :ok = transport.send(socket, Package.encode(data.connect)) do
       new_data = %State{
         data
@@ -703,7 +706,6 @@ defmodule Tortoise.Connection do
           connection: {transport, socket}
       }
 
-      # {:next_state, :handshake, new_state}
       {:keep_state, new_data}
     else
       {:error, {:stop, reason}} ->
@@ -810,6 +812,31 @@ defmodule Tortoise.Connection do
         %State{} = data
       ) do
     {:stop, {:protocol_violation, {:unexpected_package, package}}, data}
+  end
+
+  def handle_event(
+        :info,
+        {:DOWN, receiver_ref, :process, receiver_pid, _reason},
+        :connected,
+        %State{receiver: {receiver_pid, receiver_ref}} = data
+      ) do
+    next_actions = [{:next_event, :internal, :connect}]
+    updated_data = %State{data | receiver: nil}
+    {:next_state, :connecting, updated_data, next_actions}
+  end
+
+  defp await_and_monitor_receiver(%State{client_id: client_id, receiver: nil} = data) do
+    receive do
+      {{Tortoise, ^client_id}, Receiver, {:ready, pid}} ->
+        {:ok, %State{data | receiver: {pid, Process.monitor(pid)}}}
+    after
+      5000 ->
+        {:error, :receiver_timeout}
+    end
+  end
+
+  defp await_and_monitor_receiver(data) do
+    {:ok, data}
   end
 
   defp start_connection_supervisor(opts) do
