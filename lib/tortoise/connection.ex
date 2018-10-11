@@ -459,6 +459,7 @@ defmodule Tortoise.Connection do
     :ok = Tortoise.Registry.put_meta(via_name(client_id), data.connection)
     :ok = Events.dispatch(client_id, :connection, data.connection)
     :ok = Events.dispatch(client_id, :status, :connected)
+    data = setup_keep_alive(data)
 
     case connack do
       %Package.Connack{session_present: true} ->
@@ -694,6 +695,8 @@ defmodule Tortoise.Connection do
         :connecting,
         %State{connect: connect, backoff: backoff} = data
       ) do
+    # stop the keep alive timer (if running)
+    data = stop_keep_alive(data)
     :ok = Tortoise.Registry.put_meta(via_name(data.client_id), :connecting)
     :ok = start_connection_supervisor([{:parent, self()} | data.opts])
     {:ok, data} = await_and_monitor_receiver(data)
@@ -860,5 +863,26 @@ defmodule Tortoise.Connection do
       {:error, {:already_started, _pid}} ->
         :ok
     end
+  end
+
+  defp setup_keep_alive(%State{client_id: client_id, keep_alive: nil} = data) do
+    keep_alive = data.connect.keep_alive * 1000
+    {:ok, keep_alive_ref} = :timer.apply_interval(keep_alive, __MODULE__, :ping, [client_id])
+    data = %State{data | keep_alive: keep_alive_ref}
+  end
+
+  defp setup_keep_alive(%State{keep_alive: ref} = data) when is_reference(ref) do
+    data
+    |> stop_keep_alive()
+    |> setup_keep_alive()
+  end
+
+  defp stop_keep_alive(%State{keep_alive: nil} = data) do
+    data
+  end
+
+  defp stop_keep_alive(%State{keep_alive: ref} = data) do
+    {:ok, :cancel} = :timer.cancel(ref)
+    setup_keep_alive(%State{data | keep_alive: nil})
   end
 end
