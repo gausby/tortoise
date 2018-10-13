@@ -379,12 +379,6 @@ defmodule Tortoise.Connection do
     unless active?, do: Events.unregister(client_id, :connection)
   end
 
-  @doc false
-  @spec subscribe_all(Tortoise.client_id()) :: :ok
-  def subscribe_all(client_id) do
-    GenStateMachine.cast(via_name(client_id), :subscribe_all)
-  end
-
   # Callbacks
   @impl true
   def init({transport, connect, backoff_opts, subscriptions, handler, opts}) do
