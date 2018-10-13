@@ -9,20 +9,18 @@ defmodule Tortoise.Connection do
 
   require Logger
 
-  defstruct [
-    :client_id,
-    :connect,
-    :server,
-    :backoff,
-    :subscriptions,
-    :keep_alive,
-    :opts,
-    :pending_refs,
-    :connection,
-    :ping,
-    :handler,
-    :receiver
-  ]
+  defstruct client_id: nil,
+            connect: nil,
+            server: nil,
+            backoff: nil,
+            subscriptions: nil,
+            keep_alive: nil,
+            opts: nil,
+            pending_refs: nil,
+            connection: nil,
+            ping: nil,
+            handler: nil,
+            receiver: nil
 
   alias __MODULE__, as: State
 
@@ -398,7 +396,6 @@ defmodule Tortoise.Connection do
       subscriptions: subscriptions,
       opts: opts,
       pending_refs: %{},
-      ping: :queue.new(),
       handler: handler
     }
 
@@ -459,12 +456,12 @@ defmodule Tortoise.Connection do
     :ok = Tortoise.Registry.put_meta(via_name(client_id), data.connection)
     :ok = Events.dispatch(client_id, :connection, data.connection)
     :ok = Events.dispatch(client_id, :status, :connected)
-    data = setup_keep_alive(data)
 
     case connack do
       %Package.Connack{session_present: true} ->
         next_actions = [
-          {:next_event, :internal, {:execute_handler, {:connection, :up}}}
+          {:next_event, :internal, {:execute_handler, {:connection, :up}}},
+          {:next_event, :internal, :setup_keep_alive}
         ]
 
         {:next_state, :connected, data, next_actions}
@@ -474,7 +471,8 @@ defmodule Tortoise.Connection do
 
         next_actions = [
           {:next_event, :internal, {:execute_handler, {:connection, :up}}},
-          {:next_event, :cast, {:subscribe, caller, data.subscriptions, []}}
+          {:next_event, :cast, {:subscribe, caller, data.subscriptions, []}},
+          {:next_event, :internal, :setup_keep_alive}
         ]
 
         {:next_state, :connected, data, next_actions}
@@ -695,8 +693,6 @@ defmodule Tortoise.Connection do
         :connecting,
         %State{connect: connect, backoff: backoff} = data
       ) do
-    # stop the keep alive timer (if running)
-    data = stop_keep_alive(data)
     :ok = Tortoise.Registry.put_meta(via_name(data.client_id), :connecting)
     :ok = start_connection_supervisor([{:parent, self()} | data.opts])
     {:ok, data} = await_and_monitor_receiver(data)
@@ -783,31 +779,92 @@ defmodule Tortoise.Connection do
         :cast,
         {:ping, caller},
         :connected,
-        %State{connection: {transport, socket}} = data
+        %State{connection: {transport, socket}, ping: ping} = data
       ) do
-    time = System.monotonic_time(:microsecond)
-    apply(transport, :send, [socket, Package.encode(%Package.Pingreq{})])
-    ping = :queue.in({caller, time}, data.ping)
+    case ping do
+      {{:pinging, start_time}, awaiting} ->
+        ping = {{:pinging, start_time}, [caller | awaiting]}
+        {:keep_state, %State{data | ping: ping}}
+
+      {{:idle, ref}, awaiting} when is_reference(ref) ->
+        ping = {{:idle, ref}, [caller | awaiting]}
+        next_actions = [{:next_event, :info, :keep_alive}]
+        {:keep_state, %State{data | ping: ping}, next_actions}
+    end
+  end
+
+  # not connected yet
+  def handle_event(:cast, {:ping, {caller_pid, ref}}, _, %State{client_id: client_id}) do
+    send(caller_pid, {{Tortoise, client_id}, {Package.Pingreq, ref}, :not_connected})
+    :keep_state_and_data
+  end
+
+  def handle_event(
+        :internal,
+        :setup_keep_alive,
+        :connected,
+        %State{ping: nil} = data
+      ) do
+    timeout = data.connect.keep_alive * 1000
+    ref = Process.send_after(self(), :keep_alive, timeout)
+    ping = {{:idle, ref}, []}
     {:keep_state, %State{data | ping: ping}}
   end
 
-  # def handle_event(:cast, {:ping, _}, _, %State{}) do
-  #   {:keep_state_and_data, [:postpone]}
-  # end
+  def handle_event(
+        :info,
+        :keep_alive,
+        :connected,
+        %State{connection: {transport, socket}, ping: {{:idle, keep_alive_ref}, awaiting}} = data
+      ) do
+    # the keep alive timeout ref has most likely been triggered, but
+    # if we get here via a user triggered ping we have to cancel the
+    # timer.
+    _ = Process.cancel_timer(keep_alive_ref)
+
+    start_time = System.monotonic_time(:microsecond)
+    ping = {{:pinging, start_time}, awaiting}
+
+    :ok = transport.send(socket, Package.encode(%Package.Pingreq{}))
+
+    {:keep_state, %State{data | ping: ping}}
+  end
+
+  def handle_event(
+        :info,
+        :keep_alive,
+        _,
+        %State{client_id: client_id, ping: {_, awaiting}} = data
+      ) do
+    for {caller, ref} <- awaiting do
+      send(caller, {{Tortoise, client_id}, {Package.Pingreq, ref}, :not_connected})
+    end
+
+    {:keep_state, %State{data | ping: nil}}
+  end
 
   def handle_event(
         :internal,
         {:received, %Package.Pingresp{}},
         :connected,
-        %State{client_id: client_id, ping: ping} = data
+        %State{
+          client_id: client_id,
+          ping: {{:pinging, start_time}, awaiting}
+        } = data
       ) do
-    {{:value, {{caller, ref}, start_time}}, ping} = :queue.out(ping)
     round_trip_time = System.monotonic_time(:microsecond) - start_time
-    send(caller, {{Tortoise, client_id}, {Package.Pingreq, ref}, round_trip_time})
     :ok = Events.dispatch(client_id, :ping_response, round_trip_time)
-    {:keep_state, %State{data | ping: ping}}
+
+    for {caller, ref} <- awaiting do
+      send(caller, {{Tortoise, client_id}, {Package.Pingreq, ref}, round_trip_time})
+    end
+
+    next_actions = [{:next_event, :internal, :setup_keep_alive}]
+
+    {:keep_state, %State{data | ping: nil}, next_actions}
   end
 
+  # disconnect packages
   def handle_event(
         :internal,
         {:received, %Package.Disconnect{} = disconnect},
@@ -863,26 +920,5 @@ defmodule Tortoise.Connection do
       {:error, {:already_started, _pid}} ->
         :ok
     end
-  end
-
-  defp setup_keep_alive(%State{client_id: client_id, keep_alive: nil} = data) do
-    keep_alive = data.connect.keep_alive * 1000
-    {:ok, keep_alive_ref} = :timer.apply_interval(keep_alive, __MODULE__, :ping, [client_id])
-    data = %State{data | keep_alive: keep_alive_ref}
-  end
-
-  defp setup_keep_alive(%State{keep_alive: ref} = data) when is_reference(ref) do
-    data
-    |> stop_keep_alive()
-    |> setup_keep_alive()
-  end
-
-  defp stop_keep_alive(%State{keep_alive: nil} = data) do
-    data
-  end
-
-  defp stop_keep_alive(%State{keep_alive: ref} = data) do
-    {:ok, :cancel} = :timer.cancel(ref)
-    setup_keep_alive(%State{data | keep_alive: nil})
   end
 end
