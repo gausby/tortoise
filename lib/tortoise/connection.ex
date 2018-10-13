@@ -14,9 +14,8 @@ defmodule Tortoise.Connection do
             server: nil,
             backoff: nil,
             subscriptions: nil,
-            keep_alive: nil,
             opts: nil,
-            pending_refs: nil,
+            pending_refs: %{},
             connection: nil,
             ping: nil,
             handler: nil,
@@ -389,7 +388,6 @@ defmodule Tortoise.Connection do
       backoff: Backoff.new(backoff_opts),
       subscriptions: subscriptions,
       opts: opts,
-      pending_refs: %{},
       handler: handler
     }
 
@@ -448,6 +446,7 @@ defmodule Tortoise.Connection do
     :ok = Tortoise.Registry.put_meta(via_name(client_id), data.connection)
     :ok = Events.dispatch(client_id, :connection, data.connection)
     :ok = Events.dispatch(client_id, :status, :connected)
+    data = %State{data | backoff: Backoff.reset(data.backoff)}
 
     case connack do
       %Package.Connack{session_present: true} ->
@@ -679,18 +678,26 @@ defmodule Tortoise.Connection do
   end
 
   # connection logic ===================================================
-  def handle_event(
-        :internal,
-        :connect,
-        :connecting,
-        %State{connect: connect, backoff: _backoff} = data
-      ) do
+  def handle_event(:internal, :connect, :connecting, %State{} = data) do
     :ok = Tortoise.Registry.put_meta(via_name(data.client_id), :connecting)
     :ok = start_connection_supervisor([{:parent, self()} | data.opts])
-    {:ok, data} = await_and_monitor_receiver(data)
 
+    case await_and_monitor_receiver(data) do
+      {:ok, data} ->
+        {timeout, updated_data} = Map.get_and_update(data, :backoff, &Backoff.next/1)
+        next_actions = [{:state_timeout, timeout, :attempt_connection}]
+        {:keep_state, updated_data, next_actions}
+    end
+  end
+
+  def handle_event(
+        :state_timeout,
+        :attempt_connection,
+        :connecting,
+        %State{connect: connect} = data
+      ) do
     with {:ok, {transport, socket}} <- Receiver.connect(data.client_id),
-         :ok = transport.send(socket, Package.encode(data.connect)) do
+         :ok = transport.send(socket, Package.encode(connect)) do
       new_data = %State{
         data
         | connect: %Connect{connect | clean_start: false},
@@ -703,7 +710,6 @@ defmodule Tortoise.Connection do
         {:stop, reason, data}
 
       {:error, {:retry, _reason}} ->
-        # {timeout, updated_data} = Map.get_and_update(data, :backoff, &Backoff.next/1)
         next_actions = [{:next_event, :internal, :connect}]
         {:keep_state, data, next_actions}
     end
@@ -771,12 +777,18 @@ defmodule Tortoise.Connection do
         :internal,
         :setup_keep_alive,
         :connected,
-        %State{ping: nil} = data
+        %State{} = data
       ) do
-    timeout = data.connect.keep_alive * 1000
-    ref = Process.send_after(self(), :keep_alive, timeout)
-    ping = {{:idle, ref}, []}
-    {:keep_state, %State{data | ping: ping}}
+    case data.ping do
+      {{:idle, _}, []} ->
+        :keep_state_and_data
+
+      nil ->
+        timeout = data.connect.keep_alive * 1000
+        ref = Process.send_after(self(), :keep_alive, timeout)
+        ping = {{:idle, ref}, []}
+        {:keep_state, %State{data | ping: ping}}
+    end
   end
 
   def handle_event(
@@ -858,9 +870,10 @@ defmodule Tortoise.Connection do
   def handle_event(
         :info,
         {:DOWN, receiver_ref, :process, receiver_pid, _reason},
-        :connected,
+        state,
         %State{receiver: {receiver_pid, receiver_ref}} = data
-      ) do
+      )
+      when state in [:connected, :connecting] do
     next_actions = [{:next_event, :internal, :connect}]
     updated_data = %State{data | receiver: nil}
     {:next_state, :connecting, updated_data, next_actions}

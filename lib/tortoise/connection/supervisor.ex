@@ -27,6 +27,6 @@ defmodule Tortoise.Connection.Supervisor do
       {Receiver, Keyword.take(opts, [:client_id, :transport, :parent])}
     ]
 
-    Supervisor.init(children, strategy: :rest_for_one)
+    Supervisor.init(children, strategy: :rest_for_one, max_seconds: 30, max_restarts: 10)
   end
 end

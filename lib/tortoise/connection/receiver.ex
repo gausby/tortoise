@@ -67,6 +67,10 @@ defmodule Tortoise.Connection.Receiver do
     {:keep_state, new_data, next_actions}
   end
 
+  def handle_event(:info, unknown_info, _, data) do
+    {:stop, {:unknown_info, unknown_info}, data}
+  end
+
   # activate network socket for incoming traffic
   def handle_event(
         :internal,
