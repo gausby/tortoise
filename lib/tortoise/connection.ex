@@ -691,7 +691,7 @@ defmodule Tortoise.Connection do
         :internal,
         :connect,
         :connecting,
-        %State{connect: connect, backoff: backoff} = data
+        %State{connect: connect, backoff: _backoff} = data
       ) do
     :ok = Tortoise.Registry.put_meta(via_name(data.client_id), :connecting)
     :ok = start_connection_supervisor([{:parent, self()} | data.opts])
@@ -722,7 +722,7 @@ defmodule Tortoise.Connection do
         :info,
         {{Tortoise, client_id}, :status, current_state},
         current_state,
-        %State{}
+        %State{client_id: client_id}
       ) do
     :keep_state_and_data
   end
@@ -779,7 +779,7 @@ defmodule Tortoise.Connection do
         :cast,
         {:ping, caller},
         :connected,
-        %State{connection: {transport, socket}, ping: ping} = data
+        %State{ping: ping} = data
       ) do
     case ping do
       {{:pinging, start_time}, awaiting} ->
