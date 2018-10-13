@@ -401,8 +401,6 @@ defmodule Tortoise.Connection do
 
     case Handler.execute(handler, :init) do
       {:ok, %Handler{} = updated_handler} ->
-        {:ok, _pid} = Tortoise.Events.register(data.client_id, :status)
-
         next_events = [{:next_event, :internal, :connect}]
         updated_data = %State{data | handler: updated_handler}
         {:ok, :connecting, updated_data, next_events}
@@ -725,30 +723,6 @@ defmodule Tortoise.Connection do
         %State{client_id: client_id}
       ) do
     :keep_state_and_data
-  end
-
-  def handle_event(
-        :info,
-        {{Tortoise, client_id}, :status, status},
-        _current_state,
-        %State{handler: handler, client_id: client_id} = data
-      ) do
-    case status do
-      :down ->
-        next_actions = [{:next_event, :internal, :connect}]
-
-        case Handler.execute(handler, {:connection, status}) do
-          {:ok, updated_handler} ->
-            updated_data = %State{data | handler: updated_handler}
-            {:next_state, :connecting, updated_data, next_actions}
-        end
-
-      _otherwise ->
-        case Handler.execute(handler, {:connection, status}) do
-          {:ok, updated_handler} ->
-            {:keep_state, %State{data | handler: updated_handler}}
-        end
-    end
   end
 
   # disconnect protocol messages ---------------------------------------
