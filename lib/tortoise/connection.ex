@@ -17,7 +17,7 @@ defmodule Tortoise.Connection do
             opts: nil,
             pending_refs: %{},
             connection: nil,
-            ping: nil,
+            ping: {:idle, []},
             handler: nil,
             receiver: nil
 
@@ -440,7 +440,8 @@ defmodule Tortoise.Connection do
         %State{
           client_id: client_id,
           server: %Transport{type: transport},
-          connection: {transport, _}
+          connection: {transport, _},
+          connect: %Package.Connect{keep_alive: keep_alive}
         } = data
       ) do
     :ok = Tortoise.Registry.put_meta(via_name(client_id), data.connection)
@@ -451,8 +452,8 @@ defmodule Tortoise.Connection do
     case connack do
       %Package.Connack{session_present: true} ->
         next_actions = [
-          {:next_event, :internal, {:execute_handler, {:connection, :up}}},
-          {:next_event, :internal, :setup_keep_alive}
+          {:state_timeout, keep_alive * 1000, :keep_alive},
+          {:next_event, :internal, {:execute_handler, {:connection, :up}}}
         ]
 
         {:next_state, :connected, data, next_actions}
@@ -461,9 +462,9 @@ defmodule Tortoise.Connection do
         caller = {self(), make_ref()}
 
         next_actions = [
+          {:state_timeout, keep_alive * 1000, :keep_alive},
           {:next_event, :internal, {:execute_handler, {:connection, :up}}},
-          {:next_event, :cast, {:subscribe, caller, data.subscriptions, []}},
-          {:next_event, :internal, :setup_keep_alive}
+          {:next_event, :cast, {:subscribe, caller, data.subscriptions, []}}
         ]
 
         {:next_state, :connected, data, next_actions}
@@ -749,21 +750,15 @@ defmodule Tortoise.Connection do
   end
 
   # ping handling ------------------------------------------------------
-  def handle_event(
-        :cast,
-        {:ping, caller},
-        :connected,
-        %State{ping: ping} = data
-      ) do
-    case ping do
-      {{:pinging, start_time}, awaiting} ->
-        ping = {{:pinging, start_time}, [caller | awaiting]}
-        {:keep_state, %State{data | ping: ping}}
+  def handle_event(:cast, {:ping, caller}, :connected, %State{} = data) do
+    case data.ping do
+      {:idle, awaiting} ->
+        # set the keep alive timeout to trigger instantly
+        next_actions = [{:state_timeout, 0, :keep_alive}]
+        {:keep_state, %State{data | ping: {:idle, [caller | awaiting]}}, next_actions}
 
-      {{:idle, ref}, awaiting} when is_reference(ref) ->
-        ping = {{:idle, ref}, [caller | awaiting]}
-        next_actions = [{:next_event, :info, :keep_alive}]
-        {:keep_state, %State{data | ping: ping}, next_actions}
+      {{:pinging, start_time}, awaiting} ->
+        {:keep_state, %State{data | ping: {{:pinging, start_time}, [caller | awaiting]}}}
     end
   end
 
@@ -774,53 +769,16 @@ defmodule Tortoise.Connection do
   end
 
   def handle_event(
-        :internal,
-        :setup_keep_alive,
-        :connected,
-        %State{} = data
-      ) do
-    case data.ping do
-      {{:idle, _}, []} ->
-        :keep_state_and_data
-
-      nil ->
-        timeout = data.connect.keep_alive * 1000
-        ref = Process.send_after(self(), :keep_alive, timeout)
-        ping = {{:idle, ref}, []}
-        {:keep_state, %State{data | ping: ping}}
-    end
-  end
-
-  def handle_event(
-        :info,
+        :state_timeout,
         :keep_alive,
         :connected,
-        %State{connection: {transport, socket}, ping: {{:idle, keep_alive_ref}, awaiting}} = data
+        %State{connection: {transport, socket}, ping: {:idle, awaiting}} = data
       ) do
-    # the keep alive timeout ref has most likely been triggered, but
-    # if we get here via a user triggered ping we have to cancel the
-    # timer.
-    _ = Process.cancel_timer(keep_alive_ref)
-
-    start_time = System.monotonic_time(:microsecond)
-    ping = {{:pinging, start_time}, awaiting}
+    start_time = System.monotonic_time()
 
     :ok = transport.send(socket, Package.encode(%Package.Pingreq{}))
 
-    {:keep_state, %State{data | ping: ping}}
-  end
-
-  def handle_event(
-        :info,
-        :keep_alive,
-        _,
-        %State{client_id: client_id, ping: {_, awaiting}} = data
-      ) do
-    for {caller, ref} <- awaiting do
-      send(caller, {{Tortoise, client_id}, {Package.Pingreq, ref}, :not_connected})
-    end
-
-    {:keep_state, %State{data | ping: nil}}
+    {:keep_state, %State{data | ping: {{:pinging, start_time}, awaiting}}}
   end
 
   def handle_event(
@@ -829,19 +787,23 @@ defmodule Tortoise.Connection do
         :connected,
         %State{
           client_id: client_id,
-          ping: {{:pinging, start_time}, awaiting}
+          ping: {{:pinging, start_time}, awaiting},
+          connect: %Package.Connect{keep_alive: keep_alive}
         } = data
       ) do
-    round_trip_time = System.monotonic_time(:microsecond) - start_time
+    round_trip_time =
+      (System.monotonic_time() - start_time)
+      |> System.convert_time_unit(:native, :microsecond)
+
     :ok = Events.dispatch(client_id, :ping_response, round_trip_time)
 
     for {caller, ref} <- awaiting do
       send(caller, {{Tortoise, client_id}, {Package.Pingreq, ref}, round_trip_time})
     end
 
-    next_actions = [{:next_event, :internal, :setup_keep_alive}]
+    next_actions = [{:state_timeout, keep_alive * 1000, :keep_alive}]
 
-    {:keep_state, %State{data | ping: nil}, next_actions}
+    {:keep_state, %State{data | ping: {:idle, []}}, next_actions}
   end
 
   # disconnect packages
