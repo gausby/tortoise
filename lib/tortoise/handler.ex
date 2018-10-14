@@ -321,6 +321,14 @@ defmodule Tortoise.Handler do
     end
   end
 
+  @doc false
+  @spec execute_terminate(t, reason) :: ignored
+        when reason: term(),
+             ignored: term()
+  def execute_terminate(handler, reason) do
+    _ignored = apply(handler.module, :terminate, [reason, handler.state])
+  end
+
   # legacy, should get converted to execute_*type*(handler)
   @doc false
   @spec execute(t, action) ::
@@ -368,11 +376,6 @@ defmodule Tortoise.Handler do
       # _, {:stop, acc} ->
       #   {:stop, acc}
     end)
-  end
-
-  def execute(handler, {:terminate, reason}) do
-    _ignored = apply(handler.module, :terminate, [reason, handler.state])
-    :ok
   end
 
   # Subacks will come in a map with three keys in the form of tuples

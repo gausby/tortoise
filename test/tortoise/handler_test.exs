@@ -191,7 +191,7 @@ defmodule Tortoise.HandlerTest do
   describe "execute terminate/2" do
     test "return ok", context do
       handler = set_state(context.handler, pid: self())
-      assert :ok = Handler.execute(handler, {:terminate, :normal})
+      assert :ok = Handler.execute_terminate(handler, :normal)
       assert_receive {:terminate, :normal}
     end
   end
