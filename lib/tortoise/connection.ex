@@ -716,16 +716,6 @@ defmodule Tortoise.Connection do
     end
   end
 
-  # system state changes; we need to react to connection down messages
-  def handle_event(
-        :info,
-        {{Tortoise, client_id}, :status, current_state},
-        current_state,
-        %State{client_id: client_id}
-      ) do
-    :keep_state_and_data
-  end
-
   # disconnect protocol messages ---------------------------------------
   def handle_event(
         {:call, from},
