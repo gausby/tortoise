@@ -391,7 +391,7 @@ defmodule Tortoise.Connection do
       handler: handler
     }
 
-    case Handler.execute(handler, :init) do
+    case Handler.execute_init(handler) do
       {:ok, %Handler{} = updated_handler} ->
         next_events = [{:next_event, :internal, :connect}]
         updated_data = %State{data | handler: updated_handler}

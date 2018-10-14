@@ -55,9 +55,9 @@ defmodule Tortoise.HandlerTest do
     %Handler{handler | state: update}
   end
 
-  describe "execute init/1" do
+  describe "execute_init/1" do
     test "return ok-tuple", context do
-      assert {:ok, %Handler{}} = Handler.execute(context.handler, :init)
+      assert {:ok, %Handler{}} = Handler.execute_init(context.handler)
       assert_receive :init
     end
   end

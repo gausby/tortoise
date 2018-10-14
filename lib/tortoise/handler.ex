@@ -294,6 +294,23 @@ defmodule Tortoise.Handler do
                  ignored: term()
 
   @doc false
+  @spec execute_init(t) :: {:ok, t} | :ignore | {:stop, term()}
+  def execute_init(handler) do
+    handler.module
+    |> apply(:init, [handler.initial_args])
+    |> case do
+      {:ok, initial_state} ->
+        {:ok, %__MODULE__{handler | state: initial_state}}
+
+      :ignore ->
+        :ignore
+
+      {:stop, reason} ->
+        {:stop, reason}
+    end
+  end
+
+  @doc false
   @spec execute_disconnect(t, %Package.Disconnect{}) :: {:stop, term(), t}
   def execute_disconnect(handler, %Package.Disconnect{} = disconnect) do
     handler.module
@@ -307,26 +324,13 @@ defmodule Tortoise.Handler do
   # legacy, should get converted to execute_*type*(handler)
   @doc false
   @spec execute(t, action) ::
-          :ok | {:ok, t} | {:error, {:invalid_next_action, term()}} | :ignore | {:stop, term()}
+          :ok | {:ok, t} | {:error, {:invalid_next_action, term()}} | {:stop, term()}
         when action:
-               :init
-               | {:subscribe, [term()]}
+               {:subscribe, [term()]}
                | {:unsubscribe, [term()]}
                | {:publish, Tortoise.Package.Publish.t()}
                | {:connection, :up | :down}
                | {:terminate, reason :: term()}
-  def execute(handler, :init) do
-    case apply(handler.module, :init, [handler.initial_args]) do
-      {:ok, initial_state} ->
-        {:ok, %__MODULE__{handler | state: initial_state}}
-
-      :ignore ->
-        :ignore
-
-      {:stop, reason} ->
-        {:stop, reason}
-    end
-  end
 
   def execute(handler, {:connection, status}) do
     handler.module
