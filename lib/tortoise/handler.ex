@@ -311,6 +311,15 @@ defmodule Tortoise.Handler do
   end
 
   @doc false
+  @spec execute_connection(t, status) :: {:ok, t}
+        when status: :up | :down
+  def execute_connection(handler, status) do
+    handler.module
+    |> apply(:connection, [status, handler.state])
+    |> handle_result(handler)
+  end
+
+  @doc false
   @spec execute_disconnect(t, %Package.Disconnect{}) :: {:stop, term(), t}
   def execute_disconnect(handler, %Package.Disconnect{} = disconnect) do
     handler.module
@@ -337,14 +346,7 @@ defmodule Tortoise.Handler do
                {:subscribe, [term()]}
                | {:unsubscribe, [term()]}
                | {:publish, Tortoise.Package.Publish.t()}
-               | {:connection, :up | :down}
                | {:terminate, reason :: term()}
-
-  def execute(handler, {:connection, status}) do
-    handler.module
-    |> apply(:connection, [status, handler.state])
-    |> handle_result(handler)
-  end
 
   def execute(handler, {:publish, %Package.Publish{} = publish}) do
     topic_list = String.split(publish.topic, "/")
