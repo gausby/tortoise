@@ -341,12 +341,11 @@ defmodule Tortoise.Handler do
   # legacy, should get converted to execute_*type*(handler)
   @doc false
   @spec execute(t, action) ::
-          :ok | {:ok, t} | {:error, {:invalid_next_action, term()}} | {:stop, term()}
+          {:ok, t} | {:error, {:invalid_next_action, term()}} | {:stop, term()}
         when action:
                {:subscribe, [term()]}
                | {:unsubscribe, [term()]}
                | {:publish, Tortoise.Package.Publish.t()}
-               | {:terminate, reason :: term()}
 
   def execute(handler, {:publish, %Package.Publish{} = publish}) do
     topic_list = String.split(publish.topic, "/")
