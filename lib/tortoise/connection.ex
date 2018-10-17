@@ -428,6 +428,21 @@ defmodule Tortoise.Connection do
 
   def handle_event(
         :internal,
+        {:execute_handler, {:subscribe, results}},
+        _,
+        %State{handler: handler} = data
+      ) do
+    case Handler.execute_subscribe(handler, results) do
+      {:ok, %Handler{} = updated_handler} ->
+        updated_data = %State{data | handler: updated_handler}
+        {:keep_state, updated_data}
+
+        # handle stop
+    end
+  end
+
+  def handle_event(
+        :internal,
         {:execute_handler, {:unsubscribe, result}},
         _current_state,
         %State{handler: handler} = data

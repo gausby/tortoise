@@ -339,6 +339,21 @@ defmodule Tortoise.Handler do
   end
 
   @doc false
+  @spec execute_subscribe(t, [term()]) :: {:ok, t}
+  def execute_subscribe(handler, result) do
+    result
+    |> flatten_subacks()
+    |> Enum.reduce({:ok, handler}, fn {op, topic_filter}, {:ok, handler} ->
+      handler.module
+      |> apply(:subscription, [op, topic_filter, handler.state])
+      |> handle_result(handler)
+
+      # _, {:stop, acc} ->
+      #   {:stop, acc}
+    end)
+  end
+
+  @doc false
   @spec execute_unsubscribe(t, result) :: {:ok, t}
         when result: [Tortoise.topic_filter()]
   def execute_unsubscribe(handler, results) do
@@ -354,32 +369,14 @@ defmodule Tortoise.Handler do
 
   # legacy, should get converted to execute_*type*(handler)
   @doc false
-  @spec execute(t, action) ::
-          {:ok, t} | {:error, {:invalid_next_action, term()}} | {:stop, term()}
-        when action:
-               {:subscribe, [term()]}
-               | {:unsubscribe, [term()]}
-               | {:publish, Tortoise.Package.Publish.t()}
-
+  @spec execute(t, action) :: {:ok, t} | {:error, {:invalid_next_action, term()}}
+        when action: {:publish, Tortoise.Package.Publish.t()}
   def execute(handler, {:publish, %Package.Publish{} = publish}) do
     topic_list = String.split(publish.topic, "/")
 
     handler.module
     |> apply(:handle_message, [topic_list, publish.payload, handler.state])
     |> handle_result(handler)
-  end
-
-  def execute(handler, {:subscribe, subacks}) do
-    subacks
-    |> flatten_subacks()
-    |> Enum.reduce({:ok, handler}, fn {op, topic_filter}, {:ok, handler} ->
-      handler.module
-      |> apply(:subscription, [op, topic_filter, handler.state])
-      |> handle_result(handler)
-
-      # _, {:stop, acc} ->
-      #   {:stop, acc}
-    end)
   end
 
   # Subacks will come in a map with three keys in the form of tuples

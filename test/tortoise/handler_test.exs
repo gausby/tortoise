@@ -162,7 +162,7 @@ defmodule Tortoise.HandlerTest do
       {:ok, result} = Track.result(track)
 
       handler = set_state(context.handler, pid: self())
-      assert {:ok, %Handler{}} = Handler.execute(handler, {:subscribe, result})
+      assert {:ok, %Handler{}} = Handler.execute_subscribe(handler, result)
 
       assert_receive {:subscription, :up, "foo"}
       assert_receive {:subscription, {:error, :access_denied}, "baz"}
