@@ -338,6 +338,20 @@ defmodule Tortoise.Handler do
     _ignored = apply(handler.module, :terminate, [reason, handler.state])
   end
 
+  @doc false
+  @spec execute_unsubscribe(t, result) :: {:ok, t}
+        when result: [Tortoise.topic_filter()]
+  def execute_unsubscribe(handler, results) do
+    Enum.reduce(results, {:ok, handler}, fn topic_filter, {:ok, handler} ->
+      handler.module
+      |> apply(:subscription, [:down, topic_filter, handler.state])
+      |> handle_result(handler)
+
+      # _, {:stop, acc} ->
+      #   {:stop, acc}
+    end)
+  end
+
   # legacy, should get converted to execute_*type*(handler)
   @doc false
   @spec execute(t, action) ::
@@ -353,17 +367,6 @@ defmodule Tortoise.Handler do
     handler.module
     |> apply(:handle_message, [topic_list, publish.payload, handler.state])
     |> handle_result(handler)
-  end
-
-  def execute(handler, {:unsubscribe, unsubacks}) do
-    Enum.reduce(unsubacks, {:ok, handler}, fn topic_filter, {:ok, handler} ->
-      handler.module
-      |> apply(:subscription, [:down, topic_filter, handler.state])
-      |> handle_result(handler)
-
-      # _, {:stop, acc} ->
-      #   {:stop, acc}
-    end)
   end
 
   def execute(handler, {:subscribe, subacks}) do

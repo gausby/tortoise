@@ -181,7 +181,7 @@ defmodule Tortoise.HandlerTest do
       {:ok, result} = Track.result(track)
 
       handler = set_state(context.handler, pid: self())
-      assert {:ok, %Handler{}} = Handler.execute(handler, {:unsubscribe, result})
+      assert {:ok, %Handler{}} = Handler.execute_unsubscribe(handler, result)
       # we should receive two subscription down messages
       assert_receive {:subscription, :down, "foo/bar"}
       assert_receive {:subscription, :down, "baz/quux"}
