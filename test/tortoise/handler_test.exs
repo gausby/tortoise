@@ -98,7 +98,7 @@ defmodule Tortoise.HandlerTest do
       topic = "foo/bar"
       publish = %Package.Publish{topic: topic, payload: payload}
 
-      assert {:ok, %Handler{}} = Handler.execute(handler, {:publish, publish})
+      assert {:ok, %Handler{}} = Handler.execute_handle_message(handler, publish)
       # the topic will be in the form of a list making it possible to
       # pattern match on the topic levels
       assert_receive {:publish, topic_list, ^payload}
@@ -114,7 +114,7 @@ defmodule Tortoise.HandlerTest do
       topic = "foo/bar"
       publish = %Package.Publish{topic: topic, payload: payload}
 
-      assert {:ok, %Handler{}} = Handler.execute(handler, {:publish, publish})
+      assert {:ok, %Handler{}} = Handler.execute_handle_message(handler, publish)
 
       assert_receive {:next_action, {:subscribe, "foo/bar", qos: 0}}
 
@@ -134,7 +134,7 @@ defmodule Tortoise.HandlerTest do
       publish = %Package.Publish{topic: topic, payload: payload}
 
       assert {:error, {:invalid_next_action, [{:invalid, "bar"}]}} =
-               Handler.execute(handler, {:publish, publish})
+               Handler.execute_handle_message(handler, publish)
 
       refute_receive {:next_action, {:invalid, "bar"}}
       # we should not receive the otherwise valid next_action

@@ -458,11 +458,11 @@ defmodule Tortoise.Connection do
 
   def handle_event(
         :internal,
-        {:execute_handler, cmd},
+        {:execute_handler, {:publish, %Package.Publish{} = publish}},
         _,
         %State{handler: handler} = data
       ) do
-    case Handler.execute(handler, cmd) do
+    case Handler.execute_handle_message(handler, publish) do
       {:ok, %Handler{} = updated_handler} ->
         updated_data = %State{data | handler: updated_handler}
         {:keep_state, updated_data}
@@ -541,7 +541,7 @@ defmodule Tortoise.Connection do
         _,
         %State{handler: handler} = data
       ) do
-    case Handler.execute(handler, {:publish, publish}) do
+    case Handler.execute_handle_message(handler, publish) do
       {:ok, updated_handler} ->
         {:keep_state, %State{data | handler: updated_handler}}
 
@@ -558,7 +558,7 @@ defmodule Tortoise.Connection do
       ) do
     :ok = Inflight.track(client_id, {:incoming, publish})
 
-    case Handler.execute(handler, {:publish, publish}) do
+    case Handler.execute_handle_message(handler, publish) do
       {:ok, updated_handler} ->
         {:keep_state, %State{data | handler: updated_handler}}
     end
@@ -605,7 +605,7 @@ defmodule Tortoise.Connection do
         _,
         %State{client_id: client_id, handler: handler} = data
       ) do
-    case Handler.execute(handler, {:publish, publish}) do
+    case Handler.execute_handle_message(handler, publish) do
       {:ok, updated_handler} ->
         {:keep_state, %State{data | handler: updated_handler}}
     end
