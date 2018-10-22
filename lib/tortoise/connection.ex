@@ -539,14 +539,10 @@ defmodule Tortoise.Connection do
         :internal,
         {:received, %Package.Publish{qos: 0, dup: false} = publish},
         _,
-        %State{handler: handler} = data
+        %State{}
       ) do
-    case Handler.execute_handle_message(handler, publish) do
-      {:ok, updated_handler} ->
-        {:keep_state, %State{data | handler: updated_handler}}
-
-        # handle stop
-    end
+    next_actions = [{:next_event, :internal, {:execute_handler, {:publish, publish}}}]
+    {:keep_state_and_data, next_actions}
   end
 
   # incoming publish QoS=1 ---------------------------------------------
@@ -554,14 +550,12 @@ defmodule Tortoise.Connection do
         :internal,
         {:received, %Package.Publish{qos: 1} = publish},
         :connected,
-        %State{client_id: client_id, handler: handler} = data
+        %State{client_id: client_id}
       ) do
     :ok = Inflight.track(client_id, {:incoming, publish})
 
-    case Handler.execute_handle_message(handler, publish) do
-      {:ok, updated_handler} ->
-        {:keep_state, %State{data | handler: updated_handler}}
-    end
+    next_actions = [{:next_event, :internal, {:execute_handler, {:publish, publish}}}]
+    {:keep_state_and_data, next_actions}
   end
 
   # outgoing publish QoS=1 ---------------------------------------------
@@ -603,12 +597,10 @@ defmodule Tortoise.Connection do
         :info,
         {{Inflight, client_id}, %Package.Publish{qos: 2} = publish},
         _,
-        %State{client_id: client_id, handler: handler} = data
+        %State{client_id: client_id}
       ) do
-    case Handler.execute_handle_message(handler, publish) do
-      {:ok, updated_handler} ->
-        {:keep_state, %State{data | handler: updated_handler}}
-    end
+    next_actions = [{:next_event, :internal, {:execute_handler, {:publish, publish}}}]
+    {:keep_state_and_data, next_actions}
   end
 
   # outgoing publish QoS=2 ---------------------------------------------
