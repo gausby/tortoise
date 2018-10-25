@@ -549,7 +549,7 @@ defmodule Tortoise.Connection do
   def handle_event(
         :internal,
         {:received, %Package.Publish{qos: 1} = publish},
-        :connected,
+        _,
         %State{client_id: client_id}
       ) do
     :ok = Inflight.track(client_id, {:incoming, publish})
@@ -563,10 +563,18 @@ defmodule Tortoise.Connection do
         :internal,
         {:received, %Package.Puback{} = puback},
         _,
-        %State{client_id: client_id}
+        %State{client_id: client_id, handler: handler} = data
       ) do
-    :ok = Inflight.update(client_id, {:received, puback})
-    :keep_state_and_data
+    case Handler.execute_handle_puback(handler, puback) do
+      {:ok, %Handler{} = updated_handler} ->
+        :ok = Inflight.update(client_id, {:received, puback})
+        updated_data = %State{data | handler: updated_handler}
+        {:keep_state, updated_data}
+
+      {:error, reason} ->
+        # todo
+        {:stop, reason, data}
+    end
   end
 
   # incoming publish QoS=2 ---------------------------------------------

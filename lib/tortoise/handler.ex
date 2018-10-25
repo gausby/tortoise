@@ -149,6 +149,11 @@ defmodule Tortoise.Handler do
         {:ok, state}
       end
 
+      @impl true
+      def handle_puback(_puback, state) do
+        {:ok, state}
+      end
+
       defoverridable Tortoise.Handler
     end
   end
@@ -283,6 +288,10 @@ defmodule Tortoise.Handler do
                  topic_levels: [String.t()],
                  payload: Tortoise.payload()
 
+  @callback handle_puback(puback, state :: term()) :: {:ok, new_state}
+            when puback: Package.Puback.t(),
+                 new_state: term()
+
   @doc """
   Invoked when the connection process is about to exit.
 
@@ -375,6 +384,15 @@ defmodule Tortoise.Handler do
 
     handler.module
     |> apply(:handle_message, [topic_list, publish.payload, handler.state])
+    |> handle_result(handler)
+  end
+
+  @doc false
+  # @spec execute_handle_puback(t, Package.Puback.t()) ::
+  #         {:ok, t} | {:error, {:invalid_next_action, term()}}
+  def execute_handle_puback(handler, %Package.Puback{} = puback) do
+    handler.module
+    |> apply(:handle_puback, [puback, handler.state])
     |> handle_result(handler)
   end
 

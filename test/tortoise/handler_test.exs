@@ -44,6 +44,11 @@ defmodule Tortoise.HandlerTest do
       send(state[:pid], {:terminate, reason})
       :ok
     end
+
+    def handle_puback(puback, state) do
+      send(state[:pid], {:puback, puback})
+      {:ok, state}
+    end
   end
 
   setup _context do
@@ -193,6 +198,19 @@ defmodule Tortoise.HandlerTest do
       handler = set_state(context.handler, pid: self())
       assert :ok = Handler.execute_terminate(handler, :normal)
       assert_receive {:terminate, :normal}
+    end
+  end
+
+  describe "execute handle_puback/2" do
+    test "return ok", context do
+      handler = set_state(context.handler, pid: self())
+      puback = %Package.Puback{identifier: 1}
+
+      assert {:ok, %Handler{} = state} =
+               handler
+               |> Handler.execute_handle_puback(puback)
+
+      assert_receive {:puback, ^puback}
     end
   end
 end

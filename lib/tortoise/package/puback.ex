@@ -8,13 +8,21 @@ defmodule Tortoise.Package.Puback do
   alias Tortoise.Package
 
   @type reason :: :success | {:refused, refusal_reasons()}
-  @type refusal_reasons :: :test
+  @type refusal_reasons ::
+          :no_matching_subscribers
+          | :unspecified_error
+          | :implementation_specific_error
+          | :not_authorized
+          | :topic_Name_invalid
+          | :packet_identifier_in_use
+          | :quota_exceeded
+          | :payload_format_invalid
 
   @opaque t :: %__MODULE__{
             __META__: Package.Meta.t(),
             identifier: Tortoise.package_identifier(),
             reason: reason(),
-            properties: [{any(), any()}]
+            properties: [{:reason_string, String.t()}, {:user_property, String.t()}]
           }
   @enforce_keys [:identifier]
   defstruct __META__: %Package.Meta{opcode: @opcode, flags: 0b0000},
