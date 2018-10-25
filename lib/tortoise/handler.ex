@@ -164,6 +164,11 @@ defmodule Tortoise.Handler do
         {:ok, state}
       end
 
+      @impl true
+      def handle_pubcomp(_pubcomp, state) do
+        {:ok, state}
+      end
+
       defoverridable Tortoise.Handler
     end
   end
@@ -310,6 +315,10 @@ defmodule Tortoise.Handler do
             when pubrel: Package.Pubrel.t(),
                  new_state: term()
 
+  @callback handle_pubcomp(pubcomp, state :: term()) :: {:ok, new_state}
+            when pubcomp: Package.Pubcomp.t(),
+                 new_state: term()
+
   @doc """
   Invoked when the connection process is about to exit.
 
@@ -429,6 +438,15 @@ defmodule Tortoise.Handler do
   def execute_handle_pubrel(handler, %Package.Pubrel{} = pubrel) do
     handler.module
     |> apply(:handle_pubrel, [pubrel, handler.state])
+    |> handle_result(handler)
+  end
+
+  @doc false
+  # @spec execute_handle_pubcomp(t, Package.Pubcomp.t()) ::
+  #         {:ok, t} | {:error, {:invalid_next_action, term()}}
+  def execute_handle_pubcomp(handler, %Package.Pubcomp{} = pubcomp) do
+    handler.module
+    |> apply(:handle_pubcomp, [pubcomp, handler.state])
     |> handle_result(handler)
   end
 

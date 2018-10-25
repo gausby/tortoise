@@ -979,6 +979,7 @@ defmodule Tortoise.ConnectionTest do
 
       # the handle_pubrec callback should have been called
       assert_receive {{TestHandler, :handle_pubrec}, ^pubrec}
+      assert_receive {{TestHandler, :handle_pubcomp}, ^pubcomp}
     end
   end
 

@@ -642,10 +642,18 @@ defmodule Tortoise.Connection do
         :internal,
         {:received, %Package.Pubcomp{} = pubcomp},
         :connected,
-        %State{client_id: client_id}
+        %State{client_id: client_id, handler: handler} = data
       ) do
-    :ok = Inflight.update(client_id, {:received, pubcomp})
-    :keep_state_and_data
+    case Handler.execute_handle_pubcomp(handler, pubcomp) do
+      {:ok, %Handler{} = updated_handler} ->
+        :ok = Inflight.update(client_id, {:received, pubcomp})
+        updated_data = %State{data | handler: updated_handler}
+        {:keep_state, updated_data}
+
+      {:error, reason} ->
+        # todo
+        {:stop, reason, data}
+    end
   end
 
   # subscription logic
