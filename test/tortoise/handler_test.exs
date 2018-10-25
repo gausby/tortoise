@@ -30,12 +30,12 @@ defmodule Tortoise.HandlerTest do
     end
 
     # with next actions
-    def handle_message(topic, payload, %{next_actions: next_actions} = state) do
+    def handle_publish(topic, payload, %{next_actions: next_actions} = state) do
       send(state[:pid], {:publish, topic, payload})
       {:ok, state, next_actions}
     end
 
-    def handle_message(topic, payload, state) do
+    def handle_publish(topic, payload, state) do
       send(state[:pid], {:publish, topic, payload})
       {:ok, state}
     end
@@ -96,14 +96,14 @@ defmodule Tortoise.HandlerTest do
     end
   end
 
-  describe "execute handle_message/2" do
+  describe "execute handle_publish/2" do
     test "return ok-2", context do
       handler = set_state(context.handler, %{pid: self()})
       payload = :crypto.strong_rand_bytes(5)
       topic = "foo/bar"
       publish = %Package.Publish{topic: topic, payload: payload}
 
-      assert {:ok, %Handler{}} = Handler.execute_handle_message(handler, publish)
+      assert {:ok, %Handler{}} = Handler.execute_handle_publish(handler, publish)
       # the topic will be in the form of a list making it possible to
       # pattern match on the topic levels
       assert_receive {:publish, topic_list, ^payload}
@@ -119,7 +119,7 @@ defmodule Tortoise.HandlerTest do
       topic = "foo/bar"
       publish = %Package.Publish{topic: topic, payload: payload}
 
-      assert {:ok, %Handler{}} = Handler.execute_handle_message(handler, publish)
+      assert {:ok, %Handler{}} = Handler.execute_handle_publish(handler, publish)
 
       assert_receive {:next_action, {:subscribe, "foo/bar", qos: 0}}
 
@@ -139,7 +139,7 @@ defmodule Tortoise.HandlerTest do
       publish = %Package.Publish{topic: topic, payload: payload}
 
       assert {:error, {:invalid_next_action, [{:invalid, "bar"}]}} =
-               Handler.execute_handle_message(handler, publish)
+               Handler.execute_handle_publish(handler, publish)
 
       refute_receive {:next_action, {:invalid, "bar"}}
       # we should not receive the otherwise valid next_action

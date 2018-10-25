@@ -846,8 +846,8 @@ defmodule Tortoise.ConnectionTest do
       refute_receive {:EXIT, ^pid, {:protocol_violation, {:unexpected_package, ^publish}}}
       assert_receive {ScriptedMqttServer, :completed}
 
-      # the handle message callback should have been called
-      assert_receive {{TestHandler, :handle_message}, %{topic: "foo/bar", payload: nil}}
+      # the handle publish callback should have been called
+      assert_receive {{TestHandler, :handle_publish}, %{topic: "foo/bar", payload: nil}}
     end
   end
 
@@ -867,8 +867,8 @@ defmodule Tortoise.ConnectionTest do
       {:ok, _} = ScriptedMqttServer.enact(context.scripted_mqtt_server, script)
       assert_receive {ScriptedMqttServer, :completed}
 
-      # the handle message callback should have been called
-      assert_receive {{TestHandler, :handle_message}, %{topic: "foo/bar", payload: nil}}
+      # the handle publish callback should have been called
+      assert_receive {{TestHandler, :handle_publish}, %{topic: "foo/bar", payload: nil}}
     end
 
     test "outgoing publish with QoS=1", context do
@@ -946,8 +946,8 @@ defmodule Tortoise.ConnectionTest do
       refute_receive {:EXIT, ^pid, {:protocol_violation, {:unexpected_package, _}}}
       assert_receive {ScriptedMqttServer, :completed}
 
-      # the handle message callback should have been called
-      assert_receive {{TestHandler, :handle_message}, %{topic: "foo/bar", payload: nil}}
+      # the handle publish callback should have been called
+      assert_receive {{TestHandler, :handle_publish}, %{topic: "foo/bar", payload: nil}}
     end
 
     test "outgoing publish with QoS=2", context do

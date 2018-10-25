@@ -25,7 +25,7 @@ defmodule Tortoise.Handler do
       behavior for when the subscription is accepted, declined, as
       well as unsubscribed.
 
-    - `handle_message/3` is run when the client receive a message on
+    - `handle_publish/3` is run when the client receive a publish on
       one of the subscribed topic filters.
 
   Because the callback-module will run inside the connection
@@ -63,7 +63,7 @@ defmodule Tortoise.Handler do
   require the user to peek into the process mailbox to fetch the
   result of the operation. To allow for changes in the subscriptions
   one can define a set of next actions that should happen as part of
-  the return value to the `handle_message/3`, `subscription/3`, and
+  the return value to the `handle_publish/3`, `subscription/3`, and
   `connection/3` callbacks by returning a `{:ok, state, next_actions}`
   where `next_actions` is a list of commands of:
 
@@ -78,9 +78,9 @@ defmodule Tortoise.Handler do
       from.
 
   If we want to unsubscribe from the current topic when we receive a
-  message on it we could write a `handle_message/3` as follows:
+  publish on it we could write a `handle_publish/3` as follows:
 
-      def handle_message(topic, _payload, state) do
+      def handle_publish(topic, _payload, state) do
         topic = Enum.join(topic, "/")
         next_actions = [{:unsubscribe, topic}]
         {:ok, state, next_actions}
@@ -89,7 +89,7 @@ defmodule Tortoise.Handler do
   Note that the `topic` is received as a list of topic levels, and
   that the next actions has to be a list, even if there is only one
   next action; multiple actions can be given at once. Read more about
-  this in the `handle_message/3` documentation.
+  this in the `handle_publish/3` documentation.
   """
 
   alias Tortoise.Package
@@ -145,7 +145,7 @@ defmodule Tortoise.Handler do
       end
 
       @impl true
-      def handle_message(_topic, _payload, state) do
+      def handle_publish(_topic, _payload, state) do
         {:ok, state}
       end
 
@@ -251,7 +251,7 @@ defmodule Tortoise.Handler do
 
   The `topic` comes in the form of a list of binaries, making it
   possible to pattern match on the topic levels of the retrieved
-  message, store the individual topic levels as variables and use it
+  publish, store the individual topic levels as variables and use it
   in the function body.
 
   `Payload` is a binary. MQTT 3.1.1 does not specify any format of the
@@ -260,15 +260,15 @@ defmodule Tortoise.Handler do
 
   In an example where we are already subscribed to the topic filter
   `room/+/temp` and want to dispatch the received messages to a
-  `Temperature` application we could set up our `handle_message` as
+  `Temperature` application we could set up our `handle_publish` as
   such:
 
-      def handle_message(["room", room, "temp"], payload, state) do
+      def handle_publish(["room", room, "temp"], payload, state) do
         :ok = Temperature.record(room, payload)
         {:ok, state}
       end
 
-  Notice; the `handle_message/3`-callback run inside the connection
+  Notice; the `handle_publish/3`-callback run inside the connection
   controller process, so for handlers that are subscribing to topics
   with heavy traffic should do as little as possible in the callback
   handler and dispatch to other parts of the application using
@@ -281,7 +281,7 @@ defmodule Tortoise.Handler do
   a list of next actions such as `{:unsubscribe, "foo/bar"}` will
   reenter the loop and perform the listed actions.
   """
-  @callback handle_message(topic_levels, payload, state :: term()) ::
+  @callback handle_publish(topic_levels, payload, state :: term()) ::
               {:ok, new_state}
               | {:ok, new_state, [next_action()]}
             when new_state: term(),
@@ -377,13 +377,13 @@ defmodule Tortoise.Handler do
   end
 
   @doc false
-  @spec execute_handle_message(t, Package.Publish.t()) ::
+  @spec execute_handle_publish(t, Package.Publish.t()) ::
           {:ok, t} | {:error, {:invalid_next_action, term()}}
-  def execute_handle_message(handler, %Package.Publish{} = publish) do
+  def execute_handle_publish(handler, %Package.Publish{} = publish) do
     topic_list = String.split(publish.topic, "/")
 
     handler.module
-    |> apply(:handle_message, [topic_list, publish.payload, handler.state])
+    |> apply(:handle_publish, [topic_list, publish.payload, handler.state])
     |> handle_result(handler)
   end
 

@@ -22,9 +22,9 @@ defmodule TestHandler do
     {:stop, :normal, state}
   end
 
-  def handle_message(topic, payload, state) do
+  def handle_publish(topic, payload, state) do
     data = %{topic: Enum.join(topic, "/"), payload: payload}
-    send(state[:parent], {{__MODULE__, :handle_message}, data})
+    send(state[:parent], {{__MODULE__, :handle_publish}, data})
     {:ok, state}
   end
 
