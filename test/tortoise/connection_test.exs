@@ -946,7 +946,8 @@ defmodule Tortoise.ConnectionTest do
       refute_receive {:EXIT, ^pid, {:protocol_violation, {:unexpected_package, _}}}
       assert_receive {ScriptedMqttServer, :completed}
 
-      # the handle publish callback should have been called
+      # the handle publish, and handle_pubrel callbacks should have been called
+      assert_receive {{TestHandler, :handle_pubrel}, ^pubrel}
       assert_receive {{TestHandler, :handle_publish}, %{topic: "foo/bar", payload: nil}}
     end
 

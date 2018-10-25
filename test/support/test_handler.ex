@@ -28,6 +28,11 @@ defmodule TestHandler do
     {:ok, state}
   end
 
+  def handle_pubrel(pubrel, state) do
+    send(state[:parent], {{__MODULE__, :handle_pubrel}, pubrel})
+    {:ok, state}
+  end
+
   def subscription(status, topic_filter, state) do
     data = %{status: status, topic_filter: topic_filter}
     send(state[:parent], {{__MODULE__, :subscription}, data})

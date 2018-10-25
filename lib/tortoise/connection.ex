@@ -591,11 +591,19 @@ defmodule Tortoise.Connection do
   def handle_event(
         :internal,
         {:received, %Package.Pubrel{} = pubrel},
-        :connected,
-        %State{client_id: client_id}
+        _,
+        %State{client_id: client_id, handler: handler} = data
       ) do
-    :ok = Inflight.update(client_id, {:received, pubrel})
-    :keep_state_and_data
+    case Handler.execute_handle_pubrel(handler, pubrel) do
+      {:ok, %Handler{} = updated_handler} ->
+        :ok = Inflight.update(client_id, {:received, pubrel})
+        updated_data = %State{data | handler: updated_handler}
+        {:keep_state, updated_data}
+
+      {:error, reason} ->
+        # todo
+        {:stop, reason, data}
+    end
   end
 
   # an incoming publish with QoS=2 will get parked in the inflight

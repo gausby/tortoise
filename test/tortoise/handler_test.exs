@@ -49,6 +49,11 @@ defmodule Tortoise.HandlerTest do
       send(state[:pid], {:puback, puback})
       {:ok, state}
     end
+
+    def handle_pubrel(pubrel, state) do
+      send(state[:pid], {:pubrel, pubrel})
+      {:ok, state}
+    end
   end
 
   setup _context do
@@ -211,6 +216,19 @@ defmodule Tortoise.HandlerTest do
                |> Handler.execute_handle_puback(puback)
 
       assert_receive {:puback, ^puback}
+    end
+  end
+
+  describe "execute handle_pubrel/2" do
+    test "return ok", context do
+      handler = set_state(context.handler, pid: self())
+      pubrel = %Package.Pubrel{identifier: 1}
+
+      assert {:ok, %Handler{} = state} =
+               handler
+               |> Handler.execute_handle_pubrel(pubrel)
+
+      assert_receive {:pubrel, ^pubrel}
     end
   end
 end
