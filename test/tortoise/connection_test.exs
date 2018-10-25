@@ -976,6 +976,9 @@ defmodule Tortoise.ConnectionTest do
       assert_receive {ScriptedMqttServer, {:received, ^pubrel}}
       assert_receive {ScriptedMqttServer, :completed}
       assert_receive {{Tortoise, ^client_id}, {Package.Publish, ^ref}, :ok}
+
+      # the handle_pubrec callback should have been called
+      assert_receive {{TestHandler, :handle_pubrec}, ^pubrec}
     end
   end
 

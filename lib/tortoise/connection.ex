@@ -623,11 +623,19 @@ defmodule Tortoise.Connection do
   def handle_event(
         :internal,
         {:received, %Package.Pubrec{} = pubrec},
-        :connected,
-        %State{client_id: client_id}
+        _,
+        %State{client_id: client_id, handler: handler} = data
       ) do
-    :ok = Inflight.update(client_id, {:received, pubrec})
-    :keep_state_and_data
+    case Handler.execute_handle_pubrec(handler, pubrec) do
+      {:ok, %Handler{} = updated_handler} ->
+        :ok = Inflight.update(client_id, {:received, pubrec})
+        updated_data = %State{data | handler: updated_handler}
+        {:keep_state, updated_data}
+
+      {:error, reason} ->
+        # todo
+        {:stop, reason, data}
+    end
   end
 
   def handle_event(

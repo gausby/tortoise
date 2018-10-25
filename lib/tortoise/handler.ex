@@ -155,6 +155,11 @@ defmodule Tortoise.Handler do
       end
 
       @impl true
+      def handle_pubrec(_pubrec, state) do
+        {:ok, state}
+      end
+
+      @impl true
       def handle_pubrel(_pubrel, state) do
         {:ok, state}
       end
@@ -297,8 +302,12 @@ defmodule Tortoise.Handler do
             when puback: Package.Puback.t(),
                  new_state: term()
 
-  @callback handle_pubrel(puback, state :: term()) :: {:ok, new_state}
-            when puback: Package.Pubrel.t(),
+  @callback handle_pubrec(pubrec, state :: term()) :: {:ok, new_state}
+            when pubrec: Package.Pubrec.t(),
+                 new_state: term()
+
+  @callback handle_pubrel(pubrel, state :: term()) :: {:ok, new_state}
+            when pubrel: Package.Pubrel.t(),
                  new_state: term()
 
   @doc """
@@ -402,6 +411,15 @@ defmodule Tortoise.Handler do
   def execute_handle_puback(handler, %Package.Puback{} = puback) do
     handler.module
     |> apply(:handle_puback, [puback, handler.state])
+    |> handle_result(handler)
+  end
+
+  @doc false
+  # @spec execute_handle_pubrec(t, Package.Pubrec.t()) ::
+  #         {:ok, t} | {:error, {:invalid_next_action, term()}}
+  def execute_handle_pubrec(handler, %Package.Pubrec{} = pubrec) do
+    handler.module
+    |> apply(:handle_pubrec, [pubrec, handler.state])
     |> handle_result(handler)
   end
 

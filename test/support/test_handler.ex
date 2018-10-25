@@ -28,6 +28,11 @@ defmodule TestHandler do
     {:ok, state}
   end
 
+  def handle_pubrec(pubrec, state) do
+    send(state[:parent], {{__MODULE__, :handle_pubrec}, pubrec})
+    {:ok, state}
+  end
+
   def handle_pubrel(pubrel, state) do
     send(state[:parent], {{__MODULE__, :handle_pubrel}, pubrel})
     {:ok, state}

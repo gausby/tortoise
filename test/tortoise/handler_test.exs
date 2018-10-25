@@ -50,6 +50,11 @@ defmodule Tortoise.HandlerTest do
       {:ok, state}
     end
 
+    def handle_pubrec(pubrec, state) do
+      send(state[:pid], {:pubrec, pubrec})
+      {:ok, state}
+    end
+
     def handle_pubrel(pubrel, state) do
       send(state[:pid], {:pubrel, pubrel})
       {:ok, state}
@@ -216,6 +221,20 @@ defmodule Tortoise.HandlerTest do
                |> Handler.execute_handle_puback(puback)
 
       assert_receive {:puback, ^puback}
+    end
+  end
+
+  # callbacks for the QoS=2 message exchange
+  describe "execute handle_pubrec/2" do
+    test "return ok", context do
+      handler = set_state(context.handler, pid: self())
+      pubrec = %Package.Pubrec{identifier: 1}
+
+      assert {:ok, %Handler{} = state} =
+               handler
+               |> Handler.execute_handle_pubrec(pubrec)
+
+      assert_receive {:pubrec, ^pubrec}
     end
   end
 
