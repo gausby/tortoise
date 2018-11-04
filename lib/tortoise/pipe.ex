@@ -147,7 +147,7 @@ defmodule Tortoise.Pipe do
 
   def await(%Pipe{client_id: client_id, pending: [ref | rest]} = pipe, timeout) do
     receive do
-      {{Tortoise, ^client_id}, ^ref, :ok} ->
+      {{Tortoise, ^client_id}, {Package.Publish, ^ref}, :ok} ->
         await(%Pipe{pipe | pending: rest})
     after
       timeout ->

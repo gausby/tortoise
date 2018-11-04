@@ -30,12 +30,12 @@ defmodule Tortoise.HandlerTest do
     end
 
     # with next actions
-    def handle_message(topic, payload, %{next_actions: next_actions} = state) do
+    def handle_publish(topic, payload, %{next_actions: next_actions} = state) do
       send(state[:pid], {:publish, topic, payload})
       {:ok, state, next_actions}
     end
 
-    def handle_message(topic, payload, state) do
+    def handle_publish(topic, payload, state) do
       send(state[:pid], {:publish, topic, payload})
       {:ok, state}
     end
@@ -43,6 +43,26 @@ defmodule Tortoise.HandlerTest do
     def terminate(reason, state) do
       send(state[:pid], {:terminate, reason})
       :ok
+    end
+
+    def handle_puback(puback, state) do
+      send(state[:pid], {:puback, puback})
+      {:ok, state}
+    end
+
+    def handle_pubrec(pubrec, state) do
+      send(state[:pid], {:pubrec, pubrec})
+      {:ok, state}
+    end
+
+    def handle_pubrel(pubrel, state) do
+      send(state[:pid], {:pubrel, pubrel})
+      {:ok, state}
+    end
+
+    def handle_pubcomp(pubcomp, state) do
+      send(state[:pid], {:pubcomp, pubcomp})
+      {:ok, state}
     end
   end
 
@@ -55,9 +75,9 @@ defmodule Tortoise.HandlerTest do
     %Handler{handler | state: update}
   end
 
-  describe "execute init/1" do
+  describe "execute_init/1" do
     test "return ok-tuple", context do
-      assert {:ok, %Handler{}} = Handler.execute(context.handler, :init)
+      assert {:ok, %Handler{}} = Handler.execute_init(context.handler)
       assert_receive :init
     end
   end
@@ -65,10 +85,10 @@ defmodule Tortoise.HandlerTest do
   describe "execute connection/2" do
     test "return ok-tuple", context do
       handler = set_state(context.handler, %{pid: self()})
-      assert {:ok, %Handler{}} = Handler.execute(handler, {:connection, :up})
+      assert {:ok, %Handler{}} = Handler.execute_connection(handler, :up)
       assert_receive {:connection, :up}
 
-      assert {:ok, %Handler{}} = Handler.execute(handler, {:connection, :down})
+      assert {:ok, %Handler{}} = Handler.execute_connection(handler, :down)
       assert_receive {:connection, :down}
     end
 
@@ -79,26 +99,26 @@ defmodule Tortoise.HandlerTest do
         context.handler
         |> set_state(%{pid: self(), next_actions: next_actions})
 
-      assert {:ok, %Handler{}} = Handler.execute(handler, {:connection, :up})
+      assert {:ok, %Handler{}} = Handler.execute_connection(handler, :up)
 
       assert_receive {:connection, :up}
       assert_receive {:next_action, {:subscribe, "foo/bar", qos: 0}}
 
-      assert {:ok, %Handler{}} = Handler.execute(handler, {:connection, :down})
+      assert {:ok, %Handler{}} = Handler.execute_connection(handler, :down)
 
       assert_receive {:connection, :down}
       assert_receive {:next_action, {:subscribe, "foo/bar", qos: 0}}
     end
   end
 
-  describe "execute handle_message/2" do
+  describe "execute handle_publish/2" do
     test "return ok-2", context do
       handler = set_state(context.handler, %{pid: self()})
       payload = :crypto.strong_rand_bytes(5)
       topic = "foo/bar"
       publish = %Package.Publish{topic: topic, payload: payload}
 
-      assert {:ok, %Handler{}} = Handler.execute(handler, {:publish, publish})
+      assert {:ok, %Handler{}} = Handler.execute_handle_publish(handler, publish)
       # the topic will be in the form of a list making it possible to
       # pattern match on the topic levels
       assert_receive {:publish, topic_list, ^payload}
@@ -114,7 +134,7 @@ defmodule Tortoise.HandlerTest do
       topic = "foo/bar"
       publish = %Package.Publish{topic: topic, payload: payload}
 
-      assert {:ok, %Handler{}} = Handler.execute(handler, {:publish, publish})
+      assert {:ok, %Handler{}} = Handler.execute_handle_publish(handler, publish)
 
       assert_receive {:next_action, {:subscribe, "foo/bar", qos: 0}}
 
@@ -134,7 +154,7 @@ defmodule Tortoise.HandlerTest do
       publish = %Package.Publish{topic: topic, payload: payload}
 
       assert {:error, {:invalid_next_action, [{:invalid, "bar"}]}} =
-               Handler.execute(handler, {:publish, publish})
+               Handler.execute_handle_publish(handler, publish)
 
       refute_receive {:next_action, {:invalid, "bar"}}
       # we should not receive the otherwise valid next_action
@@ -149,7 +169,11 @@ defmodule Tortoise.HandlerTest do
 
   describe "execute subscribe/2" do
     test "return ok", context do
-      subscribe = %Package.Subscribe{identifier: 1, topics: [{"foo", 0}, {"bar", 1}, {"baz", 0}]}
+      subscribe = %Package.Subscribe{
+        identifier: 1,
+        topics: [{"foo", qos: 0}, {"bar", qos: 1}, {"baz", qos: 0}]
+      }
+
       suback = %Package.Suback{identifier: 1, acks: [ok: 0, ok: 0, error: :access_denied]}
       caller = {self(), make_ref()}
 
@@ -158,7 +182,7 @@ defmodule Tortoise.HandlerTest do
       {:ok, result} = Track.result(track)
 
       handler = set_state(context.handler, pid: self())
-      assert {:ok, %Handler{}} = Handler.execute(handler, {:subscribe, result})
+      assert {:ok, %Handler{}} = Handler.execute_subscribe(handler, result)
 
       assert_receive {:subscription, :up, "foo"}
       assert_receive {:subscription, {:error, :access_denied}, "baz"}
@@ -177,7 +201,7 @@ defmodule Tortoise.HandlerTest do
       {:ok, result} = Track.result(track)
 
       handler = set_state(context.handler, pid: self())
-      assert {:ok, %Handler{}} = Handler.execute(handler, {:unsubscribe, result})
+      assert {:ok, %Handler{}} = Handler.execute_unsubscribe(handler, result)
       # we should receive two subscription down messages
       assert_receive {:subscription, :down, "foo/bar"}
       assert_receive {:subscription, :down, "baz/quux"}
@@ -187,8 +211,61 @@ defmodule Tortoise.HandlerTest do
   describe "execute terminate/2" do
     test "return ok", context do
       handler = set_state(context.handler, pid: self())
-      assert :ok = Handler.execute(handler, {:terminate, :normal})
+      assert :ok = Handler.execute_terminate(handler, :normal)
       assert_receive {:terminate, :normal}
+    end
+  end
+
+  describe "execute handle_puback/2" do
+    test "return ok", context do
+      handler = set_state(context.handler, pid: self())
+      puback = %Package.Puback{identifier: 1}
+
+      assert {:ok, %Handler{} = state} =
+               handler
+               |> Handler.execute_handle_puback(puback)
+
+      assert_receive {:puback, ^puback}
+    end
+  end
+
+  # callbacks for the QoS=2 message exchange
+  describe "execute handle_pubrec/2" do
+    test "return ok", context do
+      handler = set_state(context.handler, pid: self())
+      pubrec = %Package.Pubrec{identifier: 1}
+
+      assert {:ok, %Handler{} = state} =
+               handler
+               |> Handler.execute_handle_pubrec(pubrec)
+
+      assert_receive {:pubrec, ^pubrec}
+    end
+  end
+
+  describe "execute handle_pubrel/2" do
+    test "return ok", context do
+      handler = set_state(context.handler, pid: self())
+      pubrel = %Package.Pubrel{identifier: 1}
+
+      assert {:ok, %Handler{} = state} =
+               handler
+               |> Handler.execute_handle_pubrel(pubrel)
+
+      assert_receive {:pubrel, ^pubrel}
+    end
+  end
+
+  describe "execute handle_pubcomp/2" do
+    test "return ok", context do
+      handler = set_state(context.handler, pid: self())
+      pubcomp = %Package.Pubcomp{identifier: 1}
+
+      assert {:ok, %Handler{} = state} =
+               handler
+               |> Handler.execute_handle_pubcomp(pubcomp)
+
+      assert_receive {:pubcomp, ^pubcomp}
     end
   end
 end

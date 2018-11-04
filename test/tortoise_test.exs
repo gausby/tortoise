@@ -17,7 +17,7 @@ defmodule TortoiseTest do
   end
 
   def setup_inflight(context) do
-    opts = [client_id: context.client_id]
+    opts = [client_id: context.client_id, parent: self()]
     {:ok, pid} = Inflight.start_link(opts)
     {:ok, %{inflight_pid: pid}}
   end
@@ -86,8 +86,11 @@ defmodule TortoiseTest do
                Package.decode(data)
 
       :ok = Inflight.update(client_id, {:received, %Package.Pubrec{identifier: id}})
+      # respond with a pubrel
+      pubrel = %Package.Pubrel{identifier: id}
+      :ok = Inflight.update(client_id, {:dispatch, pubrel})
       assert {:ok, data} = :gen_tcp.recv(context.server, 0, 500)
-      assert %Package.Pubrel{identifier: ^id} = Package.decode(data)
+      assert ^pubrel = Package.decode(data)
 
       :ok = Inflight.update(client_id, {:received, %Package.Pubcomp{identifier: id}})
       assert_receive :done

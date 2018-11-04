@@ -64,6 +64,18 @@ defmodule Tortoise.Connection.Inflight.Track do
     {:ok, %State{state | pending: rest, status: [expected, action | state.status]}}
   end
 
+  # When we are awaiting a package to dispatch, replace the package
+  # with the message given by the user; this allow us to support user
+  # defined properties on packages such as pubrec, pubrel, pubcomp,
+  # etc.
+  def resolve(
+        %State{pending: [[{:dispatch, %{__struct__: t, identifier: id}}, resolution] | rest]} =
+          state,
+        {:dispatch, %{__struct__: t, identifier: id}} = dispatch
+      ) do
+    {:ok, %State{state | pending: [[dispatch, resolution] | rest]}}
+  end
+
   # the value has previously been received; here we should stay where
   # we are at and retry the transmission
   def resolve(
@@ -216,10 +228,11 @@ defmodule Tortoise.Connection.Inflight.Track do
   def result(%State{
         type: Package.Unsubscribe,
         status: [
-          {:received, _},
+          {:received, %Package.Unsuback{results: _results}},
           {:dispatch, %Package.Unsubscribe{topics: topics}} | _other
         ]
       }) do
+    # todo, merge the unsuback results with the topic list
     {:ok, topics}
   end
 
@@ -233,14 +246,17 @@ defmodule Tortoise.Connection.Inflight.Track do
     result =
       List.zip([topics, acks])
       |> Enum.reduce(%{error: [], warn: [], ok: []}, fn
-        {{topic, level}, {:ok, level}}, %{ok: oks} = acc ->
-          %{acc | ok: oks ++ [{topic, level}]}
+        {{topic, opts}, {:ok, actual}}, %{ok: oks, warn: warns} = acc ->
+          case Keyword.get(opts, :qos) do
+            ^actual ->
+              %{acc | ok: oks ++ [{topic, actual}]}
 
-        {{topic, requested}, {:ok, actual}}, %{warn: warns} = acc ->
-          %{acc | warn: warns ++ [{topic, [requested: requested, accepted: actual]}]}
+            requested ->
+              %{acc | warn: warns ++ [{topic, [requested: requested, accepted: actual]}]}
+          end
 
-        {{topic, level}, {:error, :access_denied}}, %{error: errors} = acc ->
-          %{acc | error: errors ++ [{:access_denied, {topic, level}}]}
+        {{topic, opts}, {:error, reason}}, %{error: errors} = acc ->
+          %{acc | error: errors ++ [{reason, {topic, opts}}]}
       end)
 
     {:ok, result}

@@ -25,7 +25,7 @@ defmodule Tortoise.Connection.InflightTest do
   end
 
   def setup_inflight(context) do
-    {:ok, pid} = Inflight.start_link(client_id: context.client_id)
+    {:ok, pid} = Inflight.start_link(client_id: context.client_id, parent: self())
     {:ok, %{inflight_pid: pid}}
   end
 
@@ -33,7 +33,7 @@ defmodule Tortoise.Connection.InflightTest do
     setup [:setup_connection]
 
     test "start/stop", context do
-      assert {:ok, pid} = Inflight.start_link(client_id: context.client_id)
+      assert {:ok, pid} = Inflight.start_link(client_id: context.client_id, parent: self())
       assert Process.alive?(pid)
       assert :ok = Inflight.stop(pid)
       refute Process.alive?(pid)
@@ -46,8 +46,11 @@ defmodule Tortoise.Connection.InflightTest do
     test "incoming publish QoS=1", %{client_id: client_id} = context do
       publish = %Package.Publish{identifier: 1, topic: "foo", qos: 1}
       :ok = Inflight.track(client_id, {:incoming, publish})
-      assert {:ok, puback} = :gen_tcp.recv(context.server, 0, 500)
-      assert %Package.Puback{identifier: 1} = Package.decode(puback)
+
+      puback = %Package.Puback{identifier: 1}
+      :ok = Inflight.update(client_id, {:dispatch, puback})
+      assert {:ok, data} = :gen_tcp.recv(context.server, 0, 500)
+      assert ^puback = Package.decode(data)
     end
 
     test "outgoing publish QoS=1", %{client_id: client_id} = context do
@@ -69,7 +72,7 @@ defmodule Tortoise.Connection.InflightTest do
       Inflight.update(client_id, {:received, %Package.Puback{identifier: 1}})
 
       # the calling process should get a result response
-      assert_receive {{Tortoise, ^client_id}, ^ref, :ok}
+      assert_receive {{Tortoise, ^client_id}, {Package.Publish, ^ref}, :ok}
     end
   end
 
@@ -79,21 +82,29 @@ defmodule Tortoise.Connection.InflightTest do
     test "incoming publish QoS=2", %{client_id: client_id} = context do
       publish = %Package.Publish{identifier: 1, topic: "foo", qos: 2}
       :ok = Inflight.track(client_id, {:incoming, publish})
-      assert {:ok, pubrec} = :gen_tcp.recv(context.server, 0, 500)
-      assert %Package.Pubrec{identifier: 1} = Package.decode(pubrec)
+
+      pubrec = %Package.Pubrec{identifier: 1}
+      :ok = Inflight.update(client_id, {:dispatch, pubrec})
+
+      assert {:ok, data} = :gen_tcp.recv(context.server, 0, 500)
+      assert ^pubrec = Package.decode(data)
 
       # drop and reestablish the connection
       {:ok, context} = drop_connection(context)
       {:ok, context} = setup_connection(context)
 
       # now we should receive the same pubrec message
-      assert {:ok, ^pubrec} = :gen_tcp.recv(context.server, 0, 500)
+      assert {:ok, ^data} = :gen_tcp.recv(context.server, 0, 500)
 
       # simulate that we receive a pubrel from the server
       Inflight.update(client_id, {:received, %Package.Pubrel{identifier: 1}})
+      # dispatch a pubcomp; we need to feed this because of user
+      # properties that can be set on the pubcomp package by the user
+      pubcomp = %Package.Pubcomp{identifier: 1}
+      Inflight.update(client_id, {:dispatch, pubcomp})
 
-      assert {:ok, pubcomp} = :gen_tcp.recv(context.server, 0, 500)
-      assert %Package.Pubcomp{identifier: 1} = Package.decode(pubcomp)
+      assert {:ok, encoded_pubcomp} = :gen_tcp.recv(context.server, 0, 500)
+      assert ^pubcomp = Package.decode(encoded_pubcomp)
     end
 
     test "outgoing publish QoS=2", %{client_id: client_id} = context do
@@ -115,17 +126,20 @@ defmodule Tortoise.Connection.InflightTest do
       Inflight.update(client_id, {:received, %Package.Pubrec{identifier: 1}})
 
       # we should send the pubrel package
-      assert {:ok, pubrel} = :gen_tcp.recv(context.server, 0, 500)
-      assert %Package.Pubrel{identifier: 1} = Package.decode(pubrel)
+      pubrel = %Package.Pubrel{identifier: 1}
+      :ok = Inflight.update(client_id, {:dispatch, pubrel})
+
+      assert {:ok, pubrel_encoded} = :gen_tcp.recv(context.server, 0, 500)
+      assert ^pubrel = Package.decode(pubrel_encoded)
       # drop and reestablish the connection
       {:ok, context} = drop_connection(context)
       {:ok, context} = setup_connection(context)
       # re-transmit the pubrel
-      assert {:ok, ^pubrel} = :gen_tcp.recv(context.server, 0, 500)
+      assert {:ok, ^pubrel_encoded} = :gen_tcp.recv(context.server, 0, 500)
 
       # When we receive the pubcomp message we should respond the caller
       Inflight.update(client_id, {:received, %Package.Pubcomp{identifier: 1}})
-      assert_receive {{Tortoise, ^client_id}, ^ref, :ok}
+      assert_receive {{Tortoise, ^client_id}, {Package.Publish, ^ref}, :ok}
     end
   end
 
@@ -133,9 +147,15 @@ defmodule Tortoise.Connection.InflightTest do
     setup [:setup_connection, :setup_inflight]
 
     test "subscription", %{client_id: client_id} = context do
+      opts = [no_local: false, retain_as_published: false, retain_handling: 1]
+
       subscribe = %Package.Subscribe{
         identifier: 1,
-        topics: [{"foo", 0}, {"bar", 1}, {"baz", 2}]
+        topics: [
+          {"foo", [{:qos, 0} | opts]},
+          {"bar", [{:qos, 1} | opts]},
+          {"baz", [{:qos, 2} | opts]}
+        ]
       }
 
       {:ok, ref} = Inflight.track(client_id, {:outgoing, subscribe})
@@ -157,7 +177,7 @@ defmodule Tortoise.Connection.InflightTest do
 
       Inflight.update(client_id, {:received, suback})
 
-      assert_receive {{Tortoise, ^client_id}, ^ref, _}
+      assert_receive {{Tortoise, ^client_id}, {Package.Subscribe, ^ref}, _}
     end
   end
 
@@ -184,7 +204,7 @@ defmodule Tortoise.Connection.InflightTest do
       # when receiving the suback we should respond to the caller
       Inflight.update(client_id, {:received, %Package.Unsuback{identifier: 1}})
 
-      assert_receive {{Tortoise, ^client_id}, ^ref, _}
+      assert_receive {{Tortoise, ^client_id}, {Package.Unsubscribe, ^ref}, _}
     end
   end
 

@@ -1,5 +1,3 @@
-Code.require_file("./support/test_tcp_tunnel.exs", __DIR__)
-
 defmodule Tortoise.TestGenerators do
   @moduledoc """
   EQC generators for generating variables and data structures useful
@@ -101,7 +99,8 @@ defmodule Tortoise.TestGenerators do
               topic: gen_topic(),
               payload: oneof([non_empty(binary()), nil]),
               qos: gen_qos(),
-              retain: bool()
+              retain: bool(),
+              properties: [receive_maximum: 201]
             }
           ]) do
       # zero byte client id is allowed, but clean session should be set to true
@@ -118,9 +117,10 @@ defmodule Tortoise.TestGenerators do
             client_id: binary(),
             user_name: oneof([nil, utf8()]),
             password: oneof([nil, utf8()]),
-            clean_session: bool(),
+            clean_start: bool(),
             keep_alive: choose(0, 65535),
-            will: will
+            will: will,
+            properties: [receive_maximum: 201]
           } do
         connect
       end
@@ -133,14 +133,30 @@ defmodule Tortoise.TestGenerators do
   def gen_connack() do
     let connack <- %Package.Connack{
           session_present: bool(),
-          status:
+          reason:
             oneof([
-              :accepted,
-              {:refused, :unacceptable_protocol_version},
-              {:refused, :identifier_rejected},
-              {:refused, :server_unavailable},
+              :success,
+              {:refused, :unspecified_error},
+              {:refused, :malformed_packet},
+              {:refused, :protocol_error},
+              {:refused, :implementation_specific_error},
+              {:refused, :unsupported_protocol_version},
+              {:refused, :client_identifier_not_valid},
               {:refused, :bad_user_name_or_password},
-              {:refused, :not_authorized}
+              {:refused, :not_authorized},
+              {:refused, :server_unavailable},
+              {:refused, :server_busy},
+              {:refused, :banned},
+              {:refused, :bad_authentication_method},
+              {:refused, :topic_name_invalid},
+              {:refused, :packet_too_large},
+              {:refused, :quota_exceeded},
+              {:refused, :payload_format_invalid},
+              {:refused, :retain_not_supported},
+              {:refused, :qos_not_supported},
+              {:refused, :use_another_server},
+              {:refused, :server_moved},
+              {:refused, :connection_rate_exceeded}
             ])
         } do
       connack
@@ -163,6 +179,7 @@ defmodule Tortoise.TestGenerators do
           payload: oneof([non_empty(binary()), nil]),
           retain: bool()
       }
+      |> gen_publish_properties()
     end
   end
 
@@ -178,6 +195,25 @@ defmodule Tortoise.TestGenerators do
     }
   end
 
+  defp gen_publish_properties(%Package.Publish{} = publish) do
+    allowed_properties = [
+      :payload_format_indicator,
+      :message_expiry_interval,
+      :topic_alias,
+      :response_topic,
+      :correlation_data,
+      :user_property,
+      :subscription_identifier,
+      :content_type
+    ]
+
+    let properties <- list(5, oneof(allowed_properties)) do
+      # @todo only user_properties and subscription_identifiers are allowed multiple times
+      properties = Enum.map(properties, &gen_property_value/1)
+      %Package.Publish{publish | properties: properties}
+    end
+  end
+
   @doc """
   Generate a valid subscribe message.
 
@@ -187,16 +223,52 @@ defmodule Tortoise.TestGenerators do
   def gen_subscribe() do
     let subscribe <- %Package.Subscribe{
           identifier: gen_identifier(),
-          topics: non_empty(list({gen_topic_filter(), gen_qos()}))
+          topics: non_empty(list({gen_topic_filter(), gen_subscribe_opts()})),
+          # todo, add properties
+          properties: []
         } do
       subscribe
+    end
+  end
+
+  # @todo improve this generator
+  def gen_subscribe_opts() do
+    let {qos, no_local, retain_as_published, retain_handling} <-
+          {gen_qos(), bool(), bool(), choose(0, 3)} do
+      [
+        qos: qos,
+        no_local: no_local,
+        retain_as_published: retain_as_published,
+        retain_handling: retain_handling
+      ]
     end
   end
 
   def gen_suback() do
     let suback <- %Package.Suback{
           identifier: choose(0x0001, 0xFFFF),
-          acks: non_empty(list(oneof([{:ok, gen_qos()}, {:error, :access_denied}])))
+          acks:
+            non_empty(
+              list(
+                oneof([
+                  {:ok, gen_qos()},
+                  {:error,
+                   oneof([
+                     :unspecified_error,
+                     :implementation_specific_error,
+                     :not_authorized,
+                     :topic_filter_invalid,
+                     :packet_identifier_in_use,
+                     :quota_exceeded,
+                     :shared_subscriptions_not_supported,
+                     :subscription_identifiers_not_supported,
+                     :wildcard_subscriptions_not_supported
+                   ])}
+                ])
+              )
+            ),
+          # todo, add generators for [:reason_string, :user_property]
+          properties: []
         } do
       suback
     end
@@ -208,7 +280,8 @@ defmodule Tortoise.TestGenerators do
   def gen_unsubscribe() do
     let unsubscribe <- %Package.Unsubscribe{
           identifier: gen_identifier(),
-          topics: non_empty(list(gen_topic_filter()))
+          topics: non_empty(list(gen_topic_filter())),
+          properties: []
         } do
       unsubscribe
     end
@@ -216,15 +289,37 @@ defmodule Tortoise.TestGenerators do
 
   def gen_unsuback() do
     let unsuback <- %Package.Unsuback{
-          identifier: gen_identifier()
+          identifier: gen_identifier(),
+          results:
+            non_empty(
+              list(
+                oneof([
+                  :success,
+                  {:error,
+                   oneof([
+                     :no_subscription_existed,
+                     :unspecified_error,
+                     :implementation_specific_error,
+                     :not_authorized,
+                     :topic_filter_invalid,
+                     :packet_identifier_in_use
+                   ])}
+                ])
+              )
+            ),
+          # todo, generate :reason_string and :user_property
+          properties: []
         } do
       unsuback
     end
   end
 
   def gen_puback() do
+    # todo, make this generator generate properties and other reasons
     let puback <- %Package.Puback{
-          identifier: gen_identifier()
+          identifier: gen_identifier(),
+          reason: :success,
+          properties: []
         } do
       puback
     end
@@ -232,25 +327,160 @@ defmodule Tortoise.TestGenerators do
 
   def gen_pubcomp() do
     let pubcomp <- %Package.Pubcomp{
-          identifier: gen_identifier()
+          identifier: gen_identifier(),
+          reason: {:refused, :packet_identifier_not_found},
+          properties: []
         } do
       pubcomp
     end
   end
 
   def gen_pubrel() do
+    # todo, improve this generator
     let pubrel <- %Package.Pubrel{
-          identifier: gen_identifier()
+          identifier: gen_identifier(),
+          reason: :success,
+          properties: []
         } do
       pubrel
     end
   end
 
   def gen_pubrec() do
+    # todo, improve this generator
     let pubrec <- %Package.Pubrec{
-          identifier: gen_identifier()
+          identifier: gen_identifier(),
+          reason: :success,
+          properties: []
         } do
       pubrec
+    end
+  end
+
+  def gen_disconnect() do
+    let disconnect <-
+          %Package.Disconnect{
+            reason:
+              oneof([
+                :normal_disconnection,
+                :disconnect_with_will_message,
+                :unspecified_error,
+                :malformed_packet,
+                :protocol_error,
+                :implementation_specific_error,
+                :not_authorized,
+                :server_busy,
+                :server_shutting_down,
+                :keep_alive_timeout,
+                :session_taken_over,
+                :topic_filter_invalid,
+                :topic_name_invalid,
+                :receive_maximum_exceeded,
+                :topic_alias_invalid,
+                :packet_too_large,
+                :message_rate_too_high,
+                :quota_exceeded,
+                :administrative_action,
+                :payload_format_invalid,
+                :retain_not_supported,
+                :qos_not_supported,
+                :use_another_server,
+                :server_moved,
+                :shared_subscriptions_not_supported,
+                :connection_rate_exceeded,
+                :maximum_connect_time,
+                :subscription_identifiers_not_supported,
+                :wildcard_subscriptions_not_supported
+              ])
+          } do
+      %Package.Disconnect{disconnect | properties: gen_properties(disconnect)}
+    end
+  end
+
+  def gen_auth() do
+    let auth <-
+          %Package.Auth{
+            reason: oneof([:success, :continue_authentication, :re_authenticate])
+          } do
+      %Package.Auth{auth | properties: gen_properties(auth)}
+    end
+  end
+
+  def gen_properties(%Package.Disconnect{reason: :normal_disconnection}) do
+    []
+  end
+
+  def gen_properties(%{}) do
+    []
+  end
+
+  def gen_properties() do
+    let properties <-
+          list(
+            5,
+            oneof([
+              :payload_format_indicator,
+              :message_expiry_interval,
+              :content_type,
+              :response_topic,
+              :correlation_data,
+              :subscription_identifier,
+              :session_expiry_interval,
+              :assigned_client_identifier,
+              :server_keep_alive,
+              :authentication_method,
+              :authentication_data,
+              :request_problem_information,
+              :will_delay_interval,
+              :request_response_information,
+              :response_information,
+              :server_reference,
+              :reason_string,
+              :receive_maximum,
+              :topic_alias_maximum,
+              :topic_alias,
+              :maximum_qos,
+              :retain_available,
+              :user_property,
+              :maximum_packet_size,
+              :wildcard_subscription_available,
+              :subscription_identifier_available,
+              :shared_subscription_available
+            ])
+          ) do
+      Enum.map(properties, &gen_property_value/1)
+    end
+  end
+
+  def gen_property_value(type) do
+    case type do
+      :payload_format_indicator -> {type, oneof([0, 1])}
+      :message_expiry_interval -> {type, choose(0, 4_294_967_295)}
+      :content_type -> {type, utf8()}
+      :response_topic -> {type, gen_topic()}
+      :correlation_data -> {type, binary()}
+      :subscription_identifier -> {type, choose(1, 268_435_455)}
+      :session_expiry_interval -> {type, choose(1, 268_435_455)}
+      :assigned_client_identifier -> {type, utf8()}
+      :server_keep_alive -> {type, choose(0x0000, 0xFFFF)}
+      :authentication_method -> {type, utf8()}
+      :authentication_data -> {type, binary()}
+      :request_problem_information -> {type, oneof([0, 1])}
+      :will_delay_interval -> {type, choose(0, 4_294_967_295)}
+      :request_response_information -> {type, oneof([0, 1])}
+      :response_information -> {type, utf8()}
+      :server_reference -> {type, utf8()}
+      :reason_string -> {type, utf8()}
+      :receive_maximum -> {type, choose(0x0001, 0xFFFF)}
+      :topic_alias_maximum -> {type, choose(0x0000, 0xFFFF)}
+      :topic_alias -> {type, choose(0x0001, 0xFFFF)}
+      :maximum_qos -> {type, oneof([0, 1])}
+      :retain_available -> {type, oneof([0, 1])}
+      :user_property -> {utf8(), utf8()}
+      :maximum_packet_size -> {type, choose(1, 268_435_455)}
+      :wildcard_subscription_available -> {type, oneof([0, 1])}
+      :subscription_identifier_available -> {type, oneof([0, 1])}
+      :shared_subscription_available -> {type, oneof([0, 1])}
     end
   end
 end

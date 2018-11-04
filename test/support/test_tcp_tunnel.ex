@@ -4,7 +4,7 @@ defmodule Tortoise.Integration.TestTCPTunnel do
   send to the client_socket and assert on the received data on the
   server_socket.
 
-  This work for our Transmitter-module which is handled a TCP-socket
+  This work for our Inflight-module which is handled a TCP-socket
   from the Receiver.
   """
   use GenServer
@@ -28,6 +28,11 @@ defmodule Tortoise.Integration.TestTCPTunnel do
       1000 ->
         throw("Could not create TCP test tunnel")
     end
+  end
+
+  def new(transport) do
+    {ref, {ip, port}} = GenServer.call(__MODULE__, :create)
+    {:ok, ref, Tortoise.Transport.new({transport, [host: ip, port: port]})}
   end
 
   # Server callbacks

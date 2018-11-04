@@ -22,7 +22,8 @@ defmodule Tortoise.MixProject do
         "coveralls.json": :test,
         "coveralls.post": :test,
         docs: :docs
-      ]
+      ],
+      elixirc_paths: elixirc_paths(Mix.env())
     ]
   end
 
@@ -51,6 +52,9 @@ defmodule Tortoise.MixProject do
       {:ct_helper, github: "ninenines/ct_helper", only: :test}
     ]
   end
+
+  defp elixirc_paths(:test), do: ["lib", "test/support"]
+  defp elixirc_paths(_), do: ["lib"]
 
   defp package() do
     [

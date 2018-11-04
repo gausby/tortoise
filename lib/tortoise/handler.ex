@@ -25,7 +25,7 @@ defmodule Tortoise.Handler do
       behavior for when the subscription is accepted, declined, as
       well as unsubscribed.
 
-    - `handle_message/3` is run when the client receive a message on
+    - `handle_publish/3` is run when the client receive a publish on
       one of the subscribed topic filters.
 
   Because the callback-module will run inside the connection
@@ -63,7 +63,7 @@ defmodule Tortoise.Handler do
   require the user to peek into the process mailbox to fetch the
   result of the operation. To allow for changes in the subscriptions
   one can define a set of next actions that should happen as part of
-  the return value to the `handle_message/3`, `subscription/3`, and
+  the return value to the `handle_publish/3`, `subscription/3`, and
   `connection/3` callbacks by returning a `{:ok, state, next_actions}`
   where `next_actions` is a list of commands of:
 
@@ -78,9 +78,9 @@ defmodule Tortoise.Handler do
       from.
 
   If we want to unsubscribe from the current topic when we receive a
-  message on it we could write a `handle_message/3` as follows:
+  publish on it we could write a `handle_publish/3` as follows:
 
-      def handle_message(topic, _payload, state) do
+      def handle_publish(topic, _payload, state) do
         topic = Enum.join(topic, "/")
         next_actions = [{:unsubscribe, topic}]
         {:ok, state, next_actions}
@@ -89,7 +89,7 @@ defmodule Tortoise.Handler do
   Note that the `topic` is received as a list of topic levels, and
   that the next actions has to be a list, even if there is only one
   next action; multiple actions can be given at once. Read more about
-  this in the `handle_message/3` documentation.
+  this in the `handle_publish/3` documentation.
   """
 
   alias Tortoise.Package
@@ -145,7 +145,27 @@ defmodule Tortoise.Handler do
       end
 
       @impl true
-      def handle_message(_topic, _payload, state) do
+      def handle_publish(_topic, _payload, state) do
+        {:ok, state}
+      end
+
+      @impl true
+      def handle_puback(_puback, state) do
+        {:ok, state}
+      end
+
+      @impl true
+      def handle_pubrec(_pubrec, state) do
+        {:ok, state}
+      end
+
+      @impl true
+      def handle_pubrel(_pubrel, state) do
+        {:ok, state}
+      end
+
+      @impl true
+      def handle_pubcomp(_pubcomp, state) do
         {:ok, state}
       end
 
@@ -246,7 +266,7 @@ defmodule Tortoise.Handler do
 
   The `topic` comes in the form of a list of binaries, making it
   possible to pattern match on the topic levels of the retrieved
-  message, store the individual topic levels as variables and use it
+  publish, store the individual topic levels as variables and use it
   in the function body.
 
   `Payload` is a binary. MQTT 3.1.1 does not specify any format of the
@@ -255,15 +275,15 @@ defmodule Tortoise.Handler do
 
   In an example where we are already subscribed to the topic filter
   `room/+/temp` and want to dispatch the received messages to a
-  `Temperature` application we could set up our `handle_message` as
+  `Temperature` application we could set up our `handle_publish` as
   such:
 
-      def handle_message(["room", room, "temp"], payload, state) do
+      def handle_publish(["room", room, "temp"], payload, state) do
         :ok = Temperature.record(room, payload)
         {:ok, state}
       end
 
-  Notice; the `handle_message/3`-callback run inside the connection
+  Notice; the `handle_publish/3`-callback run inside the connection
   controller process, so for handlers that are subscribing to topics
   with heavy traffic should do as little as possible in the callback
   handler and dispatch to other parts of the application using
@@ -276,12 +296,28 @@ defmodule Tortoise.Handler do
   a list of next actions such as `{:unsubscribe, "foo/bar"}` will
   reenter the loop and perform the listed actions.
   """
-  @callback handle_message(topic_levels, payload, state :: term()) ::
+  @callback handle_publish(topic_levels, payload, state :: term()) ::
               {:ok, new_state}
               | {:ok, new_state, [next_action()]}
             when new_state: term(),
                  topic_levels: [String.t()],
                  payload: Tortoise.payload()
+
+  @callback handle_puback(puback, state :: term()) :: {:ok, new_state}
+            when puback: Package.Puback.t(),
+                 new_state: term()
+
+  @callback handle_pubrec(pubrec, state :: term()) :: {:ok, new_state}
+            when pubrec: Package.Pubrec.t(),
+                 new_state: term()
+
+  @callback handle_pubrel(pubrel, state :: term()) :: {:ok, new_state}
+            when pubrel: Package.Pubrel.t(),
+                 new_state: term()
+
+  @callback handle_pubcomp(pubcomp, state :: term()) :: {:ok, new_state}
+            when pubcomp: Package.Pubcomp.t(),
+                 new_state: term()
 
   @doc """
   Invoked when the connection process is about to exit.
@@ -294,48 +330,54 @@ defmodule Tortoise.Handler do
                  ignored: term()
 
   @doc false
-  @spec execute(t, action) :: :ok | {:ok, t} | {:error, {:invalid_next_action, term()}}
-        when action:
-               :init
-               | {:subscribe, [term()]}
-               | {:unsubscribe, [term()]}
-               | {:publish, Tortoise.Package.Publish.t()}
-               | {:connection, :up | :down}
-               | {:terminate, reason :: term()}
-  def execute(handler, :init) do
-    case apply(handler.module, :init, [handler.initial_args]) do
+  @spec execute_init(t) :: {:ok, t} | :ignore | {:stop, term()}
+  def execute_init(handler) do
+    handler.module
+    |> apply(:init, [handler.initial_args])
+    |> case do
       {:ok, initial_state} ->
         {:ok, %__MODULE__{handler | state: initial_state}}
+
+      :ignore ->
+        :ignore
+
+      {:stop, reason} ->
+        {:stop, reason}
     end
   end
 
-  def execute(handler, {:connection, status}) do
+  @doc false
+  @spec execute_connection(t, status) :: {:ok, t}
+        when status: :up | :down
+  def execute_connection(handler, status) do
     handler.module
     |> apply(:connection, [status, handler.state])
     |> handle_result(handler)
   end
 
-  def execute(handler, {:publish, %Package.Publish{} = publish}) do
-    topic_list = String.split(publish.topic, "/")
-
+  @doc false
+  @spec execute_disconnect(t, %Package.Disconnect{}) :: {:stop, term(), t}
+  def execute_disconnect(handler, %Package.Disconnect{} = disconnect) do
     handler.module
-    |> apply(:handle_message, [topic_list, publish.payload, handler.state])
-    |> handle_result(handler)
+    |> apply(:handle_disconnect, [disconnect, handler.state])
+    |> case do
+      {:stop, reason, updated_state} ->
+        {:stop, reason, %__MODULE__{handler | state: updated_state}}
+    end
   end
 
-  def execute(handler, {:unsubscribe, unsubacks}) do
-    Enum.reduce(unsubacks, {:ok, handler}, fn topic_filter, {:ok, handler} ->
-      handler.module
-      |> apply(:subscription, [:down, topic_filter, handler.state])
-      |> handle_result(handler)
-
-      # _, {:stop, acc} ->
-      #   {:stop, acc}
-    end)
+  @doc false
+  @spec execute_terminate(t, reason) :: ignored
+        when reason: term(),
+             ignored: term()
+  def execute_terminate(handler, reason) do
+    _ignored = apply(handler.module, :terminate, [reason, handler.state])
   end
 
-  def execute(handler, {:subscribe, subacks}) do
-    subacks
+  @doc false
+  @spec execute_subscribe(t, [term()]) :: {:ok, t}
+  def execute_subscribe(handler, result) do
+    result
     |> flatten_subacks()
     |> Enum.reduce({:ok, handler}, fn {op, topic_filter}, {:ok, handler} ->
       handler.module
@@ -347,9 +389,65 @@ defmodule Tortoise.Handler do
     end)
   end
 
-  def execute(handler, {:terminate, reason}) do
-    _ignored = apply(handler.module, :terminate, [reason, handler.state])
-    :ok
+  @doc false
+  @spec execute_unsubscribe(t, result) :: {:ok, t}
+        when result: [Tortoise.topic_filter()]
+  def execute_unsubscribe(handler, results) do
+    Enum.reduce(results, {:ok, handler}, fn topic_filter, {:ok, handler} ->
+      handler.module
+      |> apply(:subscription, [:down, topic_filter, handler.state])
+      |> handle_result(handler)
+
+      # _, {:stop, acc} ->
+      #   {:stop, acc}
+    end)
+  end
+
+  @doc false
+  @spec execute_handle_publish(t, Package.Publish.t()) ::
+          {:ok, t} | {:error, {:invalid_next_action, term()}}
+  def execute_handle_publish(handler, %Package.Publish{} = publish) do
+    topic_list = String.split(publish.topic, "/")
+
+    handler.module
+    |> apply(:handle_publish, [topic_list, publish.payload, handler.state])
+    |> handle_result(handler)
+  end
+
+  @doc false
+  # @spec execute_handle_puback(t, Package.Puback.t()) ::
+  #         {:ok, t} | {:error, {:invalid_next_action, term()}}
+  def execute_handle_puback(handler, %Package.Puback{} = puback) do
+    handler.module
+    |> apply(:handle_puback, [puback, handler.state])
+    |> handle_result(handler)
+  end
+
+  @doc false
+  # @spec execute_handle_pubrec(t, Package.Pubrec.t()) ::
+  #         {:ok, t} | {:error, {:invalid_next_action, term()}}
+  def execute_handle_pubrec(handler, %Package.Pubrec{} = pubrec) do
+    handler.module
+    |> apply(:handle_pubrec, [pubrec, handler.state])
+    |> handle_result(handler)
+  end
+
+  @doc false
+  # @spec execute_handle_pubrel(t, Package.Pubrel.t()) ::
+  #         {:ok, t} | {:error, {:invalid_next_action, term()}}
+  def execute_handle_pubrel(handler, %Package.Pubrel{} = pubrel) do
+    handler.module
+    |> apply(:handle_pubrel, [pubrel, handler.state])
+    |> handle_result(handler)
+  end
+
+  @doc false
+  # @spec execute_handle_pubcomp(t, Package.Pubcomp.t()) ::
+  #         {:ok, t} | {:error, {:invalid_next_action, term()}}
+  def execute_handle_pubcomp(handler, %Package.Pubcomp{} = pubcomp) do
+    handler.module
+    |> apply(:handle_pubcomp, [pubcomp, handler.state])
+    |> handle_result(handler)
   end
 
   # Subacks will come in a map with three keys in the form of tuples

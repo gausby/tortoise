@@ -18,6 +18,7 @@ defmodule Tortoise.Package do
             | Package.Pingreq.t()
             | Package.Pingresp.t()
             | Package.Disconnect.t()
+            | Package.Auth.t()
 
   defdelegate encode(data), to: Tortoise.Encodable
   defdelegate decode(data), to: Tortoise.Decodable
@@ -26,6 +27,11 @@ defmodule Tortoise.Package do
   def length_encode(data) do
     length_prefix = <<byte_size(data)::big-integer-size(16)>>
     [length_prefix, data]
+  end
+
+  @doc false
+  def variable_length(n) do
+    remaining_length(n)
   end
 
   @doc false
@@ -39,5 +45,42 @@ defmodule Tortoise.Package do
 
   defp remaining_length(n) do
     [<<1::1, rem(n, @highbit)::7>>] ++ remaining_length(div(n, @highbit))
+  end
+
+  @doc false
+  def drop_length_prefix(payload) do
+    case payload do
+      <<0::1, _::7, r::binary>> -> r
+      <<1::1, _::7, 0::1, _::7, r::binary>> -> r
+      <<1::1, _::7, 1::1, _::7, 0::1, _::7, r::binary>> -> r
+      <<1::1, _::7, 1::1, _::7, 1::1, _::7, 0::1, _::7, r::binary>> -> r
+    end
+  end
+
+  def parse_variable_length(data) do
+    case data do
+      <<0::1, length::integer-size(7), _::binary>> ->
+        length = length + 1
+        <<properties::binary-size(length), rest::binary>> = data
+        {properties, rest}
+
+      <<1::1, a::7, 0::1, b::7, _::binary>> ->
+        <<length::integer-size(14)>> = <<b::7, a::7>>
+        length = length + 2
+        <<properties::binary-size(length), rest::binary>> = data
+        {properties, rest}
+
+      <<1::1, a::7, 1::1, b::7, 0::1, c::7, _::binary>> ->
+        <<length::integer-size(21)>> = <<c::7, b::7, a::7>>
+        length = length + 3
+        <<properties::binary-size(length), rest::binary>> = data
+        {properties, rest}
+
+      <<1::1, a::7, 1::1, b::7, 1::1, c::7, 0::1, d::7, _::binary>> ->
+        <<length::integer-size(28)>> = <<d::7, c::7, b::7, a::7>>
+        length = length + 4
+        <<properties::binary-size(length), rest::binary>> = data
+        {properties, rest}
+    end
   end
 end

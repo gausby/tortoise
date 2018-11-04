@@ -19,7 +19,8 @@ defimpl Tortoise.Decodable, for: BitString do
     Unsuback,
     Pingreq,
     Pingresp,
-    Disconnect
+    Disconnect,
+    Auth
   }
 
   def decode(<<1::4, _::4, _::binary>> = data), do: Connect.decode(data)
@@ -36,6 +37,7 @@ defimpl Tortoise.Decodable, for: BitString do
   def decode(<<12::4, _::4, _::binary>> = data), do: Pingreq.decode(data)
   def decode(<<13::4, _::4, _::binary>> = data), do: Pingresp.decode(data)
   def decode(<<14::4, _::4, _::binary>> = data), do: Disconnect.decode(data)
+  def decode(<<15::4, _::4, _::binary>> = data), do: Auth.decode(data)
 end
 
 defimpl Tortoise.Decodable, for: List do
