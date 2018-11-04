@@ -21,7 +21,10 @@ defmodule Tortoise.Package.Subscribe do
             __META__: Package.Meta.t(),
             identifier: Tortoise.package_identifier(),
             topics: topics(),
-            properties: []
+            properties: [
+              {:subscription_identifier, 0x1..0xFFFFFFF},
+              {:user_property, binary()}
+            ]
           }
   defstruct __META__: %Package.Meta{opcode: @opcode, flags: 0b0010},
             identifier: nil,

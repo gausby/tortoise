@@ -3,15 +3,18 @@ defmodule Tortoise.Package.Pubcomp do
 
   @opcode 7
 
-  @allowed_properties [:reason_string, :user_property]
+  # @allowed_properties [:reason_string, :user_property]
 
   alias Tortoise.Package
+
+  @type reason :: :success | {:refused, refusal_reasons()}
+  @type refusal_reasons :: :packet_identifier_not_found
 
   @opaque t :: %__MODULE__{
             __META__: Package.Meta.t(),
             identifier: Tortoise.package_identifier(),
-            reason: :success,
-            properties: []
+            reason: reason(),
+            properties: [{:reason_string, String.t()}, {:user_property, String.t()}]
           }
   defstruct __META__: %Package.Meta{opcode: @opcode, flags: 0},
             identifier: nil,

@@ -22,7 +22,7 @@ defmodule Tortoise.Package.Pubrec do
             __META__: Package.Meta.t(),
             identifier: Tortoise.package_identifier(),
             reason: reason(),
-            properties: [{any(), any()}]
+            properties: [{:reason_string, String.t()}, {:user_property, String.t()}]
           }
   defstruct __META__: %Package.Meta{opcode: @opcode, flags: 0b0000},
             identifier: nil,

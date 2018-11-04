@@ -411,66 +411,6 @@ defmodule Tortoise.Connection do
   end
 
   @impl true
-  def handle_event(
-        :internal,
-        {:execute_handler, {:connection, status}},
-        :connected,
-        %State{handler: handler} = data
-      ) do
-    case Handler.execute_connection(handler, status) do
-      {:ok, %Handler{} = updated_handler} ->
-        updated_data = %State{data | handler: updated_handler}
-        {:keep_state, updated_data}
-
-        # handle stop
-    end
-  end
-
-  def handle_event(
-        :internal,
-        {:execute_handler, {:subscribe, results}},
-        _,
-        %State{handler: handler} = data
-      ) do
-    case Handler.execute_subscribe(handler, results) do
-      {:ok, %Handler{} = updated_handler} ->
-        updated_data = %State{data | handler: updated_handler}
-        {:keep_state, updated_data}
-
-        # handle stop
-    end
-  end
-
-  def handle_event(
-        :internal,
-        {:execute_handler, {:unsubscribe, result}},
-        _current_state,
-        %State{handler: handler} = data
-      ) do
-    case Handler.execute_unsubscribe(handler, result) do
-      {:ok, %Handler{} = updated_handler} ->
-        updated_data = %State{data | handler: updated_handler}
-        {:keep_state, updated_data}
-
-        # handle stop
-    end
-  end
-
-  def handle_event(
-        :internal,
-        {:execute_handler, {:publish, %Package.Publish{} = publish}},
-        _,
-        %State{handler: handler} = data
-      ) do
-    case Handler.execute_handle_publish(handler, publish) do
-      {:ok, %Handler{} = updated_handler} ->
-        updated_data = %State{data | handler: updated_handler}
-        {:keep_state, updated_data}
-
-        # handle stop
-    end
-  end
-
   def handle_event(:info, {:incoming, package}, _, _data) when is_binary(package) do
     next_actions = [{:next_event, :internal, {:received, Package.decode(package)}}]
     {:keep_state_and_data, next_actions}
@@ -534,28 +474,32 @@ defmodule Tortoise.Connection do
     {:stop, {:protocol_violation, reason}, data}
   end
 
-  # publish packages
+  # publish packages ===================================================
   def handle_event(
         :internal,
         {:received, %Package.Publish{qos: 0, dup: false} = publish},
         _,
-        %State{}
+        %State{handler: handler} = data
       ) do
-    next_actions = [{:next_event, :internal, {:execute_handler, {:publish, publish}}}]
-    {:keep_state_and_data, next_actions}
+    case Handler.execute_handle_publish(handler, publish) do
+      {:ok, %Handler{} = updated_handler} ->
+        updated_data = %State{data | handler: updated_handler}
+        {:keep_state, updated_data}
+
+        # handle stop
+    end
   end
 
-  # incoming publish QoS=1 ---------------------------------------------
+  # incoming publish QoS>0 ---------------------------------------------
   def handle_event(
         :internal,
-        {:received, %Package.Publish{qos: 1} = publish},
+        {:received, %Package.Publish{qos: qos} = publish},
         _,
         %State{client_id: client_id}
-      ) do
+      )
+      when qos in 1..2 do
     :ok = Inflight.track(client_id, {:incoming, publish})
-
-    next_actions = [{:next_event, :internal, {:execute_handler, {:publish, publish}}}]
-    {:keep_state_and_data, next_actions}
+    :keep_state_and_data
   end
 
   # outgoing publish QoS=1 ---------------------------------------------
@@ -565,9 +509,10 @@ defmodule Tortoise.Connection do
         _,
         %State{client_id: client_id, handler: handler} = data
       ) do
+    :ok = Inflight.update(client_id, {:received, puback})
+
     case Handler.execute_handle_puback(handler, puback) do
       {:ok, %Handler{} = updated_handler} ->
-        :ok = Inflight.update(client_id, {:received, puback})
         updated_data = %State{data | handler: updated_handler}
         {:keep_state, updated_data}
 
@@ -580,23 +525,17 @@ defmodule Tortoise.Connection do
   # incoming publish QoS=2 ---------------------------------------------
   def handle_event(
         :internal,
-        {:received, %Package.Publish{qos: 2} = publish},
-        :connected,
-        %State{client_id: client_id}
-      ) do
-    :ok = Inflight.track(client_id, {:incoming, publish})
-    :keep_state_and_data
-  end
-
-  def handle_event(
-        :internal,
-        {:received, %Package.Pubrel{} = pubrel},
+        {:received, %Package.Pubrel{identifier: id} = pubrel},
         _,
         %State{client_id: client_id, handler: handler} = data
       ) do
+    :ok = Inflight.update(client_id, {:received, pubrel})
+
     case Handler.execute_handle_pubrel(handler, pubrel) do
       {:ok, %Handler{} = updated_handler} ->
-        :ok = Inflight.update(client_id, {:received, pubrel})
+        # dispatch a pubcomp
+        pubcomp = %Package.Pubcomp{identifier: id}
+        :ok = Inflight.update(client_id, {:dispatch, pubcomp})
         updated_data = %State{data | handler: updated_handler}
         {:keep_state, updated_data}
 
@@ -606,29 +545,59 @@ defmodule Tortoise.Connection do
     end
   end
 
-  # an incoming publish with QoS=2 will get parked in the inflight
+  # an incoming publish with QoS>0 will get parked in the inflight
   # manager process, which will onward it to the controller, making
   # sure we will only dispatch it once to the publish-handler.
   def handle_event(
         :info,
-        {{Inflight, client_id}, %Package.Publish{qos: 2} = publish},
+        {{Inflight, client_id}, %Package.Publish{identifier: id, qos: 1} = publish},
         _,
-        %State{client_id: client_id}
+        %State{client_id: client_id, handler: handler} = data
       ) do
-    next_actions = [{:next_event, :internal, {:execute_handler, {:publish, publish}}}]
-    {:keep_state_and_data, next_actions}
+    case Handler.execute_handle_publish(handler, publish) do
+      {:ok, %Handler{} = updated_handler} ->
+        # respond with a puback
+        puback = %Package.Puback{identifier: id}
+        :ok = Inflight.update(client_id, {:dispatch, puback})
+        # - - -
+        updated_data = %State{data | handler: updated_handler}
+        {:keep_state, updated_data}
+
+        # handle stop
+    end
+  end
+
+  def handle_event(
+        :info,
+        {{Inflight, client_id}, %Package.Publish{identifier: id, qos: 2} = publish},
+        _,
+        %State{client_id: client_id, handler: handler} = data
+      ) do
+    case Handler.execute_handle_publish(handler, publish) do
+      {:ok, %Handler{} = updated_handler} ->
+        # respond with pubrec
+        pubrec = %Package.Pubrec{identifier: id}
+        :ok = Inflight.update(client_id, {:dispatch, pubrec})
+        # - - -
+        updated_data = %State{data | handler: updated_handler}
+        {:keep_state, updated_data}
+    end
   end
 
   # outgoing publish QoS=2 ---------------------------------------------
   def handle_event(
         :internal,
-        {:received, %Package.Pubrec{} = pubrec},
+        {:received, %Package.Pubrec{identifier: id} = pubrec},
         _,
         %State{client_id: client_id, handler: handler} = data
       ) do
+    :ok = Inflight.update(client_id, {:received, pubrec})
+
     case Handler.execute_handle_pubrec(handler, pubrec) do
       {:ok, %Handler{} = updated_handler} ->
-        :ok = Inflight.update(client_id, {:received, pubrec})
+        pubrel = %Package.Pubrel{identifier: id}
+        :ok = Inflight.update(client_id, {:dispatch, pubrel})
+
         updated_data = %State{data | handler: updated_handler}
         {:keep_state, updated_data}
 
@@ -644,9 +613,10 @@ defmodule Tortoise.Connection do
         :connected,
         %State{client_id: client_id, handler: handler} = data
       ) do
+    :ok = Inflight.update(client_id, {:received, pubcomp})
+
     case Handler.execute_handle_pubcomp(handler, pubcomp) do
       {:ok, %Handler{} = updated_handler} ->
-        :ok = Inflight.update(client_id, {:received, pubcomp})
         updated_data = %State{data | handler: updated_handler}
         {:keep_state, updated_data}
 
@@ -744,6 +714,52 @@ defmodule Tortoise.Connection do
   def handle_event({:call, from}, :subscriptions, _, %State{subscriptions: subscriptions}) do
     next_actions = [{:reply, from, subscriptions}]
     {:keep_state_and_data, next_actions}
+  end
+
+  # dispatch to user defined handler
+  def handle_event(
+        :internal,
+        {:execute_handler, {:connection, status}},
+        :connected,
+        %State{handler: handler} = data
+      ) do
+    case Handler.execute_connection(handler, status) do
+      {:ok, %Handler{} = updated_handler} ->
+        updated_data = %State{data | handler: updated_handler}
+        {:keep_state, updated_data}
+
+        # handle stop
+    end
+  end
+
+  def handle_event(
+        :internal,
+        {:execute_handler, {:subscribe, results}},
+        _,
+        %State{handler: handler} = data
+      ) do
+    case Handler.execute_subscribe(handler, results) do
+      {:ok, %Handler{} = updated_handler} ->
+        updated_data = %State{data | handler: updated_handler}
+        {:keep_state, updated_data}
+
+        # handle stop
+    end
+  end
+
+  def handle_event(
+        :internal,
+        {:execute_handler, {:unsubscribe, result}},
+        _current_state,
+        %State{handler: handler} = data
+      ) do
+    case Handler.execute_unsubscribe(handler, result) do
+      {:ok, %Handler{} = updated_handler} ->
+        updated_data = %State{data | handler: updated_handler}
+        {:keep_state, updated_data}
+
+        # handle stop
+    end
   end
 
   # connection logic ===================================================

@@ -171,8 +171,7 @@ defmodule Tortoise.Connection.Inflight do
     }
 
     next_actions = [
-      {:next_event, :internal, {:onward_publish, package}},
-      {:next_event, :internal, {:execute, track}}
+      {:next_event, :internal, {:onward_publish, package}}
     ]
 
     {:keep_state, data, next_actions}
@@ -234,29 +233,60 @@ defmodule Tortoise.Connection.Inflight do
 
   def handle_event(
         :cast,
-        {:update, {_, %{identifier: identifier}} = update},
+        {:update, {:received, %{identifier: identifier}} = update},
         _state,
         %State{pending: pending} = data
       ) do
     with {:ok, track} <- Map.fetch(pending, identifier),
          {:ok, track} <- Track.resolve(track, update) do
-      next_actions = [
-        {:next_event, :internal, {:execute, track}}
-      ]
-
       data = %State{
         data
         | pending: Map.put(pending, identifier, track),
           order: [identifier | data.order -- [identifier]]
       }
 
-      {:keep_state, data, next_actions}
+      case track do
+        %Track{pending: [[{:respond, _}, _] | _]} ->
+          next_actions = [
+            {:next_event, :internal, {:execute, track}}
+          ]
+
+          {:keep_state, data, next_actions}
+
+        # to support user defined properties we need to await a
+        # dispatch command from the controller before we can
+        # progress.
+        %Track{pending: [[{:dispatch, _}, _] | _]} ->
+          {:keep_state, data}
+      end
     else
       :error ->
         {:stop, {:protocol_violation, :unknown_identifier}, data}
 
       {:error, reason} ->
         {:stop, reason, data}
+    end
+  end
+
+  def handle_event(
+        :cast,
+        {:update, {:dispatch, %{identifier: identifier}} = update},
+        _state,
+        %State{pending: pending} = data
+      ) do
+    with {:ok, track} <- Map.fetch(pending, identifier),
+         {:ok, track} <- Track.resolve(track, update) do
+      data = %State{
+        data
+        | pending: Map.put(pending, identifier, track),
+          order: [identifier | data.order -- [identifier]]
+      }
+
+      next_actions = [
+        {:next_event, :internal, {:execute, track}}
+      ]
+
+      {:keep_state, data, next_actions}
     end
   end
 
@@ -269,22 +299,17 @@ defmodule Tortoise.Connection.Inflight do
     {:keep_state, %State{data | pending: %{}, order: []}}
   end
 
-  # We trap the incoming QoS 2 packages in the inflight manager so we
-  # can make sure we will not onward them to the connection handler
-  # more than once.
+  # We trap the incoming QoS>0 packages in the inflight manager so we
+  # can make sure we will not onward the same publish to the user
+  # defined callback more than once.
   def handle_event(
         :internal,
-        {:onward_publish, %Package.Publish{qos: 2} = publish},
+        {:onward_publish, %Package.Publish{qos: qos} = publish},
         _,
         %State{client_id: client_id, parent: parent_pid} = data
-      ) do
+      )
+      when qos in 1..2 do
     send(parent_pid, {{__MODULE__, client_id}, publish})
-    :keep_state_and_data
-  end
-
-  # The other package types should not get onwarded to the controller
-  # handler
-  def handle_event(:internal, {:onward_publish, _}, _, %State{}) do
     :keep_state_and_data
   end
 

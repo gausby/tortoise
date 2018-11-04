@@ -7,11 +7,14 @@ defmodule Tortoise.Package.Pubrel do
 
   alias Tortoise.Package
 
+  @type reason :: :success | {:refused, refusal_reasons()}
+  @type refusal_reasons :: :packet_identifier_not_found
+
   @opaque t :: %__MODULE__{
             __META__: Package.Meta.t(),
             identifier: Tortoise.package_identifier(),
-            reason: :success | {:refused, :packet_identifier_not_found},
-            properties: []
+            reason: reason(),
+            properties: [{:reason_string, String.t()}, {:user_property, String.t()}]
           }
   @enforce_keys [:identifier]
   defstruct __META__: %Package.Meta{opcode: @opcode, flags: 0b0010},

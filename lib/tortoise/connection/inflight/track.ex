@@ -64,6 +64,18 @@ defmodule Tortoise.Connection.Inflight.Track do
     {:ok, %State{state | pending: rest, status: [expected, action | state.status]}}
   end
 
+  # When we are awaiting a package to dispatch, replace the package
+  # with the message given by the user; this allow us to support user
+  # defined properties on packages such as pubrec, pubrel, pubcomp,
+  # etc.
+  def resolve(
+        %State{pending: [[{:dispatch, %{__struct__: t, identifier: id}}, resolution] | rest]} =
+          state,
+        {:dispatch, %{__struct__: t, identifier: id}} = dispatch
+      ) do
+    {:ok, %State{state | pending: [[dispatch, resolution] | rest]}}
+  end
+
   # the value has previously been received; here we should stay where
   # we are at and retry the transmission
   def resolve(
