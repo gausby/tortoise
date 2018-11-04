@@ -2,7 +2,6 @@ defmodule Tortoise.Connection.Inflight do
   @moduledoc false
 
   alias Tortoise.{Package, Connection}
-  alias Tortoise.Connection.Controller
   alias Tortoise.Connection.Inflight.Track
 
   use GenStateMachine
@@ -306,7 +305,7 @@ defmodule Tortoise.Connection.Inflight do
         :internal,
         {:onward_publish, %Package.Publish{qos: qos} = publish},
         _,
-        %State{client_id: client_id, parent: parent_pid} = data
+        %State{client_id: client_id, parent: parent_pid}
       )
       when qos in 1..2 do
     send(parent_pid, {{__MODULE__, client_id}, publish})
