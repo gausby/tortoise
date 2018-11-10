@@ -654,6 +654,7 @@ defmodule Tortoise.Connection do
         data
       ) do
     :ok = Inflight.update(data.client_id, {:received, suback})
+
     :keep_state_and_data
   end
 
@@ -665,11 +666,26 @@ defmodule Tortoise.Connection do
       ) do
     case Map.pop(pending, ref) do
       {{pid, msg_ref}, updated_pending} when is_pid(pid) and is_reference(msg_ref) ->
-        unless pid == self(), do: send(pid, {{Tortoise, client_id}, msg_ref, :ok})
         subscriptions = Enum.into(result[:ok] ++ result[:warn], data.subscriptions)
         updated_data = %State{data | subscriptions: subscriptions, pending_refs: updated_pending}
-        next_actions = [{:next_event, :internal, {:execute_handler, {:subscribe, result}}}]
+
+        next_actions = [
+          {:next_event, :internal, {:reply, {pid, msg_ref}, :ok}},
+          {:next_event, :internal, {:execute_handler, {:subscribe, result}}}
+        ]
+
         {:keep_state, updated_data, next_actions}
+    end
+  end
+
+  def handle_event(:internal, {:reply, from, result}, _current_state, %State{client_id: client_id}) do
+    case from do
+      {pid, _} when pid == self() ->
+        :keep_state_and_data
+
+      {pid, msg_ref} ->
+        send(pid, {{Tortoise, client_id}, msg_ref, result})
+        :keep_state_and_data
     end
   end
 

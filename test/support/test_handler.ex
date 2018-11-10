@@ -48,4 +48,9 @@ defmodule TestHandler do
     send(state[:parent], {{__MODULE__, :subscription}, data})
     {:ok, state}
   end
+
+  def handle_suback(suback, state) do
+    send(state[:parent], {{__MODULE__, :handle_suback}, suback})
+    {:ok, state}
+  end
 end

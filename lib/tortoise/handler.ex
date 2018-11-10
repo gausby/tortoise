@@ -169,6 +169,11 @@ defmodule Tortoise.Handler do
         {:ok, state}
       end
 
+      @impl true
+      def handle_suback(_suback, state) do
+        {:ok, state}
+      end
+
       defoverridable Tortoise.Handler
     end
   end
@@ -260,6 +265,10 @@ defmodule Tortoise.Handler do
                    | {:error, term()},
                  topic_filter: Tortoise.topic_filter(),
                  new_state: term
+
+  @callback handle_suback(suback, state :: term) :: {:ok, new_state}
+            when suback: Package.Suback.t(),
+                 new_state: term()
 
   @doc """
   Invoked when messages are published to subscribed topics.
@@ -387,6 +396,15 @@ defmodule Tortoise.Handler do
       # _, {:stop, acc} ->
       #   {:stop, acc}
     end)
+  end
+
+  @doc false
+  # @spec execute_handle_suback(t, Package.Suback.t()) ::
+  #         {:ok, t} | {:error, {:invalid_next_action, term()}}
+  def execute_handle_suback(handler, %Package.Suback{} = suback) do
+    handler.module
+    |> apply(:handle_suback, [suback, handler.state])
+    |> handle_result(handler)
   end
 
   @doc false

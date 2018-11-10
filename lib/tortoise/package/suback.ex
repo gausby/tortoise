@@ -25,7 +25,7 @@ defmodule Tortoise.Package.Suback do
             __META__: Package.Meta.t(),
             identifier: Tortoise.package_identifier(),
             acks: [ack_result],
-            properties: [{any(), any()}]
+            properties: [{:reason_string, String.t()}, {:user_property, String.t()}]
           }
   @enforce_keys [:identifier]
   defstruct __META__: %Package.Meta{opcode: @opcode, flags: 0},

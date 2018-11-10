@@ -29,6 +29,11 @@ defmodule Tortoise.HandlerTest do
       {:ok, state}
     end
 
+    def handle_suback(suback, state) do
+      send(state[:pid], {:suback, suback})
+      {:ok, state}
+    end
+
     # with next actions
     def handle_publish(topic, payload, %{next_actions: next_actions} = state) do
       send(state[:pid], {:publish, topic, payload})
@@ -187,6 +192,19 @@ defmodule Tortoise.HandlerTest do
       assert_receive {:subscription, :up, "foo"}
       assert_receive {:subscription, {:error, :access_denied}, "baz"}
       assert_receive {:subscription, {:warn, requested: 1, accepted: 0}, "bar"}
+    end
+  end
+
+  describe "execute handle_suback/2" do
+    test "return ok", context do
+      handler = set_state(context.handler, pid: self())
+      suback = %Package.Suback{identifier: 1}
+
+      assert {:ok, %Handler{} = state} =
+               handler
+               |> Handler.execute_handle_suback(suback)
+
+      assert_receive {:suback, ^suback}
     end
   end
 
