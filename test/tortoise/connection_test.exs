@@ -527,6 +527,33 @@ defmodule Tortoise.ConnectionTest do
       assert %{expected: Tortoise.Package.Connect, got: _} = violation
       assert_receive {ScriptedTransport, :completed}
     end
+
+    test "tls_alert", context do
+      Process.flag(:trap_exit, true)
+      client_id = context.client_id
+
+      tls_error = {:tls_alert, 'certificate unknown'}
+      refusal = {:error, tls_error}
+
+      {:ok, _} =
+        ScriptedTransport.start_link(
+          {'localhost', 1883},
+          script: [
+            {:refute_connection, refusal}
+          ]
+        )
+
+      assert {:ok, pid} =
+               Tortoise.Connection.start_link(
+                 client_id: client_id,
+                 server: {ScriptedTransport, host: 'localhost', port: 1883},
+                 backoff: [min_interval: 1],
+                 handler: {Tortoise.Handler.Logger, []}
+               )
+
+      assert_receive {ScriptedTransport, {:refute_connection, ^refusal}}
+      assert_receive {:EXIT, ^pid, ^tls_error}
+    end
   end
 
   describe "socket subscription" do
