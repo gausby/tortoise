@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.9.3 - 2018-11-15
+
+### Fixed
+
+- Pass on connection errors so we can back-off on connection timeouts.
+
 ## 0.9.2 - 2018-09-01
 
 ### Added
