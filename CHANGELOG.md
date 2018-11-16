@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.9.4 - 2018-11-16
+
+### Fixed
+
+- A connection timeout is now categorized as a connectivity
+  issue. Thanks to [Riccardo Binetti](https://github.com/rbino) and
+  [Frank Hunleth](https://github.com/fhunleth) for this contribution.
+
+
 ## 0.9.3 - 2018-11-15
 
 ### Fixed
