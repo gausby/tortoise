@@ -609,6 +609,9 @@ defmodule Tortoise.Connection do
       {:error, :closed} ->
         {:error, :server_closed_connection}
 
+      {:error, :timeout} ->
+        {:error, :connection_timeout}
+
       {:error, other} ->
         {:error, other}
     end
@@ -645,6 +648,10 @@ defmodule Tortoise.Connection do
   end
 
   defp categorize_error(:server_closed_connection) do
+    :connectivity
+  end
+
+  defp categorize_error(:connection_timeout) do
     :connectivity
   end
 
