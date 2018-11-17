@@ -726,10 +726,15 @@ defmodule Tortoise.Connection do
     case Map.pop(pending, ref) do
       {{pid, msg_ref}, updated_pending} when is_pid(pid) and is_reference(msg_ref) ->
         topics = Keyword.drop(data.subscriptions.topics, unsubbed)
+
+        next_actions = [
+          {:next_event, :internal, {:reply, {pid, msg_ref}, :ok}},
+          {:next_event, :internal, {:execute_handler, {:unsubscribe, unsubbed}}}
+        ]
+
         subscriptions = %Package.Subscribe{data.subscriptions | topics: topics}
-        unless pid == self(), do: send(pid, {{Tortoise, client_id}, msg_ref, :ok})
         updated_data = %State{data | pending_refs: updated_pending, subscriptions: subscriptions}
-        next_actions = [{:next_event, :internal, {:execute_handler, {:unsubscribe, unsubbed}}}]
+
         {:keep_state, updated_data, next_actions}
     end
   end
