@@ -678,15 +678,22 @@ defmodule Tortoise.Connection do
     end
   end
 
-  def handle_event(:internal, {:reply, from, result}, _current_state, %State{client_id: client_id}) do
-    case from do
-      {pid, _} when pid == self() ->
-        :keep_state_and_data
+  # Pass on the result of an operation if we have a calling pid. This
+  # can happen if a process order the connection to subscribe to a
+  # topic, or unsubscribe, etc.
+  def handle_event(
+        :internal,
+        {:reply, {pid, msg_ref}, result},
+        _current_state,
+        %State{client_id: client_id}
+      )
+      when pid != self() do
+    send(pid, {{Tortoise, client_id}, msg_ref, result})
+    :keep_state_and_data
+  end
 
-      {pid, msg_ref} ->
-        send(pid, {{Tortoise, client_id}, msg_ref, result})
-        :keep_state_and_data
-    end
+  def handle_event(:internal, {:reply, _from, _}, _current_state, %State{}) do
+    :keep_state_and_data
   end
 
   def handle_event(:cast, {:unsubscribe, caller, unsubscribe, opts}, :connected, data) do
