@@ -1,4 +1,4 @@
-# Intoduction
+# Introduction
 
 Tortoise is a MQTT client application written in Elixir for use in
 Elixir applications. Its philosophy is to separate the MQTT semantics
