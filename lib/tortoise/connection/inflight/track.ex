@@ -228,37 +228,20 @@ defmodule Tortoise.Connection.Inflight.Track do
   def result(%State{
         type: Package.Unsubscribe,
         status: [
-          {:received, %Package.Unsuback{results: _results}},
-          {:dispatch, %Package.Unsubscribe{topics: topics}} | _other
+          {:received, %Package.Unsuback{} = unsuback},
+          {:dispatch, %Package.Unsubscribe{} = unsubscribe} | _other
         ]
       }) do
-    # todo, merge the unsuback results with the topic list
-    {:ok, topics}
+    {:ok, {unsubscribe, unsuback}}
   end
 
   def result(%State{
         type: Package.Subscribe,
         status: [
-          {:received, %Package.Suback{acks: acks}},
-          {:dispatch, %Package.Subscribe{topics: topics}} | _other
+          {:received, %Package.Suback{} = suback},
+          {:dispatch, %Package.Subscribe{} = subscribe} | _other
         ]
       }) do
-    result =
-      List.zip([topics, acks])
-      |> Enum.reduce(%{error: [], warn: [], ok: []}, fn
-        {{topic, opts}, {:ok, actual}}, %{ok: oks, warn: warns} = acc ->
-          case Keyword.get(opts, :qos) do
-            ^actual ->
-              %{acc | ok: oks ++ [{topic, actual}]}
-
-            requested ->
-              %{acc | warn: warns ++ [{topic, [requested: requested, accepted: actual]}]}
-          end
-
-        {{topic, opts}, {:error, reason}}, %{error: errors} = acc ->
-          %{acc | error: errors ++ [{reason, {topic, opts}}]}
-      end)
-
-    {:ok, result}
+    {:ok, {subscribe, suback}}
   end
 end

@@ -139,10 +139,10 @@ defmodule Tortoise.Handler do
         {:ok, state}
       end
 
-      @impl true
-      def subscription(_status, _topic_filter, state) do
-        {:ok, state}
-      end
+      # @impl true
+      # def subscription(_status, _topic_filter, state) do
+      #   {:ok, state}
+      # end
 
       @impl true
       def handle_publish(_topic, _payload, state) do
@@ -170,7 +170,7 @@ defmodule Tortoise.Handler do
       end
 
       @impl true
-      def handle_suback(_suback, state) do
+      def handle_suback(_subscribe, _suback, state) do
         {:ok, state}
       end
 
@@ -225,49 +225,55 @@ defmodule Tortoise.Handler do
             when status: :up | :down,
                  new_state: term()
 
-  @doc """
-  Invoked when the subscription of a topic filter changes status.
+  # @doc """
+  # Invoked when the subscription of a topic filter changes status.
 
-  The `status` of a subscription can be one of:
+  # The `status` of a subscription can be one of:
 
-    - `:up`, triggered when the subscription has been accepted by the
-      MQTT broker with the requested quality of service
+  #   - `:up`, triggered when the subscription has been accepted by the
+  #     MQTT broker with the requested quality of service
 
-    - `{:warn, [requested: req_qos, accepted: qos]}`, triggered when
-       the subscription is accepted by the MQTT broker, but with a
-       different quality of service `qos` than the one requested
-       `req_qos`
+  #   - `{:warn, [requested: req_qos, accepted: qos]}`, triggered when
+  #      the subscription is accepted by the MQTT broker, but with a
+  #      different quality of service `qos` than the one requested
+  #      `req_qos`
 
-    - `{:error, reason}`, triggered when the subscription is rejected
-      with the reason `reason` such as `:access_denied`
+  #   - `{:error, reason}`, triggered when the subscription is rejected
+  #     with the reason `reason` such as `:access_denied`
 
-    - `:down`, triggered when the subscription of the given topic
-      filter has been successfully acknowledged as unsubscribed by the
-      MQTT broker
+  #   - `:down`, triggered when the subscription of the given topic
+  #     filter has been successfully acknowledged as unsubscribed by the
+  #     MQTT broker
 
-  The `topic_filter` is the topic filter in question, and the `state`
-  is the internal state being passed through transitions.
+  # The `topic_filter` is the topic filter in question, and the `state`
+  # is the internal state being passed through transitions.
 
-  Returning `{:ok, new_state}` will set the state for later
-  invocations.
+  # Returning `{:ok, new_state}` will set the state for later
+  # invocations.
 
-  Returning `{:ok, new_state, next_actions}`, where `next_actions` is
-  a list of next actions such as `{:unsubscribe, "foo/bar"}` will
-  result in the state being returned and the next actions performed.
-  """
-  @callback subscription(status, topic_filter, state :: term) ::
-              {:ok, new_state}
-              | {:ok, new_state, [next_action()]}
-            when status:
-                   :up
-                   | :down
-                   | {:warn, [requested: Tortoise.qos(), accepted: Tortoise.qos()]}
-                   | {:error, term()},
-                 topic_filter: Tortoise.topic_filter(),
-                 new_state: term
+  # Returning `{:ok, new_state, next_actions}`, where `next_actions` is
+  # a list of next actions such as `{:unsubscribe, "foo/bar"}` will
+  # result in the state being returned and the next actions performed.
+  # """
+  # @callback subscription(status, topic_filter, state :: term) ::
+  #             {:ok, new_state}
+  #             | {:ok, new_state, [next_action()]}
+  #           when status:
+  #                  :up
+  #                  | :down
+  #                  | {:warn, [requested: Tortoise.qos(), accepted: Tortoise.qos()]}
+  #                  | {:error, term()},
+  #                topic_filter: Tortoise.topic_filter(),
+  #                new_state: term
 
-  @callback handle_suback(suback, state :: term) :: {:ok, new_state}
-            when suback: Package.Suback.t(),
+  @callback handle_suback(subscribe, suback, state :: term) :: {:ok, new_state}
+            when subscribe: Package.Subscribe.t(),
+                 suback: Package.Suback.t(),
+                 new_state: term()
+
+  @callback handle_unsuback(unsubscribe, unsuback, state :: term) :: {:ok, new_state}
+            when unsubscribe: Package.Unsubscribe.t(),
+                 unsuback: Package.Unsuback.t(),
                  new_state: term()
 
   @doc """
@@ -384,27 +390,37 @@ defmodule Tortoise.Handler do
   end
 
   @doc false
-  @spec execute_subscribe(t, [term()]) :: {:ok, t}
-  def execute_subscribe(handler, result) do
-    result
-    |> flatten_subacks()
-    |> Enum.reduce({:ok, handler}, fn {op, topic_filter}, {:ok, handler} ->
-      handler.module
-      |> apply(:subscription, [op, topic_filter, handler.state])
-      |> handle_result(handler)
+  @spec execute_handle_suback(t, Package.Subscribe.t(), Package.Suback.t()) :: {:ok, t}
+  def execute_handle_suback(handler, subscribe, suback) do
+    handler.module
+    |> apply(:handle_suback, [subscribe, suback, handler.state])
+    |> handle_suback_result(handler)
+  end
 
-      # _, {:stop, acc} ->
-      #   {:stop, acc}
-    end)
+  defp handle_suback_result({:ok, updated_state}, handler) do
+    {:ok, %__MODULE__{handler | state: updated_state}, []}
+  end
+
+  defp handle_suback_result({:ok, updated_state, next_actions}, handler)
+       when is_list(next_actions) do
+    {:ok, %__MODULE__{handler | state: updated_state}, next_actions}
   end
 
   @doc false
-  # @spec execute_handle_suback(t, Package.Suback.t()) ::
-  #         {:ok, t} | {:error, {:invalid_next_action, term()}}
-  def execute_handle_suback(handler, %Package.Suback{} = suback) do
+  @spec execute_handle_unsuback(t, Package.Unsubscribe.t(), Package.Unsuback.t()) :: {:ok, t}
+  def execute_handle_unsuback(handler, unsubscribe, unsuback) do
     handler.module
-    |> apply(:handle_suback, [suback, handler.state])
-    |> handle_result(handler)
+    |> apply(:handle_unsuback, [unsubscribe, unsuback, handler.state])
+    |> handle_unsuback_result(handler)
+  end
+
+  defp handle_unsuback_result({:ok, updated_state}, handler) do
+    {:ok, %__MODULE__{handler | state: updated_state}, []}
+  end
+
+  defp handle_unsuback_result({:ok, updated_state, next_actions}, handler)
+       when is_list(next_actions) do
+    {:ok, %__MODULE__{handler | state: updated_state}, next_actions}
   end
 
   @doc false
@@ -466,36 +482,6 @@ defmodule Tortoise.Handler do
     handler.module
     |> apply(:handle_pubcomp, [pubcomp, handler.state])
     |> handle_result(handler)
-  end
-
-  # Subacks will come in a map with three keys in the form of tuples
-  # where the fist element is one of `:ok`, `:warn`, or `:error`. This
-  # is done to make it easy to pattern match in other parts of the
-  # system, and error out early if the result set contain errors. In
-  # this part of the system it is more convenient to transform the
-  # data to a flat list containing tuples of `{operation, data}` so we
-  # can reduce the handler state to collect the possible next actions,
-  # and pass through if there is an :error or :disconnect return.
-  defp flatten_subacks(subacks) do
-    Enum.reduce(subacks, [], fn
-      {_, []}, acc ->
-        acc
-
-      {:ok, entries}, acc ->
-        for {topic_filter, _qos} <- entries do
-          {:up, topic_filter}
-        end ++ acc
-
-      {:warn, entries}, acc ->
-        for {topic_filter, warning} <- entries do
-          {{:warn, warning}, topic_filter}
-        end ++ acc
-
-      {:error, entries}, acc ->
-        for {reason, {topic_filter, _qos}} <- entries do
-          {{:error, reason}, topic_filter}
-        end ++ acc
-    end)
   end
 
   # handle the user defined return from the callback

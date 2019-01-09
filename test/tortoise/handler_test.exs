@@ -3,7 +3,6 @@ defmodule Tortoise.HandlerTest do
   doctest Tortoise.Handler
 
   alias Tortoise.Handler
-  alias Tortoise.Connection.Inflight.Track
   alias Tortoise.Package
 
   defmodule TestHandler do
@@ -24,13 +23,13 @@ defmodule Tortoise.HandlerTest do
       {:ok, state}
     end
 
-    def subscription(status, topic, state) do
-      send(state[:pid], {:subscription, status, topic})
+    def handle_suback(subscribe, suback, state) do
+      send(state[:pid], {:suback, {subscribe, suback}})
       {:ok, state}
     end
 
-    def handle_suback(suback, state) do
-      send(state[:pid], {:suback, suback})
+    def handle_unsuback(unsubscribe, unsuback, state) do
+      send(state[:pid], {:unsuback, {unsubscribe, unsuback}})
       {:ok, state}
     end
 
@@ -172,57 +171,39 @@ defmodule Tortoise.HandlerTest do
     end
   end
 
-  describe "execute subscribe/2" do
+  describe "execute handle_suback/3" do
     test "return ok", context do
+      handler = set_state(context.handler, pid: self())
+
       subscribe = %Package.Subscribe{
         identifier: 1,
-        topics: [{"foo", qos: 0}, {"bar", qos: 1}, {"baz", qos: 0}]
+        topics: [{"foo", qos: 0}]
       }
 
-      suback = %Package.Suback{identifier: 1, acks: [ok: 0, ok: 0, error: :access_denied]}
-      caller = {self(), make_ref()}
+      suback = %Package.Suback{identifier: 1, acks: [ok: 0]}
 
-      track = Track.create({:negative, caller}, subscribe)
-      {:ok, track} = Track.resolve(track, {:received, suback})
-      {:ok, result} = Track.result(track)
+      assert {:ok, %Handler{} = state, []} =
+               Handler.execute_handle_suback(handler, subscribe, suback)
 
-      handler = set_state(context.handler, pid: self())
-      assert {:ok, %Handler{}} = Handler.execute_subscribe(handler, result)
-
-      assert_receive {:subscription, :up, "foo"}
-      assert_receive {:subscription, {:error, :access_denied}, "baz"}
-      assert_receive {:subscription, {:warn, requested: 1, accepted: 0}, "bar"}
+      assert_receive {:suback, {^subscribe, ^suback}}
     end
   end
 
-  describe "execute handle_suback/2" do
+  describe "execute handle_unsuback/3" do
     test "return ok", context do
       handler = set_state(context.handler, pid: self())
-      suback = %Package.Suback{identifier: 1}
 
-      assert {:ok, %Handler{} = state} =
-               handler
-               |> Handler.execute_handle_suback(suback)
+      unsubscribe = %Package.Unsubscribe{
+        identifier: 1,
+        topics: ["foo"]
+      }
 
-      assert_receive {:suback, ^suback}
-    end
-  end
+      unsuback = %Package.Unsuback{identifier: 1, results: [:success]}
 
-  describe "execute unsubscribe/2" do
-    test "return ok", context do
-      unsubscribe = %Package.Unsubscribe{identifier: 1, topics: ["foo/bar", "baz/quux"]}
-      unsuback = %Package.Unsuback{identifier: 1}
-      caller = {self(), make_ref()}
+      assert {:ok, %Handler{} = state, []} =
+               Handler.execute_handle_unsuback(handler, unsubscribe, unsuback)
 
-      track = Track.create({:negative, caller}, unsubscribe)
-      {:ok, track} = Track.resolve(track, {:received, unsuback})
-      {:ok, result} = Track.result(track)
-
-      handler = set_state(context.handler, pid: self())
-      assert {:ok, %Handler{}} = Handler.execute_unsubscribe(handler, result)
-      # we should receive two subscription down messages
-      assert_receive {:subscription, :down, "foo/bar"}
-      assert_receive {:subscription, :down, "baz/quux"}
+      assert_receive {:unsuback, {^unsubscribe, ^unsuback}}
     end
   end
 

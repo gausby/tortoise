@@ -147,22 +147,20 @@ defmodule Tortoise.Package.Subscribe do
   end
 
   defimpl Collectable do
-    def into(%Package.Subscribe{topics: topics} = source) do
-      {Enum.into(topics, %{}),
+    def into(%Package.Subscribe{topics: current_topics} = source) do
+      {current_topics,
        fn
          acc, {:cont, {<<topic::binary>>, opts}} when is_list(opts) ->
-           Map.put(acc, topic, opts)
+           List.keystore(acc, topic, 0, {topic, opts})
 
          acc, {:cont, {<<topic::binary>>, qos}} when qos in 0..2 ->
-           # if the subscription already exist in the data structure
-           # we will just overwrite the existing one and the options
-           Map.put(acc, topic, qos: qos)
+           List.keystore(acc, topic, 0, {topic, qos: qos})
 
          acc, {:cont, <<topic::binary>>} ->
-           Map.put(acc, topic, qos: 0)
+           List.keystore(acc, topic, 0, {topic, qos: 0})
 
          acc, :done ->
-           %{source | topics: Map.to_list(acc)}
+           %{source | topics: acc}
 
          _, :halt ->
            :ok

@@ -13,7 +13,10 @@ defmodule Tortoise.Connection do
             connect: nil,
             server: nil,
             backoff: nil,
+            # todo, replace subscriptions with a list of topics stored in a
+            # Tortoise.Config
             subscriptions: nil,
+            active_subscriptions: %{},
             opts: nil,
             pending_refs: %{},
             connection: nil,
@@ -161,7 +164,7 @@ defmodule Tortoise.Connection do
                | {:identifier, Tortoise.package_identifier()}
   def subscribe(client_id, topics, opts \\ [])
 
-  def subscribe(client_id, [{_, n} | _] = topics, opts) when is_number(n) do
+  def subscribe(client_id, [{_, topic_opts} | _] = topics, opts) when is_list(topic_opts) do
     caller = {_, ref} = {self(), make_ref()}
     {identifier, opts} = Keyword.pop_first(opts, :identifier, nil)
     subscribe = Enum.into(topics, %Package.Subscribe{identifier: identifier})
@@ -169,7 +172,7 @@ defmodule Tortoise.Connection do
     {:ok, ref}
   end
 
-  def subscribe(client_id, {_, n} = topic, opts) when is_number(n) do
+  def subscribe(client_id, {_, topic_opts} = topic, opts) when is_list(topic_opts) do
     subscribe(client_id, [topic], opts)
   end
 
@@ -179,7 +182,7 @@ defmodule Tortoise.Connection do
         throw("Please specify a quality of service for the subscription")
 
       {qos, opts} when qos in 0..2 ->
-        subscribe(client_id, [{topic, qos}], opts)
+        subscribe(client_id, [{topic, [qos: qos]}], opts)
     end
   end
 
@@ -204,7 +207,7 @@ defmodule Tortoise.Connection do
                | {:identifier, Tortoise.package_identifier()}
   def subscribe_sync(client_id, topics, opts \\ [])
 
-  def subscribe_sync(client_id, [{_, n} | _] = topics, opts) when is_number(n) do
+  def subscribe_sync(client_id, [{_, topic_opts} | _] = topics, opts) when is_list(topic_opts) do
     timeout = Keyword.get(opts, :timeout, 5000)
     {:ok, ref} = subscribe(client_id, topics, opts)
 
@@ -216,7 +219,7 @@ defmodule Tortoise.Connection do
     end
   end
 
-  def subscribe_sync(client_id, {_, n} = topic, opts) when is_number(n) do
+  def subscribe_sync(client_id, {_, topic_opts} = topic, opts) when is_list(topic_opts) do
     subscribe_sync(client_id, [topic], opts)
   end
 
@@ -226,7 +229,7 @@ defmodule Tortoise.Connection do
         throw("Please specify a quality of service for the subscription")
 
       {qos, opts} ->
-        subscribe_sync(client_id, [{topic, qos}], opts)
+        subscribe_sync(client_id, [{topic, qos: qos}], opts)
     end
   end
 
@@ -443,12 +446,12 @@ defmodule Tortoise.Connection do
         {:next_state, :connected, data, next_actions}
 
       %Package.Connack{session_present: false} ->
-        caller = {self(), make_ref()}
+        # caller = {self(), make_ref()}
 
         next_actions = [
           {:state_timeout, keep_alive * 1000, :keep_alive},
-          {:next_event, :internal, {:execute_handler, {:connection, :up}}},
-          {:next_event, :cast, {:subscribe, caller, data.subscriptions, []}}
+          {:next_event, :internal, {:execute_handler, {:connection, :up}}}
+          # {:next_event, :cast, {:subscribe, caller, data.subscriptions, []}}
         ]
 
         {:next_state, :connected, data, next_actions}
@@ -660,21 +663,44 @@ defmodule Tortoise.Connection do
 
   def handle_event(
         :info,
-        {{Tortoise, client_id}, {Package.Subscribe, ref}, result},
+        {{Tortoise, client_id}, {Package.Subscribe, ref}, {subscribe, suback}},
         _current_state,
-        %State{client_id: client_id, pending_refs: %{} = pending} = data
+        %State{client_id: client_id, handler: handler, pending_refs: %{} = pending} = data
       ) do
-    case Map.pop(pending, ref) do
-      {{pid, msg_ref}, updated_pending} when is_pid(pid) and is_reference(msg_ref) ->
-        subscriptions = Enum.into(result[:ok] ++ result[:warn], data.subscriptions)
-        updated_data = %State{data | subscriptions: subscriptions, pending_refs: updated_pending}
+    {{pid, msg_ref}, updated_pending} = Map.pop(pending, ref)
+    data = %State{data | pending_refs: updated_pending}
+
+    updated_active_subscriptions =
+      subscribe.topics
+      |> Enum.zip(suback.acks)
+      |> Enum.reduce(data.active_subscriptions, fn
+        {{topic, opts}, {:ok, accepted_qos}}, acc ->
+          Map.put(acc, topic, Keyword.replace!(opts, :qos, accepted_qos))
+
+        {_, {:error, _}}, acc ->
+          acc
+      end)
+
+    case Handler.execute_handle_suback(handler, subscribe, suback) do
+      {:ok, %Handler{} = updated_handler, next_actions} ->
+        data = %State{
+          data
+          | handler: updated_handler,
+            active_subscriptions: updated_active_subscriptions
+        }
 
         next_actions = [
-          {:next_event, :internal, {:reply, {pid, msg_ref}, :ok}},
-          {:next_event, :internal, {:execute_handler, {:subscribe, result}}}
+          {:next_event, :internal, {:reply, {pid, msg_ref}, :ok}}
+          | for action <- next_actions do
+              {:next_event, :internal, action}
+            end
         ]
 
-        {:keep_state, updated_data, next_actions}
+        {:keep_state, data, next_actions}
+
+      {:error, reason} ->
+        # todo
+        {:stop, reason, data}
     end
   end
 
@@ -719,27 +745,43 @@ defmodule Tortoise.Connection do
   # todo; handle the unsuback error cases !
   def handle_event(
         :info,
-        {{Tortoise, client_id}, {Package.Unsubscribe, ref}, unsubbed},
+        {{Tortoise, client_id}, {Package.Unsubscribe, ref}, {unsubscribe, unsuback}},
         _current_state,
-        %State{client_id: client_id, pending_refs: %{} = pending} = data
+        %State{client_id: client_id, handler: handler, pending_refs: %{} = pending} = data
       ) do
-    case Map.pop(pending, ref) do
-      {{pid, msg_ref}, updated_pending} when is_pid(pid) and is_reference(msg_ref) ->
-        topics = Keyword.drop(data.subscriptions.topics, unsubbed)
+    # todo, call a handle_unsuback callback!
+    {{pid, msg_ref}, updated_pending} = Map.pop(pending, ref)
+    data = %State{data | pending_refs: updated_pending}
+
+    # todo, if the results in unsuback contain an error, such as
+    # `{:error, :no_subscription_existed}` then we would be out of
+    # sync! What should we do here?
+    active_subscriptions = Map.drop(data.active_subscriptions, unsubscribe.topics)
+
+    case Handler.execute_handle_unsuback(handler, unsubscribe, unsuback) do
+      {:ok, %Handler{} = updated_handler, next_actions} ->
+        data = %State{
+          data
+          | handler: updated_handler,
+            active_subscriptions: active_subscriptions
+        }
 
         next_actions = [
-          {:next_event, :internal, {:reply, {pid, msg_ref}, :ok}},
-          {:next_event, :internal, {:execute_handler, {:unsubscribe, unsubbed}}}
+          {:next_event, :internal, {:reply, {pid, msg_ref}, :ok}}
+          | for action <- next_actions do
+              {:next_event, :internal, action}
+            end
         ]
 
-        subscriptions = %Package.Subscribe{data.subscriptions | topics: topics}
-        updated_data = %State{data | pending_refs: updated_pending, subscriptions: subscriptions}
+        {:keep_state, data, next_actions}
 
-        {:keep_state, updated_data, next_actions}
+      {:error, reason} ->
+        # todo
+        {:stop, reason, data}
     end
   end
 
-  def handle_event({:call, from}, :subscriptions, _, %State{subscriptions: subscriptions}) do
+  def handle_event({:call, from}, :subscriptions, _, %State{active_subscriptions: subscriptions}) do
     next_actions = [{:reply, from, subscriptions}]
     {:keep_state_and_data, next_actions}
   end
@@ -760,35 +802,20 @@ defmodule Tortoise.Connection do
     end
   end
 
-  def handle_event(
-        :internal,
-        {:execute_handler, {:subscribe, results}},
-        _,
-        %State{handler: handler} = data
-      ) do
-    case Handler.execute_subscribe(handler, results) do
-      {:ok, %Handler{} = updated_handler} ->
-        updated_data = %State{data | handler: updated_handler}
-        {:keep_state, updated_data}
+  # def handle_event(
+  #       :internal,
+  #       {:execute_handler, {:unsubscribe, result}},
+  #       _current_state,
+  #       %State{handler: handler} = data
+  #     ) do
+  #   case Handler.execute_unsubscribe(handler, result) do
+  #     {:ok, %Handler{} = updated_handler} ->
+  #       updated_data = %State{data | handler: updated_handler}
+  #       {:keep_state, updated_data}
 
-        # handle stop
-    end
-  end
-
-  def handle_event(
-        :internal,
-        {:execute_handler, {:unsubscribe, result}},
-        _current_state,
-        %State{handler: handler} = data
-      ) do
-    case Handler.execute_unsubscribe(handler, result) do
-      {:ok, %Handler{} = updated_handler} ->
-        updated_data = %State{data | handler: updated_handler}
-        {:keep_state, updated_data}
-
-        # handle stop
-    end
-  end
+  #       # handle stop
+  #   end
+  # end
 
   # connection logic ===================================================
   def handle_event(:internal, :connect, :connecting, %State{} = data) do

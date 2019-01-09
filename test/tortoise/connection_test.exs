@@ -241,12 +241,10 @@ defmodule Tortoise.ConnectionTest do
   end
 
   describe "subscriptions" do
-    setup [:setup_scripted_mqtt_server]
+    setup [:setup_scripted_mqtt_server, :setup_connection_and_perform_handshake]
 
     test "successful subscription", context do
       client_id = context.client_id
-
-      connect = %Package.Connect{client_id: client_id, clean_start: true}
 
       default_subscription_opts = [
         no_local: false,
@@ -260,11 +258,15 @@ defmodule Tortoise.ConnectionTest do
           %Package.Subscribe{identifier: 1}
         )
 
+      suback_foo = %Package.Suback{identifier: 1, acks: [{:ok, 0}]}
+
       subscription_bar =
         Enum.into(
           [{"bar", [{:qos, 1} | default_subscription_opts]}],
           %Package.Subscribe{identifier: 2}
         )
+
+      suback_bar = %Package.Suback{identifier: 2, acks: [{:ok, 1}]}
 
       subscription_baz =
         Enum.into(
@@ -272,54 +274,45 @@ defmodule Tortoise.ConnectionTest do
           %Package.Subscribe{identifier: 3}
         )
 
+      suback_baz = %Package.Suback{identifier: 3, acks: [{:ok, 2}]}
+
       script = [
-        {:receive, connect},
-        {:send, %Package.Connack{reason: :success, session_present: false}},
         # subscribe to foo with qos 0
         {:receive, subscription_foo},
-        {:send, %Package.Suback{identifier: 1, acks: [{:ok, 0}]}},
-        # subscribe to bar with qos 0
+        {:send, suback_foo},
+        # subscribe to bar with qos 1
         {:receive, subscription_bar},
-        {:send, %Package.Suback{identifier: 2, acks: [{:ok, 1}]}},
+        {:send, suback_bar},
+        # subscribe to baz with qos 2
         {:receive, subscription_baz},
-        {:send, %Package.Suback{identifier: 3, acks: [{:ok, 2}]}}
+        {:send, suback_baz}
       ]
 
-      {:ok, {ip, port}} = ScriptedMqttServer.enact(context.scripted_mqtt_server, script)
-
-      opts = [
-        client_id: client_id,
-        server: {Tortoise.Transport.Tcp, [host: ip, port: port]},
-        handler: {TestHandler, [parent: self()]}
-      ]
-
-      # connection
-      assert {:ok, _pid} = Connection.start_link(opts)
-      assert_receive {ScriptedMqttServer, {:received, ^connect}}
+      {:ok, _} = ScriptedMqttServer.enact(context.scripted_mqtt_server, script)
 
       # subscribe to a foo
-      :ok = Tortoise.Connection.subscribe_sync(client_id, {"foo", 0}, identifier: 1)
+      :ok = Tortoise.Connection.subscribe_sync(client_id, {"foo", qos: 0}, identifier: 1)
       assert_receive {ScriptedMqttServer, {:received, ^subscription_foo}}
-      assert Enum.member?(Tortoise.Connection.subscriptions(client_id), {"foo", 0})
-      assert_receive {{TestHandler, :subscription}, %{status: :up, topic_filter: "foo"}}
+      assert Map.has_key?(Tortoise.Connection.subscriptions(client_id), "foo")
+      assert_receive {{TestHandler, :handle_suback}, {%Package.Subscribe{}, ^suback_foo}}
 
       # subscribe to a bar
-      assert {:ok, ref} = Tortoise.Connection.subscribe(client_id, {"bar", 1}, identifier: 2)
+      assert {:ok, ref} = Tortoise.Connection.subscribe(client_id, {"bar", qos: 1}, identifier: 2)
       assert_receive {{Tortoise, ^client_id}, ^ref, :ok}
       assert_receive {ScriptedMqttServer, {:received, ^subscription_bar}}
-      assert_receive {{TestHandler, :subscription}, %{status: :up, topic_filter: "bar"}}
+      assert_receive {{TestHandler, :handle_suback}, {%Package.Subscribe{}, ^suback_bar}}
 
       # subscribe to a baz
       assert {:ok, ref} = Tortoise.Connection.subscribe(client_id, "baz", qos: 2, identifier: 3)
       assert_receive {{Tortoise, ^client_id}, ^ref, :ok}
       assert_receive {ScriptedMqttServer, {:received, ^subscription_baz}}
-      assert_receive {{TestHandler, :subscription}, %{status: :up, topic_filter: "baz"}}
+      assert_receive {{TestHandler, :handle_suback}, {%Package.Subscribe{}, ^suback_baz}}
 
       # foo, bar, and baz should now be in the subscription list
       subscriptions = Tortoise.Connection.subscriptions(client_id)
-      assert Enum.member?(subscriptions, {"foo", 0})
-      assert Enum.member?(subscriptions, {"bar", 1})
-      assert Enum.member?(subscriptions, {"baz", 2})
+      assert Map.has_key?(subscriptions, "foo")
+      assert Map.has_key?(subscriptions, "bar")
+      assert Map.has_key?(subscriptions, "baz")
 
       # done
       assert_receive {ScriptedMqttServer, :completed}
@@ -328,13 +321,12 @@ defmodule Tortoise.ConnectionTest do
     test "successful unsubscribe", context do
       client_id = context.client_id
 
-      connect = %Package.Connect{client_id: client_id, clean_start: true}
       unsubscribe_foo = %Package.Unsubscribe{identifier: 2, topics: ["foo"]}
+      unsuback_foo = %Package.Unsuback{results: [:success], identifier: 2}
       unsubscribe_bar = %Package.Unsubscribe{identifier: 3, topics: ["bar"]}
+      unsuback_bar = %Package.Unsuback{results: [:success], identifier: 3}
 
       script = [
-        {:receive, connect},
-        {:send, %Package.Connack{reason: :success, session_present: false}},
         {:receive,
          %Package.Subscribe{
            topics: [
@@ -346,13 +338,13 @@ defmodule Tortoise.ConnectionTest do
         {:send, %Package.Suback{acks: [ok: 0, ok: 2], identifier: 1}},
         # unsubscribe foo
         {:receive, unsubscribe_foo},
-        {:send, %Package.Unsuback{results: [:success], identifier: 2}},
+        {:send, unsuback_foo},
         # unsubscribe bar
         {:receive, unsubscribe_bar},
-        {:send, %Package.Unsuback{results: [:success], identifier: 3}}
+        {:send, unsuback_bar}
       ]
 
-      {:ok, {ip, port}} = ScriptedMqttServer.enact(context.scripted_mqtt_server, script)
+      {:ok, _} = ScriptedMqttServer.enact(context.scripted_mqtt_server, script)
 
       subscribe = %Package.Subscribe{
         topics: [
@@ -362,37 +354,32 @@ defmodule Tortoise.ConnectionTest do
         identifier: 1
       }
 
-      opts = [
-        client_id: client_id,
-        server: {Tortoise.Transport.Tcp, [host: ip, port: port]},
-        handler: {TestHandler, [parent: self()]},
-        subscriptions: subscribe
-      ]
-
-      assert {:ok, _pid} = Connection.start_link(opts)
-      assert_receive {ScriptedMqttServer, {:received, ^connect}}
+      Tortoise.Connection.subscribe(client_id, subscribe.topics, identifier: 1)
 
       assert_receive {ScriptedMqttServer, {:received, ^subscribe}}
 
-      assert_receive {{TestHandler, :subscription}, %{status: :up, topic_filter: "foo"}}
-      assert_receive {{TestHandler, :subscription}, %{status: :up, topic_filter: "bar"}}
+      assert_receive {{TestHandler, :handle_suback}, {_, %Package.Suback{identifier: 1}}}
 
       # now let us try to unsubscribe from foo
       :ok = Tortoise.Connection.unsubscribe_sync(client_id, "foo", identifier: 2)
       assert_receive {ScriptedMqttServer, {:received, ^unsubscribe_foo}}
-      # the callback handler should get a :down message for the foo subscription
-      assert_receive {{TestHandler, :subscription}, %{status: :down, topic_filter: "foo"}}
+      # handle_unsuback should get called on the callback handler
+      assert_receive {{TestHandler, :handle_unsuback}, {^unsubscribe_foo, ^unsuback_foo}}
 
-      assert %Package.Subscribe{topics: [{"bar", qos: 2}]} =
-               Tortoise.Connection.subscriptions(client_id)
+      refute Map.has_key?(Tortoise.Connection.subscriptions(client_id), "foo")
+      # should still have bar in active subscriptions
+      assert Map.has_key?(Tortoise.Connection.subscriptions(client_id), "bar")
 
       # and unsubscribe from bar
       assert {:ok, ref} = Tortoise.Connection.unsubscribe(client_id, "bar", identifier: 3)
       assert_receive {{Tortoise, ^client_id}, ^ref, :ok}
       assert_receive {ScriptedMqttServer, {:received, ^unsubscribe_bar}}
-      # the callback handler should get a :down message for the bar subscription
-      assert_receive {{TestHandler, :subscription}, %{status: :down, topic_filter: "bar"}}
-      assert %Package.Subscribe{topics: []} = Tortoise.Connection.subscriptions(client_id)
+      # handle_unsuback should get called on the callback handler
+      assert_receive {{TestHandler, :handle_unsuback}, {^unsubscribe_bar, ^unsuback_bar}}
+
+      refute Map.has_key?(Tortoise.Connection.subscriptions(client_id), "bar")
+      # there should be no subscriptions now
+      assert map_size(Tortoise.Connection.subscriptions(client_id)) == 0
       assert_receive {ScriptedMqttServer, :completed}
     end
   end
