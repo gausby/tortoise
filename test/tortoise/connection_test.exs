@@ -318,6 +318,9 @@ defmodule Tortoise.ConnectionTest do
       assert_receive {ScriptedMqttServer, :completed}
     end
 
+    # @todo subscribe with a qos but have it accepted with a lower qos
+    # @todo unsuccessful subscribe
+
     test "successful unsubscribe", context do
       client_id = context.client_id
 
@@ -382,6 +385,8 @@ defmodule Tortoise.ConnectionTest do
       assert map_size(Tortoise.Connection.subscriptions(client_id)) == 0
       assert_receive {ScriptedMqttServer, :completed}
     end
+
+    # @todo unsuccessful unsubscribe
   end
 
   describe "encrypted connection" do
