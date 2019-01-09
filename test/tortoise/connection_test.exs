@@ -938,6 +938,61 @@ defmodule Tortoise.ConnectionTest do
       assert_receive {{TestHandler, :handle_publish}, %{topic: "foo/bar", payload: nil}}
     end
 
+    test "incoming publish with QoS=2 with duplicate", context do
+      Process.flag(:trap_exit, true)
+      publish = %Package.Publish{identifier: 1, topic: "foo/bar", qos: 2}
+      expected_pubrec = %Package.Pubrec{identifier: 1}
+      pubrel = %Package.Pubrel{identifier: 1}
+      expected_pubcomp = %Package.Pubcomp{identifier: 1}
+
+      script = [
+        {:send, publish},
+        {:send, %Package.Publish{publish | dup: true}},
+        {:receive, expected_pubrec},
+        {:send, pubrel},
+        {:receive, expected_pubcomp}
+      ]
+
+      {:ok, _} = ScriptedMqttServer.enact(context.scripted_mqtt_server, script)
+      pid = context.connection_pid
+
+      refute_receive {:EXIT, ^pid, {:protocol_violation, {:unexpected_package, _}}}
+      assert_receive {ScriptedMqttServer, :completed}
+
+      # the handle publish, and handle_pubrel callbacks should have been called
+      assert_receive {{TestHandler, :handle_pubrel}, ^pubrel}
+      assert_receive {{TestHandler, :handle_publish}, %{topic: "foo/bar", payload: nil}}
+      # the handle publish should only get called once, so if the
+      # duplicated publish result in a handle_publish message it would
+      # be a failure.
+      refute_receive {{TestHandler, :handle_publish}, %{topic: "foo/bar", payload: nil}}
+    end
+
+    test "incoming publish with QoS=2 with first message marked as duplicate", context do
+      Process.flag(:trap_exit, true)
+      publish = %Package.Publish{identifier: 1, topic: "foo/bar", qos: 2, dup: true}
+      expected_pubrec = %Package.Pubrec{identifier: 1}
+      pubrel = %Package.Pubrel{identifier: 1}
+      expected_pubcomp = %Package.Pubcomp{identifier: 1}
+
+      script = [
+        {:send, publish},
+        {:receive, expected_pubrec},
+        {:send, pubrel},
+        {:receive, expected_pubcomp}
+      ]
+
+      {:ok, _} = ScriptedMqttServer.enact(context.scripted_mqtt_server, script)
+      pid = context.connection_pid
+
+      refute_receive {:EXIT, ^pid, {:protocol_violation, {:unexpected_package, _}}}
+      assert_receive {ScriptedMqttServer, :completed}
+
+      # the handle publish, and handle_pubrel callbacks should have been called
+      assert_receive {{TestHandler, :handle_pubrel}, ^pubrel}
+      assert_receive {{TestHandler, :handle_publish}, %{topic: "foo/bar", payload: nil}}
+    end
+
     test "outgoing publish with QoS=2", context do
       Process.flag(:trap_exit, true)
       publish = %Package.Publish{identifier: 1, topic: "foo/bar", qos: 2}
