@@ -230,7 +230,6 @@ defmodule Tortoise.Handler do
 
   # todo, handle_auth
 
-
   # @doc """
   # Invoked when the subscription of a topic filter changes status.
 
