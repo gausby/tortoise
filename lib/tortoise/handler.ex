@@ -139,11 +139,6 @@ defmodule Tortoise.Handler do
         {:ok, state}
       end
 
-      # @impl true
-      # def subscription(_status, _topic_filter, state) do
-      #   {:ok, state}
-      # end
-
       @impl true
       def handle_publish(_topic, _payload, state) do
         {:ok, state}
@@ -229,6 +224,12 @@ defmodule Tortoise.Handler do
               | {:ok, new_state, [next_action()]}
             when status: :up | :down,
                  new_state: term()
+
+  # todo, connection/2 should perhaps be handle_connack
+  # todo, handle_connack
+
+  # todo, handle_auth
+
 
   # @doc """
   # Invoked when the subscription of a topic filter changes status.
@@ -338,6 +339,12 @@ defmodule Tortoise.Handler do
   @callback handle_pubcomp(pubcomp, state :: term()) :: {:ok, new_state}
             when pubcomp: Package.Pubcomp.t(),
                  new_state: term()
+
+  @callback handle_disconnect(disconnect, state :: term()) :: {:ok, new_state}
+            when disconnect: Package.Disconnect.t(),
+                 new_state: term()
+
+  # todo, should we do handle_pingresp as well ?
 
   @doc """
   Invoked when the connection process is about to exit.
