@@ -174,6 +174,11 @@ defmodule Tortoise.Handler do
         {:ok, state}
       end
 
+      @impl true
+      def handle_unsuback(_unsubscribe, _unsuback, state) do
+        {:ok, state}
+      end
+
       defoverridable Tortoise.Handler
     end
   end
