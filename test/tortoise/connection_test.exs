@@ -839,7 +839,7 @@ defmodule Tortoise.ConnectionTest do
       assert_receive {ScriptedMqttServer, :completed}
 
       # the handle publish callback should have been called
-      assert_receive {{TestHandler, :handle_publish}, %{topic: "foo/bar", payload: nil}}
+      assert_receive {{TestHandler, :handle_publish}, ^publish}
     end
   end
 
@@ -860,7 +860,7 @@ defmodule Tortoise.ConnectionTest do
       assert_receive {ScriptedMqttServer, :completed}
 
       # the handle publish callback should have been called
-      assert_receive {{TestHandler, :handle_publish}, %{topic: "foo/bar", payload: nil}}
+      assert_receive {{TestHandler, :handle_publish}, ^publish}
     end
 
     test "outgoing publish with QoS=1", context do
@@ -940,19 +940,20 @@ defmodule Tortoise.ConnectionTest do
 
       # the handle publish, and handle_pubrel callbacks should have been called
       assert_receive {{TestHandler, :handle_pubrel}, ^pubrel}
-      assert_receive {{TestHandler, :handle_publish}, %{topic: "foo/bar", payload: nil}}
+      assert_receive {{TestHandler, :handle_publish}, ^publish}
     end
 
     test "incoming publish with QoS=2 with duplicate", context do
       Process.flag(:trap_exit, true)
       publish = %Package.Publish{identifier: 1, topic: "foo/bar", qos: 2}
+      dup_publish = %Package.Publish{publish | dup: true}
       expected_pubrec = %Package.Pubrec{identifier: 1}
       pubrel = %Package.Pubrel{identifier: 1}
       expected_pubcomp = %Package.Pubcomp{identifier: 1}
 
       script = [
         {:send, publish},
-        {:send, %Package.Publish{publish | dup: true}},
+        {:send, dup_publish},
         {:receive, expected_pubrec},
         {:send, pubrel},
         {:receive, expected_pubcomp}
@@ -966,11 +967,11 @@ defmodule Tortoise.ConnectionTest do
 
       # the handle publish, and handle_pubrel callbacks should have been called
       assert_receive {{TestHandler, :handle_pubrel}, ^pubrel}
-      assert_receive {{TestHandler, :handle_publish}, %{topic: "foo/bar", payload: nil}}
+      assert_receive {{TestHandler, :handle_publish}, ^publish}
       # the handle publish should only get called once, so if the
       # duplicated publish result in a handle_publish message it would
       # be a failure.
-      refute_receive {{TestHandler, :handle_publish}, %{topic: "foo/bar", payload: nil}}
+      refute_receive {{TestHandler, :handle_publish}, ^dup_publish}
     end
 
     test "incoming publish with QoS=2 with first message marked as duplicate", context do
@@ -993,9 +994,12 @@ defmodule Tortoise.ConnectionTest do
       refute_receive {:EXIT, ^pid, {:protocol_violation, {:unexpected_package, _}}}
       assert_receive {ScriptedMqttServer, :completed}
 
-      # the handle publish, and handle_pubrel callbacks should have been called
+      # the handle publish, and handle_pubrel callbacks should have
+      # been called; we convert the dup:true package to dup:false if
+      # it is the first message we see with that id
       assert_receive {{TestHandler, :handle_pubrel}, ^pubrel}
-      assert_receive {{TestHandler, :handle_publish}, %{topic: "foo/bar", payload: nil}}
+      non_dup_publish = %Package.Publish{publish | dup: false}
+      assert_receive {{TestHandler, :handle_publish}, ^non_dup_publish}
     end
 
     test "outgoing publish with QoS=2", context do

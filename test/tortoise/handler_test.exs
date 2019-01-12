@@ -39,13 +39,13 @@ defmodule Tortoise.HandlerTest do
     end
 
     # with next actions
-    def handle_publish(topic, payload, %{next_actions: next_actions} = state) do
-      send(state[:pid], {:publish, topic, payload})
+    def handle_publish(topic, publish, %{next_actions: next_actions} = state) do
+      send(state[:pid], {:publish, topic, publish})
       {:ok, state, next_actions}
     end
 
-    def handle_publish(topic, payload, state) do
-      send(state[:pid], {:publish, topic, payload})
+    def handle_publish(topic, publish, state) do
+      send(state[:pid], {:publish, topic, publish})
       {:ok, state}
     end
 
@@ -150,7 +150,7 @@ defmodule Tortoise.HandlerTest do
       assert {:ok, %Handler{}} = Handler.execute_handle_publish(handler, publish)
       # the topic will be in the form of a list making it possible to
       # pattern match on the topic levels
-      assert_receive {:publish, topic_list, ^payload}
+      assert_receive {:publish, topic_list, ^publish}
       assert is_list(topic_list)
       assert topic == Enum.join(topic_list, "/")
     end
@@ -169,7 +169,7 @@ defmodule Tortoise.HandlerTest do
 
       # the topic will be in the form of a list making it possible to
       # pattern match on the topic levels
-      assert_receive {:publish, topic_list, ^payload}
+      assert_receive {:publish, topic_list, ^publish}
       assert is_list(topic_list)
       assert topic == Enum.join(topic_list, "/")
     end
@@ -190,7 +190,7 @@ defmodule Tortoise.HandlerTest do
       refute_receive {:next_action, {:unsubscribe, "foo/bar"}}
 
       # the callback is still run so lets check the received data
-      assert_receive {:publish, topic_list, ^payload}
+      assert_receive {:publish, topic_list, ^publish}
       assert is_list(topic_list)
       assert topic == Enum.join(topic_list, "/")
     end

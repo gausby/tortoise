@@ -80,16 +80,14 @@ defmodule Tortoise.Handler do
   If we want to unsubscribe from the current topic when we receive a
   publish on it we could write a `handle_publish/3` as follows:
 
-      def handle_publish(topic, _payload, state) do
-        topic = Enum.join(topic, "/")
+      def handle_publish(_, %{topic: topic}, state) do
         next_actions = [{:unsubscribe, topic}]
         {:ok, state, next_actions}
       end
 
-  Note that the `topic` is received as a list of topic levels, and
-  that the next actions has to be a list, even if there is only one
-  next action; multiple actions can be given at once. Read more about
-  this in the `handle_publish/3` documentation.
+  The next actions has to be a list, even if there is only one next
+  action; multiple actions can be given at once. Read more about this
+  in the `handle_publish/3` documentation.
   """
 
   alias Tortoise.Package
@@ -145,7 +143,7 @@ defmodule Tortoise.Handler do
       end
 
       @impl true
-      def handle_publish(_topic, _payload, state) do
+      def handle_publish(_topic_list, _publish, state) do
         {:ok, state}
       end
 
@@ -313,8 +311,8 @@ defmodule Tortoise.Handler do
   `Temperature` application we could set up our `handle_publish` as
   such:
 
-      def handle_publish(["room", room, "temp"], payload, state) do
-        :ok = Temperature.record(room, payload)
+      def handle_publish(["room", room, "temp"], publish, state) do
+        :ok = Temperature.record(room, publish.payload)
         {:ok, state}
       end
 
@@ -484,7 +482,7 @@ defmodule Tortoise.Handler do
     topic_list = String.split(publish.topic, "/")
 
     handler.module
-    |> apply(:handle_publish, [topic_list, publish.payload, handler.state])
+    |> apply(:handle_publish, [topic_list, publish, handler.state])
     |> handle_result(handler)
   end
 
