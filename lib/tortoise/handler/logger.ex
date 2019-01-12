@@ -53,6 +53,12 @@ defmodule Tortoise.Handler.Logger do
     {:ok, state}
   end
 
+  @impl true
+  def handle_disconnect(disconnect, state) do
+    Logger.info("Received disconnect from server #{inspect disconnect}")
+    {:ok, state}
+  end
+
   def terminate(reason, _state) do
     Logger.warn("Client has been terminated with reason: #{inspect(reason)}")
     :ok

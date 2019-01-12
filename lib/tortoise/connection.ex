@@ -942,7 +942,10 @@ defmodule Tortoise.Connection do
         _current_state,
         %State{handler: handler} = data
       ) do
-    case Handler.execute_disconnect(handler, disconnect) do
+    case Handler.execute_handle_disconnect(handler, disconnect) do
+      {:ok, updated_handler, []} ->
+        {:keep_state, %State{data | handler: updated_handler}}
+
       {:stop, reason, updated_handler} ->
         {:stop, reason, %State{data | handler: updated_handler}}
     end

@@ -68,6 +68,11 @@ defmodule Tortoise.HandlerTest do
       send(state[:pid], {:pubcomp, pubcomp})
       {:ok, state}
     end
+
+    def handle_disconnect(disconnect, state) do
+      send(state[:pid], {:disconnect, disconnect})
+      {:ok, state}
+    end
   end
 
   setup _context do
@@ -265,6 +270,19 @@ defmodule Tortoise.HandlerTest do
                |> Handler.execute_handle_pubcomp(pubcomp)
 
       assert_receive {:pubcomp, ^pubcomp}
+    end
+  end
+
+  describe "execute handle_disconnect/2" do
+    test "return ok", context do
+      handler = set_state(context.handler, pid: self())
+      disconnect = %Package.Disconnect{}
+
+      assert {:ok, %Handler{} = state, []} =
+               handler
+               |> Handler.execute_handle_disconnect(disconnect)
+
+      assert_receive {:disconnect, ^disconnect}
     end
   end
 end

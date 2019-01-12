@@ -174,6 +174,11 @@ defmodule Tortoise.Handler do
         {:ok, state}
       end
 
+      @impl true
+      def handle_disconnect(_disconnect, state) do
+        {:ok, state}
+      end
+
       defoverridable Tortoise.Handler
     end
   end
@@ -382,14 +387,17 @@ defmodule Tortoise.Handler do
   end
 
   @doc false
-  @spec execute_disconnect(t, %Package.Disconnect{}) :: {:stop, term(), t}
-  def execute_disconnect(handler, %Package.Disconnect{} = disconnect) do
+  @spec execute_handle_disconnect(t, %Package.Disconnect{}) :: {:stop, term(), t}
+  def execute_handle_disconnect(handler, %Package.Disconnect{} = disconnect) do
     handler.module
     |> apply(:handle_disconnect, [disconnect, handler.state])
     |> case do
-      {:stop, reason, updated_state} ->
-        {:stop, reason, %__MODULE__{handler | state: updated_state}}
-    end
+         {:ok, updated_state} ->
+           {:ok, %__MODULE__{handler | state: updated_state}, []}
+
+         {:stop, reason, updated_state} ->
+           {:stop, reason, %__MODULE__{handler | state: updated_state}}
+       end
   end
 
   @doc false
