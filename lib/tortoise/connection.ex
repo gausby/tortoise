@@ -426,32 +426,20 @@ defmodule Tortoise.Connection do
         :connecting,
         %State{
           client_id: client_id,
-          server: %Transport{type: transport},
-          connection: {transport, _},
-          connect: %Package.Connect{keep_alive: keep_alive}
+          connect: %Package.Connect{keep_alive: keep_alive},
+          handler: handler
         } = data
       ) do
-    :ok = Tortoise.Registry.put_meta(via_name(client_id), data.connection)
-    :ok = Events.dispatch(client_id, :connection, data.connection)
-    :ok = Events.dispatch(client_id, :status, :connected)
-    data = %State{data | backoff: Backoff.reset(data.backoff)}
-
-    case connack do
-      %Package.Connack{session_present: true} ->
-        next_actions = [
-          {:state_timeout, keep_alive * 1000, :keep_alive},
-          {:next_event, :internal, {:execute_handler, {:connection, :up}}}
-        ]
-
-        {:next_state, :connected, data, next_actions}
-
-      %Package.Connack{session_present: false} ->
-        # caller = {self(), make_ref()}
+    case Handler.execute_handle_connack(handler, connack) do
+      {:ok, %Handler{} = updated_handler, []} ->
+        :ok = Tortoise.Registry.put_meta(via_name(client_id), data.connection)
+        :ok = Events.dispatch(client_id, :connection, data.connection)
+        :ok = Events.dispatch(client_id, :status, :connected)
+        data = %State{data | backoff: Backoff.reset(data.backoff), handler: updated_handler}
 
         next_actions = [
           {:state_timeout, keep_alive * 1000, :keep_alive},
           {:next_event, :internal, {:execute_handler, {:connection, :up}}}
-          # {:next_event, :cast, {:subscribe, caller, data.subscriptions, []}}
         ]
 
         {:next_state, :connected, data, next_actions}
@@ -460,10 +448,11 @@ defmodule Tortoise.Connection do
 
   def handle_event(
         :internal,
-        {:received, %Package.Connack{reason: {:refused, reason}}},
+        {:received, %Package.Connack{reason: {:refused, reason}} = _connack},
         :connecting,
-        %State{} = data
+        %State{handler: _handler} = data
       ) do
+    # todo, pass this through to the user defined callback handler
     {:stop, {:connection_failed, reason}, data}
   end
 

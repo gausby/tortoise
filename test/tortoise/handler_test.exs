@@ -23,6 +23,11 @@ defmodule Tortoise.HandlerTest do
       {:ok, state}
     end
 
+    def handle_connack(connack, state) do
+      send(state[:pid], {:connack, connack})
+      {:ok, state}
+    end
+
     def handle_suback(subscribe, suback, state) do
       send(state[:pid], {:suback, {subscribe, suback}})
       {:ok, state}
@@ -117,6 +122,21 @@ defmodule Tortoise.HandlerTest do
 
       assert_receive {:connection, :down}
       assert_receive {:next_action, {:subscribe, "foo/bar", qos: 0}}
+    end
+  end
+
+  describe "execute handle_connack/2" do
+    test "return ok-tuple", context do
+      handler = set_state(context.handler, pid: self())
+
+      connack = %Package.Connack{
+        reason: :success,
+        session_present: false
+      }
+
+      assert {:ok, %Handler{} = state, []} = Handler.execute_handle_connack(handler, connack)
+
+      assert_receive {:connack, ^connack}
     end
   end
 

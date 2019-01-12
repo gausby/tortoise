@@ -55,7 +55,7 @@ defmodule Tortoise.Handler.Logger do
 
   @impl true
   def handle_disconnect(disconnect, state) do
-    Logger.info("Received disconnect from server #{inspect disconnect}")
+    Logger.info("Received disconnect from server #{inspect(disconnect)}")
     {:ok, state}
   end
 

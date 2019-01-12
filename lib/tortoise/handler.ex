@@ -140,6 +140,11 @@ defmodule Tortoise.Handler do
       end
 
       @impl true
+      def handle_connack(_connack, state) do
+        {:ok, state}
+      end
+
+      @impl true
       def handle_publish(_topic, _payload, state) do
         {:ok, state}
       end
@@ -230,8 +235,13 @@ defmodule Tortoise.Handler do
             when status: :up | :down,
                  new_state: term()
 
-  # todo, connection/2 should perhaps be handle_connack
-  # todo, handle_connack
+  # todo, connection/2 should perhaps be handle_connack ?
+
+  @callback handle_connack(connack, state :: term()) ::
+              {:ok, new_state}
+              | {:ok, new_state, [next_action()]}
+            when connack: Package.Connack.t(),
+                 new_state: term()
 
   # todo, handle_auth
 
@@ -386,18 +396,29 @@ defmodule Tortoise.Handler do
     |> handle_result(handler)
   end
 
+  @spec execute_handle_connack(t, Package.Connack.t()) ::
+          {:ok, t} | {:error, {:invalid_next_action, term()}}
+  def execute_handle_connack(handler, %Package.Connack{} = connack) do
+    handler.module
+    |> apply(:handle_connack, [connack, handler.state])
+    |> case do
+      {:ok, updated_state} ->
+        {:ok, %__MODULE__{handler | state: updated_state}, []}
+    end
+  end
+
   @doc false
   @spec execute_handle_disconnect(t, %Package.Disconnect{}) :: {:stop, term(), t}
   def execute_handle_disconnect(handler, %Package.Disconnect{} = disconnect) do
     handler.module
     |> apply(:handle_disconnect, [disconnect, handler.state])
     |> case do
-         {:ok, updated_state} ->
-           {:ok, %__MODULE__{handler | state: updated_state}, []}
+      {:ok, updated_state} ->
+        {:ok, %__MODULE__{handler | state: updated_state}, []}
 
-         {:stop, reason, updated_state} ->
-           {:stop, reason, %__MODULE__{handler | state: updated_state}}
-       end
+      {:stop, reason, updated_state} ->
+        {:stop, reason, %__MODULE__{handler | state: updated_state}}
+    end
   end
 
   @doc false
