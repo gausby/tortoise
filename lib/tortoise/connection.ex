@@ -13,7 +13,7 @@ defmodule Tortoise.Connection do
             connect: nil,
             server: nil,
             backoff: nil,
-            active_subscriptions: %{},
+            subscriptions: %{},
             opts: nil,
             pending_refs: %{},
             connection: nil,
@@ -641,10 +641,10 @@ defmodule Tortoise.Connection do
     {{pid, msg_ref}, updated_pending} = Map.pop(pending, ref)
     data = %State{data | pending_refs: updated_pending}
 
-    updated_active_subscriptions =
+    updated_subscriptions =
       subscribe.topics
       |> Enum.zip(suback.acks)
-      |> Enum.reduce(data.active_subscriptions, fn
+      |> Enum.reduce(data.subscriptions, fn
         {{topic, opts}, {:ok, accepted_qos}}, acc ->
           Map.put(acc, topic, Keyword.replace!(opts, :qos, accepted_qos))
 
@@ -657,7 +657,7 @@ defmodule Tortoise.Connection do
         data = %State{
           data
           | handler: updated_handler,
-            active_subscriptions: updated_active_subscriptions
+            subscriptions: updated_subscriptions
         }
 
         next_actions = [
@@ -727,14 +727,14 @@ defmodule Tortoise.Connection do
     # todo, if the results in unsuback contain an error, such as
     # `{:error, :no_subscription_existed}` then we would be out of
     # sync! What should we do here?
-    active_subscriptions = Map.drop(data.active_subscriptions, unsubscribe.topics)
+    subscriptions = Map.drop(data.subscriptions, unsubscribe.topics)
 
     case Handler.execute_handle_unsuback(handler, unsubscribe, unsuback) do
       {:ok, %Handler{} = updated_handler, next_actions} ->
         data = %State{
           data
           | handler: updated_handler,
-            active_subscriptions: active_subscriptions
+            subscriptions: subscriptions
         }
 
         next_actions = [
@@ -752,7 +752,7 @@ defmodule Tortoise.Connection do
     end
   end
 
-  def handle_event({:call, from}, :subscriptions, _, %State{active_subscriptions: subscriptions}) do
+  def handle_event({:call, from}, :subscriptions, _, %State{subscriptions: subscriptions}) do
     next_actions = [{:reply, from, subscriptions}]
     {:keep_state_and_data, next_actions}
   end
