@@ -13,9 +13,6 @@ defmodule Tortoise.Connection do
             connect: nil,
             server: nil,
             backoff: nil,
-            # todo, replace subscriptions with a list of topics stored in a
-            # Tortoise.Config
-            subscriptions: nil,
             active_subscriptions: %{},
             opts: nil,
             pending_refs: %{},
@@ -43,8 +40,6 @@ defmodule Tortoise.Connection do
                | {:password, String.t()}
                | {:keep_alive, non_neg_integer()}
                | {:will, Tortoise.Package.Publish.t()}
-               | {:subscriptions,
-                  [{Tortoise.topic_filter(), Tortoise.qos()}] | Tortoise.Package.Subscribe.t()}
                | {:handler, {atom(), term()}},
              options: [option]
   def start_link(connection_opts, opts \\ []) do
@@ -63,18 +58,6 @@ defmodule Tortoise.Connection do
 
     backoff = Keyword.get(connection_opts, :backoff, [])
 
-    # This allow us to either pass in a list of topics, or a
-    # subscription struct. Passing in a subscription struct is helpful
-    # in tests.
-    subscriptions =
-      case Keyword.get(connection_opts, :subscriptions, []) do
-        topics when is_list(topics) ->
-          Enum.into(topics, %Package.Subscribe{})
-
-        %Package.Subscribe{} = subscribe ->
-          subscribe
-      end
-
     # @todo, validate that the handler is valid
     handler =
       connection_opts
@@ -85,7 +68,7 @@ defmodule Tortoise.Connection do
       {:transport, server} | Keyword.take(connection_opts, [:client_id])
     ]
 
-    initial = {server, connect, backoff, subscriptions, handler, connection_opts}
+    initial = {server, connect, backoff, handler, connection_opts}
     opts = Keyword.merge(opts, name: via_name(client_id))
     GenStateMachine.start_link(__MODULE__, initial, opts)
   end
@@ -383,13 +366,12 @@ defmodule Tortoise.Connection do
 
   # Callbacks
   @impl true
-  def init({transport, connect, backoff_opts, subscriptions, handler, opts}) do
+  def init({transport, connect, backoff_opts, handler, opts}) do
     data = %State{
       client_id: connect.client_id,
       server: transport,
       connect: connect,
       backoff: Backoff.new(backoff_opts),
-      subscriptions: subscriptions,
       opts: opts,
       handler: handler
     }
