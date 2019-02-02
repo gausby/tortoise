@@ -357,7 +357,8 @@ defmodule Tortoise.ConnectionTest do
         identifier: 1
       }
 
-      Tortoise.Connection.subscribe(client_id, subscribe.topics, identifier: 1)
+      {:ok, unsub_ref} =
+        Tortoise.Connection.subscribe(client_id, subscribe.topics, identifier: 1)
 
       assert_receive {ScriptedMqttServer, {:received, ^subscribe}}
 
@@ -384,6 +385,10 @@ defmodule Tortoise.ConnectionTest do
       # there should be no subscriptions now
       assert map_size(Tortoise.Connection.subscriptions(client_id)) == 0
       assert_receive {ScriptedMqttServer, :completed}
+
+      # the process calling the async unsubscribe should receive the
+      # result of the unsubscribe as a message
+      assert_receive {{Tortoise, ^client_id}, ^unsub_ref, :ok}, 0
     end
 
     # @todo unsuccessful unsubscribe
