@@ -720,7 +720,6 @@ defmodule Tortoise.Connection do
         _current_state,
         %State{client_id: client_id, handler: handler, pending_refs: %{} = pending} = data
       ) do
-    # todo, call a handle_unsuback callback!
     {{pid, msg_ref}, updated_pending} = Map.pop(pending, ref)
     data = %State{data | pending_refs: updated_pending}
 
