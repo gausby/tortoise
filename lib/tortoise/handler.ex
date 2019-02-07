@@ -507,6 +507,11 @@ defmodule Tortoise.Handler do
         updated_handler = %__MODULE__{handler | state: updated_state}
         {:ok, pubrel, updated_handler, next_actions}
 
+      {{:cont, properties}, updated_state, next_actions} when is_list(properties) ->
+        pubrel = %Package.Pubrel{identifier: id, properties: properties}
+        updated_handler = %__MODULE__{handler | state: updated_state}
+        {:ok, pubrel, updated_handler, next_actions}
+
       {{:cont, %Package.Pubrel{identifier: ^id} = pubrel}, updated_state, next_actions} ->
         updated_handler = %__MODULE__{handler | state: updated_state}
         {:ok, pubrel, updated_handler, next_actions}
@@ -522,6 +527,11 @@ defmodule Tortoise.Handler do
     |> case do
       {:cont, updated_state, next_actions} ->
         pubcomp = %Package.Pubcomp{identifier: id}
+        updated_handler = %__MODULE__{handler | state: updated_state}
+        {:ok, pubcomp, updated_handler, next_actions}
+
+      {{:cont, properties}, updated_state, next_actions} when is_list(properties) ->
+        pubcomp = %Package.Pubcomp{identifier: id, properties: properties}
         updated_handler = %__MODULE__{handler | state: updated_state}
         {:ok, pubcomp, updated_handler, next_actions}
 
