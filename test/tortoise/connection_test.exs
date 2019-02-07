@@ -357,8 +357,7 @@ defmodule Tortoise.ConnectionTest do
         identifier: 1
       }
 
-      {:ok, unsub_ref} =
-        Tortoise.Connection.subscribe(client_id, subscribe.topics, identifier: 1)
+      {:ok, unsub_ref} = Tortoise.Connection.subscribe(client_id, subscribe.topics, identifier: 1)
 
       assert_receive {ScriptedMqttServer, {:received, ^subscribe}}
 

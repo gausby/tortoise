@@ -37,10 +37,102 @@ defmodule TortoiseTest do
       assert %Package.Publish{topic: "foo/bar", qos: 1, payload: nil} = Package.decode(data)
     end
 
+    test "publish qos=1 with user defined callbacks", %{client_id: client_id} = context do
+      parent = self()
+
+      transforms = [
+        publish: fn %type{properties: properties}, [:init] = state ->
+          send(parent, {:callback, {type, properties}, state})
+          {:ok, properties, [type | state]}
+        end,
+        puback: fn %type{properties: properties}, state ->
+          send(parent, {:callback, {type, properties}, state})
+          {:ok, [type | state]}
+        end
+      ]
+
+      assert {:ok, publish_ref} =
+               Tortoise.publish(context.client_id, "foo/bar", nil,
+                 qos: 1,
+                 transforms: {transforms, [:init]}
+               )
+
+      assert {:ok, data} = :gen_tcp.recv(context.server, 0, 500)
+
+      assert %Package.Publish{identifier: id, topic: "foo/bar", qos: 1, payload: nil} =
+               Package.decode(data)
+
+      :ok = Inflight.update(client_id, {:received, %Package.Puback{identifier: id}})
+      # check the internal transform state
+      assert_receive {:callback, {Package.Publish, []}, [:init]}
+      assert_receive {:callback, {Package.Puback, []}, [Package.Publish, :init]}
+    end
+
     test "publish qos=2", context do
       assert {:ok, _ref} = Tortoise.publish(context.client_id, "foo/bar", nil, qos: 2)
       assert {:ok, data} = :gen_tcp.recv(context.server, 0, 500)
       assert %Package.Publish{topic: "foo/bar", qos: 2, payload: nil} = Package.decode(data)
+    end
+
+    test "publish qos=2 with custom callbacks", %{client_id: client_id} = context do
+      parent = self()
+
+      transforms = [
+        publish: fn %type{properties: properties}, [:init] = state ->
+          send(parent, {:callback, {type, properties}, state})
+          {:ok, [{"foo", "bar"} | properties], [type | state]}
+        end,
+        pubrec: fn %type{properties: properties}, state ->
+          send(parent, {:callback, {type, properties}, state})
+          {:ok, [type | state]}
+        end,
+        pubrel: fn %type{properties: properties}, state ->
+          send(parent, {:callback, {type, properties}, state})
+          properties = [{"hello", "world"} | properties]
+          {:ok, properties, [type | state]}
+        end,
+        pubcomp: fn %type{properties: properties}, state ->
+          send(parent, {:callback, {type, properties}, state})
+          {:ok, [type | state]}
+        end
+      ]
+
+      assert {:ok, publish_ref} =
+               Tortoise.publish(context.client_id, "foo/bar", nil,
+                 qos: 2,
+                 transforms: {transforms, [:init]}
+               )
+
+      assert {:ok, data} = :gen_tcp.recv(context.server, 0, 500)
+
+      assert %Package.Publish{
+               identifier: id,
+               topic: "foo/bar",
+               qos: 2,
+               payload: nil,
+               properties: [{"foo", "bar"}]
+             } = Package.decode(data)
+
+      :ok = Inflight.update(context.client_id, {:received, %Package.Pubrec{identifier: id}})
+
+      pubrel = %Package.Pubrel{identifier: id}
+      :ok = Inflight.update(client_id, {:dispatch, pubrel})
+
+      assert {:ok, data} = :gen_tcp.recv(context.server, 0, 500)
+      expected_pubrel = %Package.Pubrel{pubrel | properties: [{"hello", "world"}]}
+      assert expected_pubrel == Package.decode(data)
+
+      :ok = Inflight.update(client_id, {:received, %Package.Pubcomp{identifier: id}})
+
+      assert_receive {{Tortoise, ^client_id}, {Package.Publish, ^publish_ref}, :ok}
+      # check the internal state of the transform; in the test we add
+      # the type of the package to the state, which we have defied as
+      # a list:
+      assert_receive {:callback, {Package.Publish, []}, [:init]}
+      assert_receive {:callback, {Package.Pubrec, []}, [Package.Publish | _]}
+      assert_receive {:callback, {Package.Pubrel, []}, [Package.Pubrec | _]}
+      expected_state = [Package.Pubrel, Package.Pubrec, Package.Publish, :init]
+      assert_receive {:callback, {Package.Pubcomp, []}, ^expected_state}
     end
   end
 

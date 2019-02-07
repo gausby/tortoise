@@ -508,9 +508,13 @@ defmodule Tortoise.Handler do
   # @spec execute_handle_pubrel(t, Package.Pubrel.t()) ::
   #         {:ok, t} | {:error, {:invalid_next_action, term()}}
   def execute_handle_pubrel(handler, %Package.Pubrel{} = pubrel) do
-    handler.module
-    |> apply(:handle_pubrel, [pubrel, handler.state])
-    |> handle_result(handler)
+    case apply(handler.module, :handle_pubrel, [pubrel, handler.state]) do
+      {:ok, updated_state} ->
+        {:ok, %__MODULE__{handler | state: updated_state}, []}
+
+      {:ok, updated_state, next_actions} when is_list(next_actions) ->
+        {:ok, %__MODULE__{handler | state: updated_state}, next_actions}
+    end
   end
 
   @doc false

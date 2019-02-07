@@ -506,7 +506,7 @@ defmodule Tortoise.Connection do
     :ok = Inflight.update(client_id, {:received, pubrel})
 
     case Handler.execute_handle_pubrel(handler, pubrel) do
-      {:ok, %Handler{} = updated_handler} ->
+      {:ok, %Handler{} = updated_handler, []} ->
         # dispatch a pubcomp
         pubcomp = %Package.Pubcomp{identifier: id}
         :ok = Inflight.update(client_id, {:dispatch, pubcomp})

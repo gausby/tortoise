@@ -254,7 +254,7 @@ defmodule Tortoise do
                | {:retain, boolean()}
                | {:identifier, package_identifier()}
   def publish(client_id, topic, payload \\ nil, opts \\ []) do
-    {opts, properties} = Keyword.split(opts, [:retain, :qos])
+    {opts, properties} = Keyword.split(opts, [:retain, :qos, :transforms])
     qos = Keyword.get(opts, :qos, 0)
 
     publish = %Package.Publish{
@@ -272,7 +272,8 @@ defmodule Tortoise do
           apply(transport, :send, [socket, encoded_publish])
 
         %Package.Publish{qos: qos} when qos in [1, 2] ->
-          Inflight.track(client_id, {:outgoing, publish})
+          transforms = Keyword.get(opts, :transforms, {[], nil})
+          Inflight.track(client_id, {:outgoing, publish, transforms})
       end
     else
       {:error, :unknown_connection} ->
@@ -315,7 +316,7 @@ defmodule Tortoise do
                | {:identifier, package_identifier()}
                | {:timeout, timeout()}
   def publish_sync(client_id, topic, payload \\ nil, opts \\ []) do
-    {opts, properties} = Keyword.split(opts, [:retain, :qos])
+    {opts, properties} = Keyword.split(opts, [:retain, :qos, :transforms])
     qos = Keyword.get(opts, :qos, 0)
     timeout = Keyword.get(opts, :timeout, :infinity)
 
@@ -334,7 +335,8 @@ defmodule Tortoise do
           apply(transport, :send, [socket, encoded_publish])
 
         %Package.Publish{qos: qos} when qos in [1, 2] ->
-          Inflight.track_sync(client_id, {:outgoing, publish}, timeout)
+          transforms = Keyword.get(opts, :transforms, {[], nil})
+          Inflight.track_sync(client_id, {:outgoing, publish, transforms}, timeout)
       end
     else
       {:error, :unknown_connection} ->

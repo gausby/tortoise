@@ -36,7 +36,9 @@ defmodule Tortoise.Connection.Inflight.Track do
             caller: {pid(), reference()} | nil,
             identifier: Tortoise.package_identifier(),
             status: [status_update()],
-            pending: [next_action()]
+            pending: [next_action()],
+            transforms: [function()],
+            state: any()
           }
   @enforce_keys [:type, :identifier, :polarity, :pending]
   defstruct type: nil,
@@ -44,7 +46,9 @@ defmodule Tortoise.Connection.Inflight.Track do
             caller: nil,
             identifier: nil,
             status: [],
-            pending: []
+            pending: [],
+            transforms: [],
+            state: nil
 
   alias __MODULE__, as: State
   alias Tortoise.Package
@@ -116,13 +120,18 @@ defmodule Tortoise.Connection.Inflight.Track do
     }
   end
 
-  def create({:negative, {pid, ref}}, %Package.Publish{qos: 1, identifier: id} = publish)
+  def create(
+        {:negative, {pid, ref}},
+        {%Package.Publish{qos: 1, identifier: id} = publish, {transforms, initial_state}}
+      )
       when is_pid(pid) and is_reference(ref) do
     %State{
       type: Package.Publish,
       polarity: :negative,
       caller: {pid, ref},
       identifier: id,
+      transforms: transforms,
+      state: initial_state,
       pending: [
         [
           {:dispatch, publish},
@@ -155,13 +164,18 @@ defmodule Tortoise.Connection.Inflight.Track do
     }
   end
 
-  def create({:negative, {pid, ref}}, %Package.Publish{identifier: id, qos: 2} = publish)
+  def create(
+        {:negative, {pid, ref}},
+        {%Package.Publish{identifier: id, qos: 2} = publish, {transforms, initial_state}}
+      )
       when is_pid(pid) and is_reference(ref) do
     %State{
       type: Package.Publish,
       polarity: :negative,
       caller: {pid, ref},
       identifier: id,
+      transforms: transforms,
+      state: initial_state,
       pending: [
         [
           {:dispatch, publish},

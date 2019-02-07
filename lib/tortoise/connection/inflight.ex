@@ -44,11 +44,16 @@ defmodule Tortoise.Connection.Inflight do
   end
 
   def track(client_id, {:outgoing, package}) do
+    # no transforms and nil track session state
+    track(client_id, {:outgoing, package, {[], nil}})
+  end
+
+  def track(client_id, {:outgoing, package, opts}) do
     caller = {_, ref} = {self(), make_ref()}
 
     case package do
-      %Package.Publish{qos: qos} when qos in 1..2 ->
-        :ok = GenStateMachine.cast(via_name(client_id), {:outgoing, caller, package})
+      %Package.Publish{qos: qos} when qos in [1, 2] ->
+        :ok = GenStateMachine.cast(via_name(client_id), {:outgoing, caller, {package, opts}})
         {:ok, ref}
 
       %Package.Subscribe{} ->
@@ -62,7 +67,14 @@ defmodule Tortoise.Connection.Inflight do
   end
 
   @doc false
-  def track_sync(client_id, {:outgoing, %Package.Publish{}} = command, timeout \\ :infinity) do
+  def track_sync(client_id, command, timeout \\ :infinity)
+
+  def track_sync(client_id, {:outgoing, %Package.Publish{}} = command, timeout) do
+    # add no transforms and a nil track state
+    track_sync(client_id, Tuple.append(command, {[], nil}), timeout)
+  end
+
+  def track_sync(client_id, {:outgoing, %Package.Publish{}, _transforms} = command, timeout) do
     {:ok, ref} = track(client_id, command)
 
     receive do
@@ -208,6 +220,23 @@ defmodule Tortoise.Connection.Inflight do
     :keep_state_and_data
   end
 
+  def handle_event(:cast, {:outgoing, caller, {package, opts}}, _state, data) do
+    {:ok, package} = assign_identifier(package, data.pending)
+    track = Track.create({:negative, caller}, {package, opts})
+
+    next_actions = [
+      {:next_event, :internal, {:execute, track}}
+    ]
+
+    data = %State{
+      data
+      | pending: Map.put_new(data.pending, track.identifier, track),
+        order: [track.identifier | data.order]
+    }
+
+    {:keep_state, data, next_actions}
+  end
+
   def handle_event(:cast, {:outgoing, caller, package}, _state, data) do
     {:ok, package} = assign_identifier(package, data.pending)
     track = Track.create({:negative, caller}, package)
@@ -232,11 +261,12 @@ defmodule Tortoise.Connection.Inflight do
 
   def handle_event(
         :cast,
-        {:update, {:received, %{identifier: identifier}} = update},
+        {:update, {:received, %{identifier: identifier} = package} = update},
         _state,
         %State{pending: pending} = data
       ) do
     with {:ok, track} <- Map.fetch(pending, identifier),
+         {_package, track} = apply_transform(package, track),
          {:ok, track} <- Track.resolve(track, update) do
       data = %State{
         data
@@ -322,9 +352,13 @@ defmodule Tortoise.Connection.Inflight do
         {:connected, {transport, socket}},
         %State{} = data
       ) do
-    case apply(transport, :send, [socket, Package.encode(package)]) do
-      :ok ->
-        {:keep_state, handle_next(track, data)}
+    with {package, track} <- apply_transform(package, track),
+         :ok = apply(transport, :send, [socket, Package.encode(package)]) do
+      {:keep_state, handle_next(track, data)}
+    else
+      res ->
+        IO.inspect(res, label: __MODULE__)
+        {:stop, res, data}
     end
   end
 
@@ -369,6 +403,51 @@ defmodule Tortoise.Connection.Inflight do
   end
 
   # helpers ------------------------------------------------------------
+  @type_to_cb %{
+    Package.Publish => :publish,
+    Package.Pubrec => :pubrec,
+    Package.Pubrel => :pubrel,
+    Package.Pubcomp => :pubcomp,
+    Package.Puback => :puback
+  }
+
+  defp apply_transform(package, %Track{transforms: []} = track) do
+    # noop, no transforms defined for any package type, so just pass
+    # through
+    {package, track}
+  end
+
+  defp apply_transform(%type{identifier: identifier} = package, %Track{} = track) do
+    # see if the callback for the given type is defined; if so, apply
+    # it and update the track state
+    case track.transforms[Map.get(@type_to_cb, type)] do
+      nil ->
+        {package, track}
+
+      fun when is_function(fun) ->
+        case apply(fun, [package, track.state]) do
+          {:ok, updated_state} ->
+            # just update the track session state
+            updated_track_state = %Track{track | state: updated_state}
+            {package, updated_track_state}
+
+          {:ok, properties, updated_state} when is_list(properties) ->
+            # Update the user defined properties on the package with a
+            # list of `[{string, string}]`
+            updated_package = %{package | properties: properties}
+            updated_track_state = %Track{track | state: updated_state}
+            {updated_package, updated_track_state}
+
+          {:ok, %^type{identifier: ^identifier} = updated_package, updated_state} ->
+            # overwrite the package with a package of the same type
+            # and identifier; allows us to alter properties besides
+            # the user defined properties
+            updated_track_state = %Track{track | state: updated_state}
+            {updated_package, updated_track_state}
+        end
+    end
+  end
+
   defp handle_next(
          %Track{pending: [[_, :cleanup]], identifier: identifier},
          %State{pending: pending} = state
@@ -377,8 +456,8 @@ defmodule Tortoise.Connection.Inflight do
     %State{state | pending: Map.delete(pending, identifier), order: order}
   end
 
-  defp handle_next(_track, %State{} = state) do
-    state
+  defp handle_next(%Track{identifier: identifier} = track, %State{pending: pending} = state) do
+    %State{state | pending: Map.replace!(pending, identifier, track)}
   end
 
   # Assign a random identifier to the tracked package; this will make

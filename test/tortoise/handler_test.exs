@@ -66,7 +66,14 @@ defmodule Tortoise.HandlerTest do
 
     def handle_pubrel(pubrel, state) do
       send(state[:pid], {:pubrel, pubrel})
-      {:ok, state}
+
+      case Keyword.get(state, :pubrel) do
+        nil ->
+          {:ok, state}
+
+        fun when is_function(fun) ->
+          apply(fun, [pubrel, state])
+      end
     end
 
     def handle_pubcomp(pubcomp, state) do
@@ -272,9 +279,21 @@ defmodule Tortoise.HandlerTest do
       handler = set_state(context.handler, pid: self())
       pubrel = %Package.Pubrel{identifier: 1}
 
-      assert {:ok, %Handler{} = state} =
-               handler
-               |> Handler.execute_handle_pubrel(pubrel)
+      assert {:ok, %Handler{} = state, []} = Handler.execute_handle_pubrel(handler, pubrel)
+
+      assert_receive {:pubrel, ^pubrel}
+    end
+
+    test "return ok with next_actions", context do
+      pubrel_fn = fn %Package.Pubrel{identifier: 1}, state ->
+        {:ok, state, [{:complete, %Package.Pubcomp{identifier: 1}}]}
+      end
+
+      handler = set_state(context.handler, pid: self(), pubrel: pubrel_fn)
+      pubrel = %Package.Pubrel{identifier: 1}
+
+      assert {:ok, %Handler{} = state, [{:complete, %Package.Pubcomp{identifier: 1}}]} =
+               Handler.execute_handle_pubrel(handler, pubrel)
 
       assert_receive {:pubrel, ^pubrel}
     end

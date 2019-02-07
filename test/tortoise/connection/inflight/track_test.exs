@@ -57,7 +57,7 @@ defmodule Tortoise.Connection.Inflight.TrackTest do
       publish = %Package.Publish{qos: 1, identifier: id}
       caller = {self(), make_ref()}
 
-      state = Track.create({:negative, caller}, publish)
+      state = Track.create({:negative, caller}, {publish, {[], nil}})
       assert %Track{pending: [[{:dispatch, ^publish}, _] | _]} = state
 
       {next_action, resolution} = Track.next(state)
@@ -84,7 +84,7 @@ defmodule Tortoise.Connection.Inflight.TrackTest do
       publish = %Package.Publish{qos: 2, identifier: id}
       caller = {self(), make_ref()}
 
-      state = Track.create({:negative, caller}, publish)
+      state = Track.create({:negative, caller}, {publish, {[], nil}})
       assert %Track{pending: [[{:dispatch, ^publish}, _] | _]} = state
 
       {next_action, resolution} = Track.next(state)
