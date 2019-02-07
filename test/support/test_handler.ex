@@ -30,12 +30,12 @@ defmodule TestHandler do
 
   def handle_pubrec(pubrec, state) do
     send(state[:parent], {{__MODULE__, :handle_pubrec}, pubrec})
-    {:ok, state}
+    {:cont, state}
   end
 
   def handle_pubrel(pubrel, state) do
     send(state[:parent], {{__MODULE__, :handle_pubrel}, pubrel})
-    {:ok, state}
+    {:cont, state}
   end
 
   def handle_pubcomp(pubcomp, state) do

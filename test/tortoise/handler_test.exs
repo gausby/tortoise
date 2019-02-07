@@ -61,7 +61,14 @@ defmodule Tortoise.HandlerTest do
 
     def handle_pubrec(pubrec, state) do
       send(state[:pid], {:pubrec, pubrec})
-      {:ok, state}
+
+      case Keyword.get(state, :pubrec) do
+        nil ->
+          {:cont, state}
+
+        fun when is_function(fun) ->
+          apply(fun, [pubrec, state])
+      end
     end
 
     def handle_pubrel(pubrel, state) do
@@ -69,7 +76,7 @@ defmodule Tortoise.HandlerTest do
 
       case Keyword.get(state, :pubrel) do
         nil ->
-          {:ok, state}
+          {:cont, state}
 
         fun when is_function(fun) ->
           apply(fun, [pubrel, state])
@@ -266,7 +273,7 @@ defmodule Tortoise.HandlerTest do
       handler = set_state(context.handler, pid: self())
       pubrec = %Package.Pubrec{identifier: 1}
 
-      assert {:ok, %Handler{} = state} =
+      assert {:ok, %Package.Pubrel{identifier: 1}, %Handler{}, []} =
                handler
                |> Handler.execute_handle_pubrec(pubrec)
 
@@ -279,20 +286,21 @@ defmodule Tortoise.HandlerTest do
       handler = set_state(context.handler, pid: self())
       pubrel = %Package.Pubrel{identifier: 1}
 
-      assert {:ok, %Handler{} = state, []} = Handler.execute_handle_pubrel(handler, pubrel)
+      assert {:ok, %Package.Pubcomp{identifier: 1}, %Handler{} = state, []} =
+               Handler.execute_handle_pubrel(handler, pubrel)
 
       assert_receive {:pubrel, ^pubrel}
     end
 
     test "return ok with next_actions", context do
       pubrel_fn = fn %Package.Pubrel{identifier: 1}, state ->
-        {:ok, state, [{:complete, %Package.Pubcomp{identifier: 1}}]}
+        {{:cont, %Package.Pubcomp{identifier: 1, properties: [{"foo", "bar"}]}}, state}
       end
 
       handler = set_state(context.handler, pid: self(), pubrel: pubrel_fn)
       pubrel = %Package.Pubrel{identifier: 1}
 
-      assert {:ok, %Handler{} = state, [{:complete, %Package.Pubcomp{identifier: 1}}]} =
+      assert {:ok, %Package.Pubcomp{identifier: 1}, %Handler{} = state, []} =
                Handler.execute_handle_pubrel(handler, pubrel)
 
       assert_receive {:pubrel, ^pubrel}
