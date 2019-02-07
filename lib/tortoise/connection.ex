@@ -456,7 +456,8 @@ defmodule Tortoise.Connection do
         %State{handler: handler} = data
       ) do
     case Handler.execute_handle_publish(handler, publish) do
-      {:ok, %Handler{} = updated_handler} ->
+      {:ok, %Handler{} = updated_handler, _next_actions} ->
+        # todo, handle next_actions
         updated_data = %State{data | handler: updated_handler}
         {:keep_state, updated_data}
 
@@ -528,9 +529,10 @@ defmodule Tortoise.Connection do
         %State{client_id: client_id, handler: handler} = data
       ) do
     case Handler.execute_handle_publish(handler, publish) do
-      {:ok, %Handler{} = updated_handler} ->
+      {:ok, %Package.Puback{identifier: ^id} = puback, %Handler{} = updated_handler,
+       _next_actions} ->
+        # todo handle next actions
         # respond with a puback
-        puback = %Package.Puback{identifier: id}
         :ok = Inflight.update(client_id, {:dispatch, puback})
         # - - -
         updated_data = %State{data | handler: updated_handler}
@@ -547,9 +549,9 @@ defmodule Tortoise.Connection do
         %State{client_id: client_id, handler: handler} = data
       ) do
     case Handler.execute_handle_publish(handler, publish) do
-      {:ok, %Handler{} = updated_handler} ->
+      {:ok, %Package.Pubrec{identifier: ^id} = pubrec, %Handler{} = updated_handler,
+       _next_actions} ->
         # respond with pubrec
-        pubrec = %Package.Pubrec{identifier: id}
         :ok = Inflight.update(client_id, {:dispatch, pubrec})
         # - - -
         updated_data = %State{data | handler: updated_handler}

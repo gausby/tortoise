@@ -1,6 +1,8 @@
 defmodule TestHandler do
   use Tortoise.Handler
 
+  alias Tortoise.Package
+
   def init(opts) do
     state = Enum.into(opts, %{})
     send(state[:parent], {{__MODULE__, :init}, opts})
@@ -22,10 +24,22 @@ defmodule TestHandler do
     {:stop, :normal, state}
   end
 
+  def handle_publish(_topic, %Package.Publish{qos: 1} = publish, state) do
+    # data = %{topic: Enum.join(topic, "/"), payload: payload}
+    send(state[:parent], {{__MODULE__, :handle_publish}, publish})
+    {:cont, state}
+  end
+
+  def handle_publish(_topic, %Package.Publish{qos: 2} = publish, state) do
+    # data = %{topic: Enum.join(topic, "/"), payload: payload}
+    send(state[:parent], {{__MODULE__, :handle_publish}, publish})
+    {:cont, state}
+  end
+
   def handle_publish(_topic, publish, state) do
     # data = %{topic: Enum.join(topic, "/"), payload: payload}
     send(state[:parent], {{__MODULE__, :handle_publish}, publish})
-    {:ok, state}
+    {:cont, state}
   end
 
   def handle_pubrec(pubrec, state) do

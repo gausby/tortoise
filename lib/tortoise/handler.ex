@@ -82,7 +82,7 @@ defmodule Tortoise.Handler do
 
       def handle_publish(_, %{topic: topic}, state) do
         next_actions = [{:unsubscribe, topic}]
-        {:ok, state, next_actions}
+        {:cont, state, next_actions}
       end
 
   The next actions has to be a list, even if there is only one next
@@ -144,7 +144,7 @@ defmodule Tortoise.Handler do
 
       @impl true
       def handle_publish(_topic_list, _publish, state) do
-        {:ok, state}
+        {:cont, state, []}
       end
 
       @impl true
@@ -313,7 +313,7 @@ defmodule Tortoise.Handler do
 
       def handle_publish(["room", room, "temp"], publish, state) do
         :ok = Temperature.record(room, publish.payload)
-        {:ok, state}
+        {:cont, state}
       end
 
   Notice; the `handle_publish/3`-callback run inside the connection
@@ -330,8 +330,8 @@ defmodule Tortoise.Handler do
   reenter the loop and perform the listed actions.
   """
   @callback handle_publish(topic_levels, payload, state :: term()) ::
-              {:ok, new_state}
-              | {:ok, new_state, [next_action()]}
+              {:cont, new_state}
+              | {:cont, new_state, [next_action()]}
             when new_state: term(),
                  topic_levels: [String.t()],
                  payload: Tortoise.payload()
@@ -478,12 +478,51 @@ defmodule Tortoise.Handler do
   @doc false
   @spec execute_handle_publish(t, Package.Publish.t()) ::
           {:ok, t} | {:error, {:invalid_next_action, term()}}
-  def execute_handle_publish(handler, %Package.Publish{} = publish) do
+  def execute_handle_publish(handler, %Package.Publish{qos: 0} = publish) do
     topic_list = String.split(publish.topic, "/")
 
-    handler.module
-    |> apply(:handle_publish, [topic_list, publish, handler.state])
-    |> handle_result(handler)
+    apply(handler.module, :handle_publish, [topic_list, publish, handler.state])
+    |> transform_result()
+    |> case do
+      {:cont, updated_state, next_actions} ->
+        updated_handler = %__MODULE__{handler | state: updated_state}
+        {:ok, updated_handler, next_actions}
+
+      {:error, reason} ->
+        {:error, reason}
+    end
+  end
+
+  def execute_handle_publish(handler, %Package.Publish{identifier: id, qos: 1} = publish) do
+    topic_list = String.split(publish.topic, "/")
+
+    apply(handler.module, :handle_publish, [topic_list, publish, handler.state])
+    |> transform_result()
+    |> case do
+      {:cont, updated_state, next_actions} ->
+        puback = %Package.Puback{identifier: id}
+        updated_handler = %__MODULE__{handler | state: updated_state}
+        {:ok, puback, updated_handler, next_actions}
+
+      {:error, reason} ->
+        {:error, reason}
+    end
+  end
+
+  def execute_handle_publish(handler, %Package.Publish{identifier: id, qos: 2} = publish) do
+    topic_list = String.split(publish.topic, "/")
+
+    apply(handler.module, :handle_publish, [topic_list, publish, handler.state])
+    |> transform_result()
+    |> case do
+      {:cont, updated_state, next_actions} ->
+        pubrec = %Package.Pubrec{identifier: id}
+        updated_handler = %__MODULE__{handler | state: updated_state}
+        {:ok, pubrec, updated_handler, next_actions}
+
+      {:error, reason} ->
+        {:error, reason}
+    end
   end
 
   @doc false
@@ -515,6 +554,9 @@ defmodule Tortoise.Handler do
       {{:cont, %Package.Pubrel{identifier: ^id} = pubrel}, updated_state, next_actions} ->
         updated_handler = %__MODULE__{handler | state: updated_state}
         {:ok, pubrel, updated_handler, next_actions}
+
+      {:error, reason} ->
+        {:error, reason}
     end
   end
 
@@ -538,6 +580,9 @@ defmodule Tortoise.Handler do
       {{:cont, %Package.Pubcomp{identifier: ^id} = pubcomp}, updated_state, next_actions} ->
         updated_handler = %__MODULE__{handler | state: updated_state}
         {:ok, pubcomp, updated_handler, next_actions}
+
+      {:error, reason} ->
+        {:error, reason}
     end
   end
 
@@ -548,20 +593,25 @@ defmodule Tortoise.Handler do
     apply(handler.module, :handle_pubcomp, [pubcomp, handler.state])
     |> transform_result()
     |> case do
-         {:cont, updated_state, next_actions} ->
-           updated_handler = %__MODULE__{handler | state: updated_state}
-           {:ok, updated_handler, next_actions}
-       end
+      {:cont, updated_state, next_actions} ->
+        updated_handler = %__MODULE__{handler | state: updated_state}
+        {:ok, updated_handler, next_actions}
+    end
   end
 
   defp transform_result({cont, updated_state, next_actions}) when is_list(next_actions) do
-    {cont, updated_state, next_actions}
+    case Enum.split_with(next_actions, &valid_next_action?/1) do
+      {_, []} ->
+        {cont, updated_state, next_actions}
+
+      {_, invalid_next_actions} ->
+        {:error, {:invalid_next_action, invalid_next_actions}}
+    end
   end
 
   defp transform_result({cont, updated_state}) do
     transform_result({cont, updated_state, []})
   end
-
 
   # handle the user defined return from the callback
   defp handle_result({:ok, updated_state}, handler) do
