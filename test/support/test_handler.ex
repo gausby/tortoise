@@ -40,7 +40,7 @@ defmodule TestHandler do
 
   def handle_pubcomp(pubcomp, state) do
     send(state[:parent], {{__MODULE__, :handle_pubcomp}, pubcomp})
-    {:ok, state}
+    {:cont, state}
   end
 
   def subscription(status, topic_filter, state) do

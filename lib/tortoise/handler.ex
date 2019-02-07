@@ -164,7 +164,7 @@ defmodule Tortoise.Handler do
 
       @impl true
       def handle_pubcomp(_pubcomp, state) do
-        {:ok, state}
+        {:cont, state, []}
       end
 
       @impl true
@@ -541,6 +541,19 @@ defmodule Tortoise.Handler do
     end
   end
 
+  @doc false
+  # @spec execute_handle_pubcomp(t, Package.Pubcomp.t()) ::
+  #         {:ok, t} | {:error, {:invalid_next_action, term()}}
+  def execute_handle_pubcomp(handler, %Package.Pubcomp{} = pubcomp) do
+    apply(handler.module, :handle_pubcomp, [pubcomp, handler.state])
+    |> transform_result()
+    |> case do
+         {:cont, updated_state, next_actions} ->
+           updated_handler = %__MODULE__{handler | state: updated_state}
+           {:ok, updated_handler, next_actions}
+       end
+  end
+
   defp transform_result({cont, updated_state, next_actions}) when is_list(next_actions) do
     {cont, updated_state, next_actions}
   end
@@ -549,14 +562,6 @@ defmodule Tortoise.Handler do
     transform_result({cont, updated_state, []})
   end
 
-  @doc false
-  # @spec execute_handle_pubcomp(t, Package.Pubcomp.t()) ::
-  #         {:ok, t} | {:error, {:invalid_next_action, term()}}
-  def execute_handle_pubcomp(handler, %Package.Pubcomp{} = pubcomp) do
-    handler.module
-    |> apply(:handle_pubcomp, [pubcomp, handler.state])
-    |> handle_result(handler)
-  end
 
   # handle the user defined return from the callback
   defp handle_result({:ok, updated_state}, handler) do

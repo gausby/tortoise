@@ -85,7 +85,14 @@ defmodule Tortoise.HandlerTest do
 
     def handle_pubcomp(pubcomp, state) do
       send(state[:pid], {:pubcomp, pubcomp})
-      {:ok, state}
+
+      case Keyword.get(state, :pubcomp) do
+        nil ->
+          {:cont, state}
+
+        fun when is_function(fun) ->
+          apply(fun, [pubcomp, state])
+      end
     end
 
     def handle_disconnect(disconnect, state) do
@@ -312,7 +319,7 @@ defmodule Tortoise.HandlerTest do
       handler = set_state(context.handler, pid: self())
       pubcomp = %Package.Pubcomp{identifier: 1}
 
-      assert {:ok, %Handler{} = state} =
+      assert {:ok, %Handler{} = state, []} =
                handler
                |> Handler.execute_handle_pubcomp(pubcomp)
 

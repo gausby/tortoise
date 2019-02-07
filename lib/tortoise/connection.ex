@@ -588,7 +588,8 @@ defmodule Tortoise.Connection do
     :ok = Inflight.update(client_id, {:received, pubcomp})
 
     case Handler.execute_handle_pubcomp(handler, pubcomp) do
-      {:ok, %Handler{} = updated_handler} ->
+      {:ok, %Handler{} = updated_handler, _next_actions} ->
+        # todo, handle next actions
         updated_data = %State{data | handler: updated_handler}
         {:keep_state, updated_data}
 
