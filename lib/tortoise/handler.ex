@@ -430,18 +430,16 @@ defmodule Tortoise.Handler do
   @doc false
   @spec execute_handle_suback(t, Package.Subscribe.t(), Package.Suback.t()) :: {:ok, t}
   def execute_handle_suback(handler, subscribe, suback) do
-    handler.module
-    |> apply(:handle_suback, [subscribe, suback, handler.state])
-    |> handle_suback_result(handler)
-  end
+    apply(handler.module, :handle_suback, [subscribe, suback, handler.state])
+    |> transform_result()
+    |> case do
+      {:cont, updated_state, next_actions} ->
+        updated_handler = %__MODULE__{handler | state: updated_state}
+        {:ok, updated_handler, next_actions}
 
-  defp handle_suback_result({:ok, updated_state}, handler) do
-    {:ok, %__MODULE__{handler | state: updated_state}, []}
-  end
-
-  defp handle_suback_result({:ok, updated_state, next_actions}, handler)
-       when is_list(next_actions) do
-    {:ok, %__MODULE__{handler | state: updated_state}, next_actions}
+      {:error, reason} ->
+        {:error, reason}
+    end
   end
 
   @doc false

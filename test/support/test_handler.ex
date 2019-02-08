@@ -57,15 +57,9 @@ defmodule TestHandler do
     {:cont, state}
   end
 
-  def subscription(status, topic_filter, state) do
-    data = %{status: status, topic_filter: topic_filter}
-    send(state[:parent], {{__MODULE__, :subscription}, data})
-    {:ok, state}
-  end
-
   def handle_suback(subscribe, suback, state) do
     send(state[:parent], {{__MODULE__, :handle_suback}, {subscribe, suback}})
-    {:ok, state}
+    {:cont, state}
   end
 
   def handle_unsuback(unsubscribe, unsuback, state) do
