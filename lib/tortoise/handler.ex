@@ -504,6 +504,11 @@ defmodule Tortoise.Handler do
         updated_handler = %__MODULE__{handler | state: updated_state}
         {:ok, puback, updated_handler, next_actions}
 
+      {{:cont, properties}, updated_state, next_actions} when is_list(properties) ->
+        puback = %Package.Puback{identifier: id, properties: properties}
+        updated_handler = %__MODULE__{handler | state: updated_state}
+        {:ok, puback, updated_handler, next_actions}
+
       {:error, reason} ->
         {:error, reason}
     end
@@ -517,6 +522,11 @@ defmodule Tortoise.Handler do
     |> case do
       {:cont, updated_state, next_actions} ->
         pubrec = %Package.Pubrec{identifier: id}
+        updated_handler = %__MODULE__{handler | state: updated_state}
+        {:ok, pubrec, updated_handler, next_actions}
+
+      {{:cont, properties}, updated_state, next_actions} when is_list(properties) ->
+        pubrec = %Package.Pubrec{identifier: id, properties: properties}
         updated_handler = %__MODULE__{handler | state: updated_state}
         {:ok, pubrec, updated_handler, next_actions}
 
