@@ -624,25 +624,6 @@ defmodule Tortoise.Handler do
     transform_result({cont, updated_state, []})
   end
 
-  # handle the user defined return from the callback
-  defp handle_result({:ok, updated_state}, handler) do
-    {:ok, %__MODULE__{handler | state: updated_state}}
-  end
-
-  defp handle_result({:ok, updated_state, next_actions}, handler)
-       when is_list(next_actions) do
-    case Enum.split_with(next_actions, &valid_next_action?/1) do
-      {next_actions, []} ->
-        # send the next actions to the process mailbox. Notice that
-        # this code is run in the context of the connection controller
-        for action <- next_actions, do: send(self(), {:next_action, action})
-        {:ok, %__MODULE__{handler | state: updated_state}}
-
-      {_, errors} ->
-        {:error, {:invalid_next_action, errors}}
-    end
-  end
-
   defp valid_next_action?({:subscribe, topic, opts}) do
     is_binary(topic) and is_list(opts)
   end
