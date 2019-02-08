@@ -25,7 +25,7 @@ defmodule Tortoise.HandlerTest do
 
     def handle_connack(connack, state) do
       send(state[:pid], {:connack, connack})
-      {:ok, state}
+      {:cont, state}
     end
 
     def handle_suback(subscribe, suback, state) do

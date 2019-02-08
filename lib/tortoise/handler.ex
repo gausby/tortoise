@@ -139,7 +139,7 @@ defmodule Tortoise.Handler do
 
       @impl true
       def handle_connack(_connack, state) do
-        {:ok, state}
+        {:cont, state}
       end
 
       @impl true
@@ -397,11 +397,15 @@ defmodule Tortoise.Handler do
   @spec execute_handle_connack(t, Package.Connack.t()) ::
           {:ok, t} | {:error, {:invalid_next_action, term()}}
   def execute_handle_connack(handler, %Package.Connack{} = connack) do
-    handler.module
-    |> apply(:handle_connack, [connack, handler.state])
+    apply(handler.module, :handle_connack, [connack, handler.state])
+    |> transform_result()
     |> case do
-      {:ok, updated_state} ->
-        {:ok, %__MODULE__{handler | state: updated_state}, []}
+      {:cont, updated_state, next_actions} ->
+        updated_handler = %__MODULE__{handler | state: updated_state}
+        {:ok, updated_handler, next_actions}
+
+      {:error, reason} ->
+        {:error, reason}
     end
   end
 
