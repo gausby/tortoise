@@ -419,11 +419,12 @@ defmodule Tortoise.Handler do
   @doc false
   @spec execute_handle_disconnect(t, %Package.Disconnect{}) :: {:stop, term(), t}
   def execute_handle_disconnect(handler, %Package.Disconnect{} = disconnect) do
-    handler.module
-    |> apply(:handle_disconnect, [disconnect, handler.state])
+    apply(handler.module, :handle_disconnect, [disconnect, handler.state])
+    |> transform_result()
     |> case do
-      {:ok, updated_state} ->
-        {:ok, %__MODULE__{handler | state: updated_state}, []}
+      {:cont, updated_state, next_actions} ->
+        updated_handler = %__MODULE__{handler | state: updated_state}
+        {:ok, updated_handler, next_actions}
 
       {:stop, reason, updated_state} ->
         {:stop, reason, %__MODULE__{handler | state: updated_state}}
@@ -608,6 +609,10 @@ defmodule Tortoise.Handler do
         updated_handler = %__MODULE__{handler | state: updated_state}
         {:ok, updated_handler, next_actions}
     end
+  end
+
+  defp transform_result({:stop, reason, updated_state}) do
+    {:stop, reason, updated_state}
   end
 
   defp transform_result({cont, updated_state, next_actions}) when is_list(next_actions) do

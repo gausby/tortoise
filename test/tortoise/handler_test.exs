@@ -104,7 +104,7 @@ defmodule Tortoise.HandlerTest do
 
     def handle_disconnect(disconnect, state) do
       send(state[:pid], {:disconnect, disconnect})
-      {:ok, state}
+      {:cont, state}
     end
   end
 
