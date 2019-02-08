@@ -522,9 +522,17 @@ defmodule Tortoise.Handler do
   # @spec execute_handle_puback(t, Package.Puback.t()) ::
   #         {:ok, t} | {:error, {:invalid_next_action, term()}}
   def execute_handle_puback(handler, %Package.Puback{} = puback) do
-    handler.module
-    |> apply(:handle_puback, [puback, handler.state])
-    |> handle_result(handler)
+
+    apply(handler.module, :handle_puback, [puback, handler.state])
+    |> transform_result()
+    |> case do
+      {:cont, updated_state, next_actions} ->
+        updated_handler = %__MODULE__{handler | state: updated_state}
+        {:ok, updated_handler, next_actions}
+
+      {:error, reason} ->
+        {:error, reason}
+    end
   end
 
   @doc false

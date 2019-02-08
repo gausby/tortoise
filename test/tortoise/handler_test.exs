@@ -56,7 +56,14 @@ defmodule Tortoise.HandlerTest do
 
     def handle_puback(puback, state) do
       send(state[:pid], {:puback, puback})
-      {:ok, state}
+
+      case Keyword.get(state, :puback) do
+        nil ->
+          {:cont, state}
+
+        fun when is_function(fun) ->
+          apply(fun, [puback, state])
+      end
     end
 
     def handle_pubrec(pubrec, state) do
@@ -260,7 +267,7 @@ defmodule Tortoise.HandlerTest do
       handler = set_state(context.handler, pid: self())
       puback = %Package.Puback{identifier: 1}
 
-      assert {:ok, %Handler{} = state} =
+      assert {:ok, %Handler{} = state, []} =
                handler
                |> Handler.execute_handle_puback(puback)
 
