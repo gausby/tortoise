@@ -134,7 +134,7 @@ defmodule Tortoise.Handler do
 
       @impl true
       def connection(_status, state) do
-        {:ok, state}
+        {:cont, state}
       end
 
       @impl true
@@ -389,9 +389,16 @@ defmodule Tortoise.Handler do
   @spec execute_connection(t, status) :: {:ok, t}
         when status: :up | :down
   def execute_connection(handler, status) do
-    handler.module
-    |> apply(:connection, [status, handler.state])
-    |> handle_result(handler)
+    apply(handler.module, :connection, [status, handler.state])
+    |> transform_result()
+    |> case do
+      {:cont, updated_state, next_actions} ->
+        updated_handler = %__MODULE__{handler | state: updated_state}
+        {:ok, updated_handler, next_actions}
+
+      {:error, reason} ->
+        {:error, reason}
+    end
   end
 
   @spec execute_handle_connack(t, Package.Connack.t()) ::

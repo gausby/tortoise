@@ -15,17 +15,17 @@ defmodule Tortoise.Handler.Logger do
 
   def connection(:up, state) do
     Logger.info("Connection has been established")
-    {:ok, state}
+    {:cont, state}
   end
 
   def connection(:down, state) do
     Logger.warn("Connection has been dropped")
-    {:ok, state}
+    {:cont, state}
   end
 
   def connection(:terminating, state) do
     Logger.warn("Connection is terminating")
-    {:ok, state}
+    {:cont, state}
   end
 
   def subscription(:up, topic, state) do

@@ -413,7 +413,8 @@ defmodule Tortoise.Connection do
         } = data
       ) do
     case Handler.execute_handle_connack(handler, connack) do
-      {:ok, %Handler{} = updated_handler, []} ->
+      {:ok, %Handler{} = updated_handler, _next_actions} ->
+        # todo, add support for next actions
         :ok = Tortoise.Registry.put_meta(via_name(client_id), data.connection)
         :ok = Events.dispatch(client_id, :connection, data.connection)
         :ok = Events.dispatch(client_id, :status, :connected)
@@ -768,7 +769,8 @@ defmodule Tortoise.Connection do
         %State{handler: handler} = data
       ) do
     case Handler.execute_connection(handler, status) do
-      {:ok, %Handler{} = updated_handler} ->
+      {:ok, %Handler{} = updated_handler, _next_actions} ->
+        # todo handle next_actions
         updated_data = %State{data | handler: updated_handler}
         {:keep_state, updated_data}
 

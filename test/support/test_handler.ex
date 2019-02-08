@@ -16,7 +16,7 @@ defmodule TestHandler do
 
   def connection(status, state) do
     send(state[:parent], {{__MODULE__, :connection}, status})
-    {:ok, state}
+    {:cont, state}
   end
 
   def handle_disconnect(disconnect, state) do
