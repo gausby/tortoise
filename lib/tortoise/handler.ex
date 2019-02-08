@@ -445,34 +445,19 @@ defmodule Tortoise.Handler do
   end
 
   @doc false
-  @spec execute_handle_unsuback(t, Package.Unsubscribe.t(), Package.Unsuback.t()) :: {:ok, t}
+  @spec execute_handle_unsuback(t, Package.Unsubscribe.t(), Package.Unsuback.t()) ::
+          {:ok, t, [any()]}
   def execute_handle_unsuback(handler, unsubscribe, unsuback) do
-    handler.module
-    |> apply(:handle_unsuback, [unsubscribe, unsuback, handler.state])
-    |> handle_unsuback_result(handler)
-  end
+    apply(handler.module, :handle_unsuback, [unsubscribe, unsuback, handler.state])
+    |> transform_result()
+    |> case do
+      {:cont, updated_state, next_actions} ->
+        updated_handler = %__MODULE__{handler | state: updated_state}
+        {:ok, updated_handler, next_actions}
 
-  defp handle_unsuback_result({:ok, updated_state}, handler) do
-    {:ok, %__MODULE__{handler | state: updated_state}, []}
-  end
-
-  defp handle_unsuback_result({:ok, updated_state, next_actions}, handler)
-       when is_list(next_actions) do
-    {:ok, %__MODULE__{handler | state: updated_state}, next_actions}
-  end
-
-  @doc false
-  @spec execute_unsubscribe(t, result) :: {:ok, t}
-        when result: [Tortoise.topic_filter()]
-  def execute_unsubscribe(handler, results) do
-    Enum.reduce(results, {:ok, handler}, fn topic_filter, {:ok, handler} ->
-      handler.module
-      |> apply(:subscription, [:down, topic_filter, handler.state])
-      |> handle_result(handler)
-
-      # _, {:stop, acc} ->
-      #   {:stop, acc}
-    end)
+      {:error, reason} ->
+        {:error, reason}
+    end
   end
 
   @doc false

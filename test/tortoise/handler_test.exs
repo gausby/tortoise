@@ -35,7 +35,7 @@ defmodule Tortoise.HandlerTest do
 
     def handle_unsuback(unsubscribe, unsuback, state) do
       send(state[:pid], {:unsuback, {unsubscribe, unsuback}})
-      {:ok, state}
+      {:cont, state}
     end
 
     # with next actions

@@ -70,6 +70,6 @@ defmodule TestHandler do
 
   def handle_unsuback(unsubscribe, unsuback, state) do
     send(state[:parent], {{__MODULE__, :handle_unsuback}, {unsubscribe, unsuback}})
-    {:ok, state}
+    {:cont, state}
   end
 end
