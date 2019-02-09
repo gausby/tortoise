@@ -291,6 +291,51 @@ defmodule Tortoise.HandlerTest do
 
       assert_receive {:pubrec, ^pubrec}
     end
+
+    test "return ok with custom pubrel", context do
+      pubrec = %Package.Pubrec{identifier: 1}
+      properties = [{"foo", "bar"}]
+
+      pubrec_fn = fn ^pubrec, state ->
+        {{:cont, %Package.Pubrel{identifier: 1, properties: properties}}, state}
+      end
+
+      handler = set_state(context.handler, pid: self(), pubrec: pubrec_fn)
+
+      assert {:ok, %Package.Pubrel{identifier: 1, properties: ^properties}, %Handler{}, []} =
+               Handler.execute_handle_pubrec(handler, pubrec)
+
+      assert_receive {:pubrec, ^pubrec}
+    end
+
+    test "raise an error if a custom pubrel with the wrong id is returned", context do
+      pubrec = %Package.Pubrec{identifier: 1}
+
+      pubrec_fn = fn %Package.Pubrec{identifier: id}, state ->
+        {{:cont, %Package.Pubrel{identifier: id + 1}}, state}
+      end
+
+      handler = set_state(context.handler, pid: self(), pubrec: pubrec_fn)
+
+      assert_raise CaseClauseError, fn ->
+        Handler.execute_handle_pubrec(handler, pubrec)
+      end
+
+      assert_receive {:pubrec, ^pubrec}
+    end
+
+    test "returning {:cont, [{string(), string()}]} should result in a pubrel with properties",
+         context do
+      pubrec = %Package.Pubrec{identifier: 1}
+      properties = [{"foo", "bar"}]
+      pubrec_fn = fn ^pubrec, state -> {{:cont, properties}, state} end
+      handler = set_state(context.handler, pid: self(), pubrec: pubrec_fn)
+
+      assert {:ok, %Package.Pubrel{identifier: 1, properties: ^properties}, %Handler{}, []} =
+               Handler.execute_handle_pubrec(handler, pubrec)
+
+      assert_receive {:pubrec, ^pubrec}
+    end
   end
 
   describe "execute handle_pubrel/2" do
