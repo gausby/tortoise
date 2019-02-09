@@ -158,15 +158,32 @@ defmodule Tortoise.HandlerTest do
   end
 
   describe "execute handle_connack/2" do
-    test "return ok-tuple", context do
-      handler = set_state(context.handler, pid: self())
-
+    test "return continue", context do
       connack = %Package.Connack{
         reason: :success,
         session_present: false
       }
 
+      connack_fn = fn ^connack, state -> {:cont, state} end
+      handler = set_state(context.handler, pid: self(), connack: connack_fn)
+
       assert {:ok, %Handler{} = state, []} = Handler.execute_handle_connack(handler, connack)
+
+      assert_receive {:connack, ^connack}
+    end
+
+    test "return continue with next actions", context do
+      connack = %Package.Connack{
+        reason: :success,
+        session_present: false
+      }
+
+      next_actions = [{:subscribe, "foo/bar", [qos: 0]}]
+      connack_fn = fn ^connack, state -> {:cont, state, next_actions} end
+      handler = set_state(context.handler, pid: self(), connack: connack_fn)
+
+      assert {:ok, %Handler{} = state, ^next_actions} =
+               Handler.execute_handle_connack(handler, connack)
 
       assert_receive {:connack, ^connack}
     end
