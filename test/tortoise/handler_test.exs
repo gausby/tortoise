@@ -13,14 +13,16 @@ defmodule Tortoise.HandlerTest do
       {:ok, opts}
     end
 
-    def connection(status, %{next_actions: next_actions} = state) do
-      send(state[:pid], {:connection, status})
-      {:cont, state, next_actions}
-    end
-
     def connection(status, state) do
       send(state[:pid], {:connection, status})
-      {:cont, state}
+
+      case state[:connection] do
+        nil ->
+          {:cont, state}
+
+        fun when is_function(fun, 2) ->
+          apply(fun, [status, state])
+      end
     end
 
     def handle_connack(connack, state) do
@@ -132,7 +134,7 @@ defmodule Tortoise.HandlerTest do
 
   describe "execute connection/2" do
     test "return ok-tuple", context do
-      handler = set_state(context.handler, %{pid: self()})
+      handler = set_state(context.handler, pid: self())
       assert {:ok, %Handler{}, []} = Handler.execute_connection(handler, :up)
       assert_receive {:connection, :up}
 
@@ -142,10 +144,8 @@ defmodule Tortoise.HandlerTest do
 
     test "return ok-3-tuple", context do
       next_actions = [{:subscribe, "foo/bar", qos: 0}]
-
-      handler =
-        context.handler
-        |> set_state(%{pid: self(), next_actions: next_actions})
+      connection_fn = fn _status, state -> {:cont, state, next_actions} end
+      handler = set_state(context.handler, pid: self(), connection: connection_fn)
 
       assert {:ok, %Handler{}, ^next_actions} = Handler.execute_connection(handler, :up)
 
