@@ -25,7 +25,7 @@ defmodule Tortoise.HandlerTest do
 
     def handle_connack(connack, state) do
       send(state[:pid], {:connack, connack})
-      {:cont, state}
+      make_return(connack, state)
     end
 
     def handle_suback(subscribe, suback, state) do
@@ -40,14 +40,7 @@ defmodule Tortoise.HandlerTest do
 
     def handle_publish(topic, publish, state) do
       send(state[:pid], {:publish, topic, publish})
-
-      case Keyword.get(state, :publish) do
-        nil ->
-          {:cont, state}
-
-        fun when is_function(fun, 2) ->
-          apply(fun, [publish, state])
-      end
+      make_return(publish, state)
     end
 
     def terminate(reason, state) do
@@ -57,55 +50,67 @@ defmodule Tortoise.HandlerTest do
 
     def handle_puback(puback, state) do
       send(state[:pid], {:puback, puback})
-
-      case Keyword.get(state, :puback) do
-        nil ->
-          {:cont, state}
-
-        fun when is_function(fun, 2) ->
-          apply(fun, [puback, state])
-      end
+      make_return(puback, state)
     end
 
     def handle_pubrec(pubrec, state) do
       send(state[:pid], {:pubrec, pubrec})
-
-      case Keyword.get(state, :pubrec) do
-        nil ->
-          {:cont, state}
-
-        fun when is_function(fun, 2) ->
-          apply(fun, [pubrec, state])
-      end
+      make_return(pubrec, state)
     end
 
     def handle_pubrel(pubrel, state) do
       send(state[:pid], {:pubrel, pubrel})
-
-      case Keyword.get(state, :pubrel) do
-        nil ->
-          {:cont, state}
-
-        fun when is_function(fun, 2) ->
-          apply(fun, [pubrel, state])
-      end
+      make_return(pubrel, state)
     end
 
     def handle_pubcomp(pubcomp, state) do
       send(state[:pid], {:pubcomp, pubcomp})
-
-      case Keyword.get(state, :pubcomp) do
-        nil ->
-          {:cont, state}
-
-        fun when is_function(fun, 2) ->
-          apply(fun, [pubcomp, state])
-      end
+      make_return(pubcomp, state)
     end
 
     def handle_disconnect(disconnect, state) do
       send(state[:pid], {:disconnect, disconnect})
-      {:cont, state}
+      make_return(disconnect, state)
+    end
+
+    # `make return` will search the test handler state for a function
+    # with an arity of two that relate to the given package, and if
+    # found it will execute that function with the input package as
+    # the first argument and the handler state as the second. This
+    # allow us to specify the return value in the test itself, and
+    # thereby testing everything the user would return in the
+    # callbacks. If no callback function is defined we will default to
+    # returning `{:cont, state}`.
+    @package_to_type %{
+      Package.Connack => :connack,
+      Package.Publish => :publish,
+      Package.Puback => :puback,
+      Package.Pubrec => :pubrec,
+      Package.Pubrel => :pubrel,
+      Package.Pubcomp => :pubcomp,
+      Package.Disconnect => :disconnect
+    }
+
+    @allowed_package_types Map.keys(@package_to_type)
+
+    defp make_return(%type{} = package, state) when type in @allowed_package_types do
+      type = @package_to_type[type]
+
+      case Keyword.get(state, type) do
+        nil ->
+          {:cont, state}
+
+        fun when is_function(fun, 2) ->
+          apply(fun, [package, state])
+
+        fun when is_function(fun) ->
+          msg = "Callback function for #{type} in #{__MODULE__} should be of arity-two"
+          raise ArgumentError, message: msg
+      end
+    end
+
+    defp make_return(%type{}, _) do
+      raise ArgumentError, message: "Unknown type for #{__MODULE__}: #{type}"
     end
   end
 
@@ -169,7 +174,7 @@ defmodule Tortoise.HandlerTest do
 
   describe "execute handle_publish/2" do
     test "return ok-2", context do
-      handler = set_state(context.handler, [pid: self()])
+      handler = set_state(context.handler, pid: self())
       payload = :crypto.strong_rand_bytes(5)
       topic = "foo/bar"
       publish = %Package.Publish{topic: topic, payload: payload}
@@ -184,8 +189,8 @@ defmodule Tortoise.HandlerTest do
 
     test "return ok-3", context do
       next_actions = [{:subscribe, "foo/bar", [qos: 0]}]
-      publish_fn = fn (%Package.Publish{}, state) -> {:cont, state, next_actions} end
-      handler = set_state(context.handler, [pid: self(), publish: publish_fn])
+      publish_fn = fn %Package.Publish{}, state -> {:cont, state, next_actions} end
+      handler = set_state(context.handler, pid: self(), publish: publish_fn)
       payload = :crypto.strong_rand_bytes(5)
       topic = "foo/bar"
       publish = %Package.Publish{topic: topic, payload: payload}
@@ -202,7 +207,7 @@ defmodule Tortoise.HandlerTest do
     test "return ok-3 with invalid next action", context do
       next_actions = [{:unsubscribe, "foo/bar"}, {:invalid, "bar"}]
       publish_fn = fn %Package.Publish{}, state -> {:cont, state, next_actions} end
-      handler = set_state(context.handler, [pid: self(), publish: publish_fn])
+      handler = set_state(context.handler, pid: self(), publish: publish_fn)
       payload = :crypto.strong_rand_bytes(5)
       topic = "foo/bar"
       publish = %Package.Publish{topic: topic, payload: payload}
