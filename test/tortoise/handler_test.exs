@@ -133,7 +133,7 @@ defmodule Tortoise.HandlerTest do
   end
 
   describe "execute connection/2" do
-    test "return ok-tuple", context do
+    test "return continues", context do
       handler = set_state(context.handler, pid: self())
       assert {:ok, %Handler{}, []} = Handler.execute_connection(handler, :up)
       assert_receive {:connection, :up}
@@ -142,7 +142,7 @@ defmodule Tortoise.HandlerTest do
       assert_receive {:connection, :down}
     end
 
-    test "return ok-3-tuple", context do
+    test "return continue with next actions", context do
       next_actions = [{:subscribe, "foo/bar", qos: 0}]
       connection_fn = fn _status, state -> {:cont, state, next_actions} end
       handler = set_state(context.handler, pid: self(), connection: connection_fn)
