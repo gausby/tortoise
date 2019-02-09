@@ -322,14 +322,6 @@ defmodule Tortoise.HandlerTest do
     end
   end
 
-  describe "execute terminate/2" do
-    test "return ok", context do
-      handler = set_state(context.handler, pid: self())
-      assert :ok = Handler.execute_terminate(handler, :normal)
-      assert_receive {:terminate, :normal}
-    end
-  end
-
   describe "execute handle_puback/2" do
     test "return ok", context do
       handler = set_state(context.handler, pid: self())
@@ -506,6 +498,14 @@ defmodule Tortoise.HandlerTest do
                |> Handler.execute_handle_disconnect(disconnect)
 
       assert_receive {:disconnect, ^disconnect}
+    end
+  end
+
+  describe "execute terminate/2" do
+    test "return ok", context do
+      handler = set_state(context.handler, pid: self())
+      assert :ok = Handler.execute_terminate(handler, :normal)
+      assert_receive {:terminate, :normal}
     end
   end
 end
