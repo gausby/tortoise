@@ -38,15 +38,16 @@ defmodule Tortoise.HandlerTest do
       {:cont, state}
     end
 
-    # with next actions
-    def handle_publish(topic, publish, %{next_actions: next_actions} = state) do
-      send(state[:pid], {:publish, topic, publish})
-      {:cont, state, next_actions}
-    end
-
     def handle_publish(topic, publish, state) do
       send(state[:pid], {:publish, topic, publish})
-      {:cont, state}
+
+      case Keyword.get(state, :publish) do
+        nil ->
+          {:cont, state}
+
+        fun when is_function(fun) ->
+          apply(fun, [publish, state])
+      end
     end
 
     def terminate(reason, state) do
@@ -168,7 +169,7 @@ defmodule Tortoise.HandlerTest do
 
   describe "execute handle_publish/2" do
     test "return ok-2", context do
-      handler = set_state(context.handler, %{pid: self()})
+      handler = set_state(context.handler, [pid: self()])
       payload = :crypto.strong_rand_bytes(5)
       topic = "foo/bar"
       publish = %Package.Publish{topic: topic, payload: payload}
@@ -183,8 +184,8 @@ defmodule Tortoise.HandlerTest do
 
     test "return ok-3", context do
       next_actions = [{:subscribe, "foo/bar", [qos: 0]}]
-      opts = %{pid: self(), next_actions: next_actions}
-      handler = set_state(context.handler, opts)
+      publish_fn = fn (%Package.Publish{}, state) -> {:cont, state, next_actions} end
+      handler = set_state(context.handler, [pid: self(), publish: publish_fn])
       payload = :crypto.strong_rand_bytes(5)
       topic = "foo/bar"
       publish = %Package.Publish{topic: topic, payload: payload}
@@ -200,8 +201,8 @@ defmodule Tortoise.HandlerTest do
 
     test "return ok-3 with invalid next action", context do
       next_actions = [{:unsubscribe, "foo/bar"}, {:invalid, "bar"}]
-      opts = %{pid: self(), next_actions: next_actions}
-      handler = set_state(context.handler, opts)
+      publish_fn = fn %Package.Publish{}, state -> {:cont, state, next_actions} end
+      handler = set_state(context.handler, [pid: self(), publish: publish_fn])
       payload = :crypto.strong_rand_bytes(5)
       topic = "foo/bar"
       publish = %Package.Publish{topic: topic, payload: payload}
