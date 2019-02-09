@@ -349,18 +349,18 @@ defmodule Tortoise.HandlerTest do
 
   # callbacks for the QoS=2 message exchange
   describe "execute handle_pubrec/2" do
-    test "return ok", context do
-      handler = set_state(context.handler, pid: self())
+    test "return continue", context do
       pubrec = %Package.Pubrec{identifier: 1}
+      pubrec_fn = fn ^pubrec, state -> {:cont, state} end
+      handler = set_state(context.handler, pid: self(), pubrec: pubrec_fn)
 
       assert {:ok, %Package.Pubrel{identifier: 1}, %Handler{}, []} =
-               handler
-               |> Handler.execute_handle_pubrec(pubrec)
+               Handler.execute_handle_pubrec(handler, pubrec)
 
       assert_receive {:pubrec, ^pubrec}
     end
 
-    test "return ok with custom pubrel", context do
+    test "return continue with custom pubrel", context do
       pubrec = %Package.Pubrec{identifier: 1}
       properties = [{"foo", "bar"}]
 
@@ -392,8 +392,7 @@ defmodule Tortoise.HandlerTest do
       assert_receive {:pubrec, ^pubrec}
     end
 
-    test "returning {:cont, [{string(), string()}]} should result in a pubrel with properties",
-         context do
+    test "returning continue with a list should result in a pubrel with user props", context do
       pubrec = %Package.Pubrec{identifier: 1}
       properties = [{"foo", "bar"}]
       pubrec_fn = fn ^pubrec, state -> {{:cont, properties}, state} end
