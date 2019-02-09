@@ -32,7 +32,7 @@ defmodule Tortoise.HandlerTest do
 
     def handle_suback(subscribe, suback, state) do
       send(state[:pid], {:suback, {subscribe, suback}})
-      {:cont, state}
+      make_return({subscribe, suback}, state)
     end
 
     def handle_unsuback(unsubscribe, unsuback, state) do
@@ -90,6 +90,8 @@ defmodule Tortoise.HandlerTest do
       Package.Pubrec => :pubrec,
       Package.Pubrel => :pubrel,
       Package.Pubcomp => :pubcomp,
+      Package.Suback => :suback,
+      Package.Unsuback => :unsuback,
       Package.Disconnect => :disconnect
     }
 
@@ -107,6 +109,22 @@ defmodule Tortoise.HandlerTest do
 
         fun when is_function(fun) ->
           msg = "Callback function for #{type} in #{__MODULE__} should be of arity-two"
+          raise ArgumentError, message: msg
+      end
+    end
+
+    defp make_return({package, %type{} = ack}, state) when type in @allowed_package_types do
+      type = @package_to_type[type]
+
+      case Keyword.get(state, type) do
+        nil ->
+          {:cont, state}
+
+        fun when is_function(fun, 3) ->
+          apply(fun, [package, ack, state])
+
+        fun when is_function(fun) ->
+          msg = "Callback function for #{type} in #{__MODULE__} should be of arity-three"
           raise ArgumentError, message: msg
       end
     end
@@ -240,9 +258,7 @@ defmodule Tortoise.HandlerTest do
   end
 
   describe "execute handle_suback/3" do
-    test "return ok", context do
-      handler = set_state(context.handler, pid: self())
-
+    test "return continue", context do
       subscribe = %Package.Subscribe{
         identifier: 1,
         topics: [{"foo", qos: 0}]
@@ -250,7 +266,29 @@ defmodule Tortoise.HandlerTest do
 
       suback = %Package.Suback{identifier: 1, acks: [ok: 0]}
 
+      suback_fn = fn (^subscribe, ^suback, state) -> {:cont, state} end
+      handler = set_state(context.handler, pid: self(), suback: suback_fn)
+
       assert {:ok, %Handler{} = state, []} =
+               Handler.execute_handle_suback(handler, subscribe, suback)
+
+      assert_receive {:suback, {^subscribe, ^suback}}
+    end
+
+    test "return continue with next actions", context do
+      subscribe = %Package.Subscribe{
+        identifier: 1,
+        topics: [{"foo", qos: 0}]
+      }
+
+      suback = %Package.Suback{identifier: 1, acks: [ok: 0]}
+
+      next_actions = [{:unsubscribe, "foo/bar"}]
+
+      suback_fn = fn (^subscribe, ^suback, state) -> {:cont, state, next_actions} end
+      handler = set_state(context.handler, pid: self(), suback: suback_fn)
+
+      assert {:ok, %Handler{} = state, ^next_actions} =
                Handler.execute_handle_suback(handler, subscribe, suback)
 
       assert_receive {:suback, {^subscribe, ^suback}}
