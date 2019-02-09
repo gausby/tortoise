@@ -304,15 +304,47 @@ defmodule Tortoise.HandlerTest do
       assert_receive {:pubrel, ^pubrel}
     end
 
-    test "return ok with next_actions", context do
+    test "return ok with custom pubrel", context do
+      properties = [{"foo", "bar"}]
       pubrel_fn = fn %Package.Pubrel{identifier: 1}, state ->
-        {{:cont, %Package.Pubcomp{identifier: 1, properties: [{"foo", "bar"}]}}, state}
+        {{:cont, %Package.Pubcomp{identifier: 1, properties: properties}}, state}
       end
 
       handler = set_state(context.handler, pid: self(), pubrel: pubrel_fn)
       pubrel = %Package.Pubrel{identifier: 1}
 
-      assert {:ok, %Package.Pubcomp{identifier: 1}, %Handler{} = state, []} =
+      assert {:ok, %Package.Pubcomp{identifier: 1, properties: ^properties}, %Handler{} = state, []} =
+               Handler.execute_handle_pubrel(handler, pubrel)
+
+      assert_receive {:pubrel, ^pubrel}
+    end
+
+    test "should not allow custom Pubrel with a different id", context do
+      pubrel_fn = fn %Package.Pubrel{identifier: id}, state ->
+        {{:cont, %Package.Pubcomp{identifier: id + 1}}, state}
+      end
+
+      handler = set_state(context.handler, pid: self(), pubrel: pubrel_fn)
+      pubrel = %Package.Pubrel{identifier: 1}
+
+      # todo, consider making an IdentifierMismatchError type
+      assert_raise CaseClauseError, fn ->
+        Handler.execute_handle_pubrel(handler, pubrel)
+      end
+
+      assert_receive {:pubrel, ^pubrel}
+    end
+
+    test "returning {:cont, [{string(), string()}]} become user defined properties", context do
+      properties = [{"foo", "bar"}, {"bar", "baz"}]
+      pubrel_fn = fn %Package.Pubrel{identifier: 1}, state ->
+        {{:cont, properties}, state}
+      end
+
+      handler = set_state(context.handler, pid: self(), pubrel: pubrel_fn)
+      pubrel = %Package.Pubrel{identifier: 1}
+
+      assert {:ok, %Package.Pubcomp{identifier: 1, properties: ^properties}, %Handler{} = state, []} =
                Handler.execute_handle_pubrel(handler, pubrel)
 
       assert_receive {:pubrel, ^pubrel}
