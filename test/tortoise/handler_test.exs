@@ -45,7 +45,7 @@ defmodule Tortoise.HandlerTest do
         nil ->
           {:cont, state}
 
-        fun when is_function(fun) ->
+        fun when is_function(fun, 2) ->
           apply(fun, [publish, state])
       end
     end
@@ -62,7 +62,7 @@ defmodule Tortoise.HandlerTest do
         nil ->
           {:cont, state}
 
-        fun when is_function(fun) ->
+        fun when is_function(fun, 2) ->
           apply(fun, [puback, state])
       end
     end
@@ -74,7 +74,7 @@ defmodule Tortoise.HandlerTest do
         nil ->
           {:cont, state}
 
-        fun when is_function(fun) ->
+        fun when is_function(fun, 2) ->
           apply(fun, [pubrec, state])
       end
     end
@@ -86,7 +86,7 @@ defmodule Tortoise.HandlerTest do
         nil ->
           {:cont, state}
 
-        fun when is_function(fun) ->
+        fun when is_function(fun, 2) ->
           apply(fun, [pubrel, state])
       end
     end
@@ -98,7 +98,7 @@ defmodule Tortoise.HandlerTest do
         nil ->
           {:cont, state}
 
-        fun when is_function(fun) ->
+        fun when is_function(fun, 2) ->
           apply(fun, [pubcomp, state])
       end
     end
