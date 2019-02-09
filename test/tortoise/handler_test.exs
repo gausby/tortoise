@@ -306,6 +306,7 @@ defmodule Tortoise.HandlerTest do
 
     test "return ok with custom pubrel", context do
       properties = [{"foo", "bar"}]
+
       pubrel_fn = fn %Package.Pubrel{identifier: 1}, state ->
         {{:cont, %Package.Pubcomp{identifier: 1, properties: properties}}, state}
       end
@@ -313,8 +314,8 @@ defmodule Tortoise.HandlerTest do
       handler = set_state(context.handler, pid: self(), pubrel: pubrel_fn)
       pubrel = %Package.Pubrel{identifier: 1}
 
-      assert {:ok, %Package.Pubcomp{identifier: 1, properties: ^properties}, %Handler{} = state, []} =
-               Handler.execute_handle_pubrel(handler, pubrel)
+      assert {:ok, %Package.Pubcomp{identifier: 1, properties: ^properties}, %Handler{} = state,
+              []} = Handler.execute_handle_pubrel(handler, pubrel)
 
       assert_receive {:pubrel, ^pubrel}
     end
@@ -337,6 +338,7 @@ defmodule Tortoise.HandlerTest do
 
     test "returning {:cont, [{string(), string()}]} become user defined properties", context do
       properties = [{"foo", "bar"}, {"bar", "baz"}]
+
       pubrel_fn = fn %Package.Pubrel{identifier: 1}, state ->
         {{:cont, properties}, state}
       end
@@ -344,8 +346,8 @@ defmodule Tortoise.HandlerTest do
       handler = set_state(context.handler, pid: self(), pubrel: pubrel_fn)
       pubrel = %Package.Pubrel{identifier: 1}
 
-      assert {:ok, %Package.Pubcomp{identifier: 1, properties: ^properties}, %Handler{} = state, []} =
-               Handler.execute_handle_pubrel(handler, pubrel)
+      assert {:ok, %Package.Pubcomp{identifier: 1, properties: ^properties}, %Handler{} = state,
+              []} = Handler.execute_handle_pubrel(handler, pubrel)
 
       assert_receive {:pubrel, ^pubrel}
     end
@@ -353,12 +355,33 @@ defmodule Tortoise.HandlerTest do
 
   describe "execute handle_pubcomp/2" do
     test "return ok", context do
-      handler = set_state(context.handler, pid: self())
       pubcomp = %Package.Pubcomp{identifier: 1}
+
+      pubcomp_fn = fn ^pubcomp, state ->
+        {:cont, state}
+      end
+
+      handler = set_state(context.handler, pid: self(), pubcomp: pubcomp_fn)
 
       assert {:ok, %Handler{} = state, []} =
                handler
                |> Handler.execute_handle_pubcomp(pubcomp)
+
+      assert_receive {:pubcomp, ^pubcomp}
+    end
+
+    test "return ok with next actions", context do
+      pubcomp = %Package.Pubcomp{identifier: 1}
+      next_actions = [{:subscribe, "foo/bar", qos: 0}]
+
+      pubcomp_fn = fn ^pubcomp, state ->
+        {:cont, state, next_actions}
+      end
+
+      handler = set_state(context.handler, pid: self(), pubcomp: pubcomp_fn)
+
+      assert {:ok, %Handler{} = state, ^next_actions} =
+               Handler.execute_handle_pubcomp(handler, pubcomp)
 
       assert_receive {:pubcomp, ^pubcomp}
     end
