@@ -322,14 +322,26 @@ defmodule Tortoise.HandlerTest do
     end
   end
 
+  # callbacks for the QoS=1 message exchange
   describe "execute handle_puback/2" do
-    test "return ok", context do
-      handler = set_state(context.handler, pid: self())
+    test "return continue", context do
       puback = %Package.Puback{identifier: 1}
+      puback_fn = fn ^puback, state -> {:cont, state} end
+      handler = set_state(context.handler, pid: self(), puback: puback_fn)
 
-      assert {:ok, %Handler{} = state, []} =
-               handler
-               |> Handler.execute_handle_puback(puback)
+      assert {:ok, %Handler{} = state, []} = Handler.execute_handle_puback(handler, puback)
+
+      assert_receive {:puback, ^puback}
+    end
+
+    test "return continue with next actions", context do
+      puback = %Package.Puback{identifier: 1}
+      next_actions = [{:subscribe, "foo/bar", qos: 0}]
+      puback_fn = fn ^puback, state -> {:cont, state, next_actions} end
+      handler = set_state(context.handler, pid: self(), puback: puback_fn)
+
+      assert {:ok, %Handler{} = state, ^next_actions} =
+               Handler.execute_handle_puback(handler, puback)
 
       assert_receive {:puback, ^puback}
     end
