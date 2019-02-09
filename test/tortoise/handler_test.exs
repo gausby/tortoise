@@ -420,9 +420,11 @@ defmodule Tortoise.HandlerTest do
     test "return continue with custom pubcomp", context do
       pubrel = %Package.Pubrel{identifier: 1}
       properties = [{"foo", "bar"}]
+
       pubrel_fn = fn %Package.Pubrel{identifier: 1}, state ->
         {{:cont, %Package.Pubcomp{identifier: 1, properties: properties}}, state}
       end
+
       handler = set_state(context.handler, pid: self(), pubrel: pubrel_fn)
 
       assert {:ok, %Package.Pubcomp{identifier: 1, properties: ^properties}, %Handler{} = state,
@@ -433,9 +435,11 @@ defmodule Tortoise.HandlerTest do
 
     test "should not allow custom pubcomp with a different id", context do
       pubrel = %Package.Pubrel{identifier: 1}
+
       pubrel_fn = fn %Package.Pubrel{identifier: id}, state ->
         {{:cont, %Package.Pubcomp{identifier: id + 1}}, state}
       end
+
       handler = set_state(context.handler, pid: self(), pubrel: pubrel_fn)
 
       # todo, consider making an IdentifierMismatchError type
@@ -449,9 +453,11 @@ defmodule Tortoise.HandlerTest do
     test "returning {:cont, [{string(), string()}]} become user defined properties", context do
       properties = [{"foo", "bar"}, {"bar", "baz"}]
       pubrel = %Package.Pubrel{identifier: 1}
+
       pubrel_fn = fn ^pubrel, state ->
         {{:cont, properties}, state}
       end
+
       handler = set_state(context.handler, pid: self(), pubrel: pubrel_fn)
 
       assert {:ok, %Package.Pubcomp{identifier: 1, properties: ^properties}, %Handler{} = state,
@@ -462,13 +468,9 @@ defmodule Tortoise.HandlerTest do
   end
 
   describe "execute handle_pubcomp/2" do
-    test "return ok", context do
+    test "return continue", context do
       pubcomp = %Package.Pubcomp{identifier: 1}
-
-      pubcomp_fn = fn ^pubcomp, state ->
-        {:cont, state}
-      end
-
+      pubcomp_fn = fn ^pubcomp, state -> {:cont, state} end
       handler = set_state(context.handler, pid: self(), pubcomp: pubcomp_fn)
 
       assert {:ok, %Handler{} = state, []} =
@@ -478,13 +480,10 @@ defmodule Tortoise.HandlerTest do
       assert_receive {:pubcomp, ^pubcomp}
     end
 
-    test "return ok with next actions", context do
+    test "return continue with next actions", context do
       pubcomp = %Package.Pubcomp{identifier: 1}
       next_actions = [{:subscribe, "foo/bar", qos: 0}]
-
-      pubcomp_fn = fn ^pubcomp, state ->
-        {:cont, state, next_actions}
-      end
+      pubcomp_fn = fn ^pubcomp, state -> {:cont, state, next_actions} end
 
       handler = set_state(context.handler, pid: self(), pubcomp: pubcomp_fn)
 
