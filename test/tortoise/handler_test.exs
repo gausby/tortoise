@@ -37,7 +37,7 @@ defmodule Tortoise.HandlerTest do
 
     def handle_unsuback(unsubscribe, unsuback, state) do
       send(state[:pid], {:unsuback, {unsubscribe, unsuback}})
-      {:cont, state}
+      make_return({unsubscribe, unsuback}, state)
     end
 
     def handle_publish(topic, publish, state) do
@@ -266,7 +266,7 @@ defmodule Tortoise.HandlerTest do
 
       suback = %Package.Suback{identifier: 1, acks: [ok: 0]}
 
-      suback_fn = fn (^subscribe, ^suback, state) -> {:cont, state} end
+      suback_fn = fn ^subscribe, ^suback, state -> {:cont, state} end
       handler = set_state(context.handler, pid: self(), suback: suback_fn)
 
       assert {:ok, %Handler{} = state, []} =
@@ -285,7 +285,7 @@ defmodule Tortoise.HandlerTest do
 
       next_actions = [{:unsubscribe, "foo/bar"}]
 
-      suback_fn = fn (^subscribe, ^suback, state) -> {:cont, state, next_actions} end
+      suback_fn = fn ^subscribe, ^suback, state -> {:cont, state, next_actions} end
       handler = set_state(context.handler, pid: self(), suback: suback_fn)
 
       assert {:ok, %Handler{} = state, ^next_actions} =
@@ -296,17 +296,26 @@ defmodule Tortoise.HandlerTest do
   end
 
   describe "execute handle_unsuback/3" do
-    test "return ok", context do
-      handler = set_state(context.handler, pid: self())
-
-      unsubscribe = %Package.Unsubscribe{
-        identifier: 1,
-        topics: ["foo"]
-      }
-
+    test "return continue", context do
+      unsubscribe = %Package.Unsubscribe{identifier: 1, topics: ["foo"]}
       unsuback = %Package.Unsuback{identifier: 1, results: [:success]}
+      unsuback_fn = fn ^unsubscribe, ^unsuback, state -> {:cont, state} end
+      handler = set_state(context.handler, pid: self(), unsuback: unsuback_fn)
 
       assert {:ok, %Handler{} = state, []} =
+               Handler.execute_handle_unsuback(handler, unsubscribe, unsuback)
+
+      assert_receive {:unsuback, {^unsubscribe, ^unsuback}}
+    end
+
+    test "return continue with next actions", context do
+      unsubscribe = %Package.Unsubscribe{identifier: 1, topics: ["foo"]}
+      unsuback = %Package.Unsuback{identifier: 1, results: [:success]}
+      next_actions = [{:unsubscribe, "foo/bar"}]
+      unsuback_fn = fn ^unsubscribe, ^unsuback, state -> {:cont, state, next_actions} end
+      handler = set_state(context.handler, pid: self(), unsuback: unsuback_fn)
+
+      assert {:ok, %Handler{} = state, ^next_actions} =
                Handler.execute_handle_unsuback(handler, unsubscribe, unsuback)
 
       assert_receive {:unsuback, {^unsubscribe, ^unsuback}}
