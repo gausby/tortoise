@@ -190,11 +190,12 @@ defmodule Tortoise.HandlerTest do
   end
 
   describe "execute handle_publish/2" do
-    test "return ok-2", context do
-      handler = set_state(context.handler, pid: self())
+    test "return continue", context do
       payload = :crypto.strong_rand_bytes(5)
       topic = "foo/bar"
       publish = %Package.Publish{topic: topic, payload: payload}
+      publish_fn = fn ^publish, state -> {:cont, state} end
+      handler = set_state(context.handler, pid: self(), publish: publish_fn)
 
       assert {:ok, %Handler{}, []} = Handler.execute_handle_publish(handler, publish)
       # the topic will be in the form of a list making it possible to
@@ -204,14 +205,13 @@ defmodule Tortoise.HandlerTest do
       assert topic == Enum.join(topic_list, "/")
     end
 
-    test "return ok-3", context do
-      next_actions = [{:subscribe, "foo/bar", [qos: 0]}]
-      publish_fn = fn %Package.Publish{}, state -> {:cont, state, next_actions} end
-      handler = set_state(context.handler, pid: self(), publish: publish_fn)
-      payload = :crypto.strong_rand_bytes(5)
+    test "return continue with next actions", context do
       topic = "foo/bar"
+      payload = :crypto.strong_rand_bytes(5)
+      next_actions = [{:subscribe, "foo/bar", [qos: 0]}]
       publish = %Package.Publish{topic: topic, payload: payload}
-
+      publish_fn = fn ^publish, state -> {:cont, state, next_actions} end
+      handler = set_state(context.handler, pid: self(), publish: publish_fn)
       assert {:ok, %Handler{}, ^next_actions} = Handler.execute_handle_publish(handler, publish)
 
       # the topic will be in the form of a list making it possible to
@@ -221,13 +221,13 @@ defmodule Tortoise.HandlerTest do
       assert topic == Enum.join(topic_list, "/")
     end
 
-    test "return ok-3 with invalid next action", context do
-      next_actions = [{:unsubscribe, "foo/bar"}, {:invalid, "bar"}]
-      publish_fn = fn %Package.Publish{}, state -> {:cont, state, next_actions} end
-      handler = set_state(context.handler, pid: self(), publish: publish_fn)
-      payload = :crypto.strong_rand_bytes(5)
+    test "return continue with invalid next action", context do
       topic = "foo/bar"
+      payload = :crypto.strong_rand_bytes(5)
       publish = %Package.Publish{topic: topic, payload: payload}
+      next_actions = [{:unsubscribe, "foo/bar"}, {:invalid, "bar"}]
+      publish_fn = fn ^publish, state -> {:cont, state, next_actions} end
+      handler = set_state(context.handler, pid: self(), publish: publish_fn)
 
       assert {:error, {:invalid_next_action, [{:invalid, "bar"}]}} =
                Handler.execute_handle_publish(handler, publish)
