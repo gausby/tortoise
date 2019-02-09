@@ -495,13 +495,24 @@ defmodule Tortoise.HandlerTest do
   end
 
   describe "execute handle_disconnect/2" do
-    test "return ok", context do
-      handler = set_state(context.handler, pid: self())
+    test "return continue", context do
       disconnect = %Package.Disconnect{}
+      disconnect_fn = fn (^disconnect, state) -> {:cont, state} end
+      handler = set_state(context.handler, pid: self(), disconnect: disconnect_fn)
 
       assert {:ok, %Handler{} = state, []} =
-               handler
-               |> Handler.execute_handle_disconnect(disconnect)
+               Handler.execute_handle_disconnect(handler, disconnect)
+
+      assert_receive {:disconnect, ^disconnect}
+    end
+
+    test "return stop with normal reason", context do
+      disconnect = %Package.Disconnect{}
+      disconnect_fn = fn (^disconnect, state) -> {:stop, :normal, state} end
+      handler = set_state(context.handler, pid: self(), disconnect: disconnect_fn)
+
+      assert {:stop, :normal, %Handler{} = state} =
+               Handler.execute_handle_disconnect(handler, disconnect)
 
       assert_receive {:disconnect, ^disconnect}
     end
