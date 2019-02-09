@@ -405,7 +405,7 @@ defmodule Tortoise.HandlerTest do
       assert_receive {:pubrel, ^pubrel}
     end
 
-    test "return ok with custom pubrel", context do
+    test "return continue with custom pubcomp", context do
       properties = [{"foo", "bar"}]
 
       pubrel_fn = fn %Package.Pubrel{identifier: 1}, state ->
@@ -421,7 +421,7 @@ defmodule Tortoise.HandlerTest do
       assert_receive {:pubrel, ^pubrel}
     end
 
-    test "should not allow custom Pubrel with a different id", context do
+    test "should not allow custom pubcomp with a different id", context do
       pubrel_fn = fn %Package.Pubrel{identifier: id}, state ->
         {{:cont, %Package.Pubcomp{identifier: id + 1}}, state}
       end
