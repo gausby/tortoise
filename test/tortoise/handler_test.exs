@@ -406,9 +406,10 @@ defmodule Tortoise.HandlerTest do
   end
 
   describe "execute handle_pubrel/2" do
-    test "return ok", context do
-      handler = set_state(context.handler, pid: self())
+    test "return continue", context do
       pubrel = %Package.Pubrel{identifier: 1}
+      pubrel_fn = fn ^pubrel, state -> {:cont, state} end
+      handler = set_state(context.handler, pid: self(), pubrel: pubrel_fn)
 
       assert {:ok, %Package.Pubcomp{identifier: 1}, %Handler{} = state, []} =
                Handler.execute_handle_pubrel(handler, pubrel)
@@ -417,14 +418,12 @@ defmodule Tortoise.HandlerTest do
     end
 
     test "return continue with custom pubcomp", context do
+      pubrel = %Package.Pubrel{identifier: 1}
       properties = [{"foo", "bar"}]
-
       pubrel_fn = fn %Package.Pubrel{identifier: 1}, state ->
         {{:cont, %Package.Pubcomp{identifier: 1, properties: properties}}, state}
       end
-
       handler = set_state(context.handler, pid: self(), pubrel: pubrel_fn)
-      pubrel = %Package.Pubrel{identifier: 1}
 
       assert {:ok, %Package.Pubcomp{identifier: 1, properties: ^properties}, %Handler{} = state,
               []} = Handler.execute_handle_pubrel(handler, pubrel)
@@ -433,12 +432,11 @@ defmodule Tortoise.HandlerTest do
     end
 
     test "should not allow custom pubcomp with a different id", context do
+      pubrel = %Package.Pubrel{identifier: 1}
       pubrel_fn = fn %Package.Pubrel{identifier: id}, state ->
         {{:cont, %Package.Pubcomp{identifier: id + 1}}, state}
       end
-
       handler = set_state(context.handler, pid: self(), pubrel: pubrel_fn)
-      pubrel = %Package.Pubrel{identifier: 1}
 
       # todo, consider making an IdentifierMismatchError type
       assert_raise CaseClauseError, fn ->
@@ -450,13 +448,11 @@ defmodule Tortoise.HandlerTest do
 
     test "returning {:cont, [{string(), string()}]} become user defined properties", context do
       properties = [{"foo", "bar"}, {"bar", "baz"}]
-
-      pubrel_fn = fn %Package.Pubrel{identifier: 1}, state ->
+      pubrel = %Package.Pubrel{identifier: 1}
+      pubrel_fn = fn ^pubrel, state ->
         {{:cont, properties}, state}
       end
-
       handler = set_state(context.handler, pid: self(), pubrel: pubrel_fn)
-      pubrel = %Package.Pubrel{identifier: 1}
 
       assert {:ok, %Package.Pubcomp{identifier: 1, properties: ^properties}, %Handler{} = state,
               []} = Handler.execute_handle_pubrel(handler, pubrel)
