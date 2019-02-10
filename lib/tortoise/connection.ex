@@ -68,7 +68,14 @@ defmodule Tortoise.Connection do
       {:transport, server} | Keyword.take(connection_opts, [:client_id])
     ]
 
-    initial = {server, connect, backoff, handler, connection_opts}
+    initial = %State{
+      client_id: connect.client_id,
+      server: server,
+      connect: connect,
+      backoff: Backoff.new(backoff),
+      opts: connection_opts,
+      handler: handler
+    }
     opts = Keyword.merge(opts, name: via_name(client_id))
     GenStateMachine.start_link(__MODULE__, initial, opts)
   end
@@ -378,21 +385,12 @@ defmodule Tortoise.Connection do
 
   # Callbacks
   @impl true
-  def init({transport, connect, backoff_opts, handler, opts}) do
-    data = %State{
-      client_id: connect.client_id,
-      server: transport,
-      connect: connect,
-      backoff: Backoff.new(backoff_opts),
-      opts: opts,
-      handler: handler
-    }
-
-    case Handler.execute_init(handler) do
+  def init(%State{} = state) do
+    case Handler.execute_init(state.handler) do
       {:ok, %Handler{} = updated_handler} ->
         next_events = [{:next_event, :internal, :connect}]
-        updated_data = %State{data | handler: updated_handler}
-        {:ok, :connecting, updated_data, next_events}
+        updated_state = %State{state | handler: updated_handler}
+        {:ok, :connecting, updated_state, next_events}
 
       :ignore ->
         :ignore
