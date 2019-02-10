@@ -497,7 +497,7 @@ defmodule Tortoise.HandlerTest do
   describe "execute handle_disconnect/2" do
     test "return continue", context do
       disconnect = %Package.Disconnect{}
-      disconnect_fn = fn (^disconnect, state) -> {:cont, state} end
+      disconnect_fn = fn ^disconnect, state -> {:cont, state} end
       handler = set_state(context.handler, pid: self(), disconnect: disconnect_fn)
 
       assert {:ok, %Handler{} = state, []} =
@@ -506,9 +506,22 @@ defmodule Tortoise.HandlerTest do
       assert_receive {:disconnect, ^disconnect}
     end
 
+    test "return continue with next actions", context do
+      disconnect = %Package.Disconnect{}
+      next_actions = [{:subscribe, "foo/bar", qos: 2}]
+      disconnect_fn = fn ^disconnect, state -> {:cont, state, next_actions} end
+
+      handler = set_state(context.handler, pid: self(), disconnect: disconnect_fn)
+
+      assert {:ok, %Handler{} = state, ^next_actions} =
+               Handler.execute_handle_disconnect(handler, disconnect)
+
+      assert_receive {:disconnect, ^disconnect}
+    end
+
     test "return stop with normal reason", context do
       disconnect = %Package.Disconnect{}
-      disconnect_fn = fn (^disconnect, state) -> {:stop, :normal, state} end
+      disconnect_fn = fn ^disconnect, state -> {:stop, :normal, state} end
       handler = set_state(context.handler, pid: self(), disconnect: disconnect_fn)
 
       assert {:stop, :normal, %Handler{} = state} =
