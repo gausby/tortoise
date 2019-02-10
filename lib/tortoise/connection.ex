@@ -150,7 +150,13 @@ defmodule Tortoise.Connection do
   def subscribe(client_id, [{_, topic_opts} | _] = topics, opts) when is_list(topic_opts) do
     caller = {_, ref} = {self(), make_ref()}
     {identifier, opts} = Keyword.pop_first(opts, :identifier, nil)
-    subscribe = Enum.into(topics, %Package.Subscribe{identifier: identifier})
+
+    subscribe =
+      Enum.into(topics, %Package.Subscribe{
+        identifier: identifier,
+        properties: Keyword.get(opts, :properties, [])
+      })
+
     GenStateMachine.cast(via_name(client_id), {:subscribe, caller, subscribe, opts})
     {:ok, ref}
   end

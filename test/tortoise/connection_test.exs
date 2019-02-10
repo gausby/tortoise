@@ -271,7 +271,7 @@ defmodule Tortoise.ConnectionTest do
       subscription_baz =
         Enum.into(
           [{"baz", [{:qos, 2} | default_subscription_opts]}],
-          %Package.Subscribe{identifier: 3}
+          %Package.Subscribe{identifier: 3, properties: [{"foo", "bar"}]}
         )
 
       suback_baz = %Package.Suback{identifier: 3, acks: [{:ok, 2}]}
@@ -303,7 +303,13 @@ defmodule Tortoise.ConnectionTest do
       assert_receive {{TestHandler, :handle_suback}, {%Package.Subscribe{}, ^suback_bar}}
 
       # subscribe to a baz
-      assert {:ok, ref} = Tortoise.Connection.subscribe(client_id, "baz", qos: 2, identifier: 3)
+      assert {:ok, ref} =
+               Tortoise.Connection.subscribe(client_id, "baz",
+                 qos: 2,
+                 identifier: 3,
+                 properties: [{"foo", "bar"}]
+               )
+
       assert_receive {{Tortoise, ^client_id}, ^ref, :ok}
       assert_receive {ScriptedMqttServer, {:received, ^subscription_baz}}
       assert_receive {{TestHandler, :handle_suback}, {%Package.Subscribe{}, ^suback_baz}}
