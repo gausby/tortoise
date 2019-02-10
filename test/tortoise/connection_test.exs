@@ -326,7 +326,13 @@ defmodule Tortoise.ConnectionTest do
 
       unsubscribe_foo = %Package.Unsubscribe{identifier: 2, topics: ["foo"]}
       unsuback_foo = %Package.Unsuback{results: [:success], identifier: 2}
-      unsubscribe_bar = %Package.Unsubscribe{identifier: 3, topics: ["bar"]}
+
+      unsubscribe_bar = %Package.Unsubscribe{
+        identifier: 3,
+        topics: ["bar"],
+        properties: [{"foo", "bar"}]
+      }
+
       unsuback_bar = %Package.Unsuback{results: [:success], identifier: 3}
 
       script = [
@@ -374,7 +380,12 @@ defmodule Tortoise.ConnectionTest do
       assert Map.has_key?(Tortoise.Connection.subscriptions(client_id), "bar")
 
       # and unsubscribe from bar
-      assert {:ok, ref} = Tortoise.Connection.unsubscribe(client_id, "bar", identifier: 3)
+      assert {:ok, ref} =
+               Tortoise.Connection.unsubscribe(client_id, "bar",
+                 identifier: 3,
+                 properties: [{"foo", "bar"}]
+               )
+
       assert_receive {{Tortoise, ^client_id}, ^ref, :ok}
       assert_receive {ScriptedMqttServer, {:received, ^unsubscribe_bar}}
       # handle_unsuback should get called on the callback handler

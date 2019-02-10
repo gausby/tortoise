@@ -237,7 +237,13 @@ defmodule Tortoise.Connection do
   def unsubscribe(client_id, [topic | _] = topics, opts) when is_binary(topic) do
     caller = {_, ref} = {self(), make_ref()}
     {identifier, opts} = Keyword.pop_first(opts, :identifier, nil)
-    unsubscribe = %Package.Unsubscribe{identifier: identifier, topics: topics}
+
+    unsubscribe = %Package.Unsubscribe{
+      identifier: identifier,
+      topics: topics,
+      properties: Keyword.get(opts, :properties, [])
+    }
+
     GenStateMachine.cast(via_name(client_id), {:unsubscribe, caller, unsubscribe, opts})
     {:ok, ref}
   end
