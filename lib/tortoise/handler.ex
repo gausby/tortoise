@@ -149,7 +149,7 @@ defmodule Tortoise.Handler do
 
       @impl true
       def handle_puback(_puback, state) do
-        {:ok, state}
+        {:cont, state}
       end
 
       @impl true
@@ -169,12 +169,12 @@ defmodule Tortoise.Handler do
 
       @impl true
       def handle_suback(_subscribe, _suback, state) do
-        {:ok, state}
+        {:cont, state}
       end
 
       @impl true
       def handle_unsuback(_unsubscribe, _unsuback, state) do
-        {:ok, state}
+        {:cont, state}
       end
 
       @impl true
