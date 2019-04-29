@@ -9,6 +9,18 @@ defmodule TestHandler do
     {:ok, state}
   end
 
+  def handle_connack(connack, %{handle_connack: fun} = state) when is_function(fun) do
+    apply(fun, [connack, state])
+  end
+
+  def handle_connack(_connack, state) do
+    {:cont, state}
+  end
+
+  def terminate(reason, %{terminate: fun} = state) when is_function(fun) do
+    apply(fun, [reason, state])
+  end
+
   def terminate(reason, state) do
     send(state[:parent], {{__MODULE__, :terminate}, reason})
     :ok
@@ -17,6 +29,10 @@ defmodule TestHandler do
   def connection(status, state) do
     send(state[:parent], {{__MODULE__, :connection}, status})
     {:cont, state}
+  end
+
+  def handle_disconnect(disconnect, %{handle_disconnect: fun} = state) when is_function(fun) do
+    apply(fun, [disconnect, state])
   end
 
   def handle_disconnect(disconnect, state) do
@@ -57,9 +73,18 @@ defmodule TestHandler do
     {:cont, state}
   end
 
+  def handle_suback(subscribe, suback, %{handle_suback: fun} = state) when is_function(fun) do
+    apply(fun, [subscribe, suback, state])
+  end
+
   def handle_suback(subscribe, suback, state) do
     send(state[:parent], {{__MODULE__, :handle_suback}, {subscribe, suback}})
     {:cont, state}
+  end
+
+  def handle_unsuback(unsubscribe, unsuback, %{handle_unsuback: fun} = state)
+      when is_function(fun) do
+    apply(fun, [unsubscribe, unsuback, state])
   end
 
   def handle_unsuback(unsubscribe, unsuback, state) do

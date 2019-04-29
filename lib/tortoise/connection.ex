@@ -76,6 +76,7 @@ defmodule Tortoise.Connection do
       opts: connection_opts,
       handler: handler
     }
+
     opts = Keyword.merge(opts, name: via_name(client_id))
     GenStateMachine.start_link(__MODULE__, initial, opts)
   end
@@ -423,8 +424,7 @@ defmodule Tortoise.Connection do
         } = data
       ) do
     case Handler.execute_handle_connack(handler, connack) do
-      {:ok, %Handler{} = updated_handler, _next_actions} ->
-        # todo, add support for next actions
+      {:ok, %Handler{} = updated_handler, next_actions} ->
         :ok = Tortoise.Registry.put_meta(via_name(client_id), data.connection)
         :ok = Events.dispatch(client_id, :connection, data.connection)
         :ok = Events.dispatch(client_id, :status, :connected)
@@ -433,6 +433,9 @@ defmodule Tortoise.Connection do
         next_actions = [
           {:state_timeout, keep_alive * 1000, :keep_alive},
           {:next_event, :internal, {:execute_handler, {:connection, :up}}}
+          | for action <- next_actions do
+              {:next_event, :internal, {:user_action, action}}
+            end
         ]
 
         {:next_state, :connected, data, next_actions}
@@ -678,7 +681,7 @@ defmodule Tortoise.Connection do
         next_actions = [
           {:next_event, :internal, {:reply, {pid, msg_ref}, :ok}}
           | for action <- next_actions do
-              {:next_event, :internal, action}
+              {:next_event, :internal, {:user_action, action}}
             end
         ]
 
@@ -754,7 +757,7 @@ defmodule Tortoise.Connection do
         next_actions = [
           {:next_event, :internal, {:reply, {pid, msg_ref}, :ok}}
           | for action <- next_actions do
-              {:next_event, :internal, action}
+              {:next_event, :internal, {:user_action, action}}
             end
         ]
 
@@ -769,6 +772,33 @@ defmodule Tortoise.Connection do
   def handle_event({:call, from}, :subscriptions, _, %State{subscriptions: subscriptions}) do
     next_actions = [{:reply, from, subscriptions}]
     {:keep_state_and_data, next_actions}
+  end
+
+  # User actions are actions returned by the user defined callbacks;
+  # They inform the connection to perform an action, such as
+  # subscribing to a topic, and they are validated by the handler
+  # module, so there is no need to coerce here
+  def handle_event(:internal, {:user_action, action}, _, %State{client_id: client_id}) do
+    case action do
+      {:subscribe, topic, opts} when is_binary(topic) ->
+        caller = {self(), make_ref()}
+        {identifier, opts} = Keyword.pop_first(opts, :identifier, nil)
+        subscribe = %Package.Subscribe{identifier: identifier, topics: [{topic, opts}]}
+        next_actions = [{:next_event, :cast, {:subscribe, caller, subscribe, opts}}]
+        {:keep_state_and_data, next_actions}
+
+      {:unsubscribe, topic, opts} when is_binary(topic) ->
+        caller = {self(), make_ref()}
+        {identifier, opts} = Keyword.pop_first(opts, :identifier, nil)
+        subscribe = %Package.Unsubscribe{identifier: identifier, topics: [topic]}
+        next_actions = [{:next_event, :cast, {:unsubscribe, caller, subscribe, opts}}]
+        {:keep_state_and_data, next_actions}
+
+      :disconnect ->
+        :ok = Events.dispatch(client_id, :status, :terminating)
+        :ok = Inflight.drain(client_id)
+        {:stop, :normal}
+    end
   end
 
   # dispatch to user defined handler

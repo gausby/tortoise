@@ -716,6 +716,87 @@ defmodule Tortoise.ConnectionTest do
       assert_receive {{^handler_mod, :terminate}, :shutdown}
       refute_receive {{^handler_mod, _}, _}
     end
+
+    test "user next actions", context do
+      connect = %Package.Connect{client_id: context.client_id}
+      expected_connack = %Package.Connack{reason: :success, session_present: false}
+
+      subscribe = %Package.Subscribe{
+        identifier: 1,
+        properties: [],
+        topics: [
+          {"foo/bar", [qos: 1, no_local: false, retain_as_published: false, retain_handling: 1]}
+        ]
+      }
+
+      unsubscribe = %Package.Unsubscribe{
+        identifier: 2,
+        properties: [],
+        topics: ["foo/bar"]
+      }
+
+      suback = %Package.Suback{identifier: 1, acks: [{:ok, 0}]}
+      unsuback = %Package.Unsuback{identifier: 2, results: [:success]}
+      disconnect = %Package.Disconnect{}
+
+      script = [
+        {:receive, connect},
+        {:send, expected_connack},
+        {:receive, subscribe},
+        {:send, suback},
+        {:receive, unsubscribe},
+        {:send, unsuback},
+        {:receive, disconnect}
+      ]
+
+      {:ok, {ip, port}} = ScriptedMqttServer.enact(context.scripted_mqtt_server, script)
+
+      # the handler will contain a handle connack that will continue
+      # and setup a subscribe command; this should result in the
+      # server receiving a subscribe package.
+      handler =
+        {TestHandler,
+         [
+           parent: self(),
+           handle_connack: fn %Package.Connack{reason: :success}, state ->
+             {:cont, state, [{:subscribe, "foo/bar", qos: 1, identifier: 1}]}
+           end,
+           handle_suback: fn %Package.Subscribe{}, %Package.Suback{}, state ->
+             {:cont, state, [{:unsubscribe, "foo/bar", identifier: 2}]}
+           end,
+           handle_unsuback: fn %Package.Unsubscribe{}, %Package.Unsuback{}, state ->
+             {:cont, state, [:disconnect]}
+           end,
+           terminate: fn reason, %{parent: parent} ->
+             send(parent, {self(), {:terminating, reason}})
+             :ok
+           end
+         ]}
+
+      opts = [
+        client_id: context.client_id,
+        server: {Tortoise.Transport.Tcp, [host: ip, port: port]},
+        handler: handler
+      ]
+
+      assert {:ok, pid} = Connection.start_link(opts)
+      assert_receive {ScriptedMqttServer, {:received, ^connect}}
+      # the handle_connack will setup a subscribe command; tortoise
+      # should subscribe to the topic
+      assert_receive {ScriptedMqttServer, {:received, ^subscribe}}
+      # the handle_suback should generate an unsubscribe command
+      assert_receive {ScriptedMqttServer, {:received, ^unsubscribe}}
+      # the handle_unsuback callback should generate a disconnect
+      # command, which should disconnect the client from the server;
+      # which will receive the disconnect message, and the client
+      # process should terminate and exit
+      assert_receive {ScriptedMqttServer, {:received, ^disconnect}}
+      assert_receive {^pid, {:terminating, :normal}}
+      refute Process.alive?(pid)
+
+      # all done
+      assert_receive {ScriptedMqttServer, :completed}
+    end
   end
 
   describe "ping" do
