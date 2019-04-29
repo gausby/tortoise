@@ -357,7 +357,6 @@ defmodule Tortoise.Connection.Inflight do
       {:keep_state, handle_next(track, data)}
     else
       res ->
-        IO.inspect(res, label: __MODULE__)
         {:stop, res, data}
     end
   end
