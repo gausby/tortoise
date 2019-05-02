@@ -90,7 +90,7 @@ defmodule Tortoise.EventsTest do
 
       # the subscriber should receive the connection and it should
       # still be registered for new connections
-      assert_receive {:received, ^connection}
+      assert_receive {:received, ^connection}, 2000
       assert [:connection] = Registry.keys(Tortoise.Events, child)
 
       context = run_setup(context, :setup_connection)
