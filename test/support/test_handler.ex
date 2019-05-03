@@ -46,7 +46,7 @@ defmodule TestHandler do
     case state[:handle_disconnect] do
       nil ->
         send(state[:parent], {{__MODULE__, :handle_disconnect}, disconnect})
-        {:stop, :normal, state}
+        {:cont, state}
 
       fun when is_function(fun, 2) ->
         apply(fun, [disconnect, state])

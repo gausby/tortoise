@@ -1297,7 +1297,7 @@ defmodule Tortoise.ConnectionTest do
   end
 
   describe "Disconnect" do
-    setup [:setup_scripted_mqtt_server, :setup_connection_and_perform_handshake]
+    setup [:setup_scripted_mqtt_server]
 
     # [x] :normal_disconnection
     # [ ] :unspecified_error
@@ -1331,18 +1331,49 @@ defmodule Tortoise.ConnectionTest do
     test "normal disconnection", context do
       Process.flag(:trap_exit, true)
       disconnect = %Package.Disconnect{reason: :normal_disconnection}
-      script = [{:send, disconnect}]
 
+      callbacks = [
+        handle_disconnect: fn %Package.Disconnect{} = disconnect, state ->
+          send(state.parent, {{TestHandler, :handle_disconnect}, disconnect})
+          {:stop, :normal, state}
+        end
+      ]
+
+      {:ok, %{connection_pid: pid} = context} = connect_and_perform_handshake(context, callbacks)
+
+      script = [{:send, disconnect}]
       {:ok, _} = ScriptedMqttServer.enact(context.scripted_mqtt_server, script)
-      pid = context.connection_pid
 
       refute_receive {:EXIT, ^pid, {:protocol_violation, {:unexpected_package, ^disconnect}}}
       assert_receive {ScriptedMqttServer, :completed}
 
       # the handle disconnect callback should have been called
       assert_receive {{TestHandler, :handle_disconnect}, ^disconnect}
-      # the callback handler will tell it to stop normally
+      # the callback tells it to stop normally
       assert_receive {:EXIT, ^pid, :normal}
     end
+  end
+
+  defp connect_and_perform_handshake(%{client_id: client_id} = context, callbacks) do
+    script = [
+      {:receive, %Package.Connect{client_id: client_id}},
+      {:send, %Package.Connack{reason: :success, session_present: false}}
+    ]
+
+    {:ok, {ip, port}} = ScriptedMqttServer.enact(context.scripted_mqtt_server, script)
+
+    opts = [
+      client_id: context.client_id,
+      server: {Tortoise.Transport.Tcp, [host: ip, port: port]},
+      handler: {TestHandler, Keyword.merge([parent: self()], callbacks)}
+    ]
+
+    {:ok, connection_pid} = Connection.start_link(opts)
+
+    assert_receive {{TestHandler, :init}, _}
+    assert_receive {ScriptedMqttServer, {:received, %Package.Connect{}}}
+    assert_receive {ScriptedMqttServer, :completed}
+
+    {:ok, Map.put(context, :connection_pid, connection_pid)}
   end
 end
