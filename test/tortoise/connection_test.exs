@@ -680,7 +680,15 @@ defmodule Tortoise.ConnectionTest do
 
       {:ok, {ip, port}} = ScriptedMqttServer.enact(context.scripted_mqtt_server, script)
 
-      handler = {TestHandler, [parent: self()]}
+      handler = {TestHandler, [parent: self(),
+                               connection: fn (status, state) ->
+                                 send state.parent, {{TestHandler, :connection}, status}
+                                 fun = fn (_) ->
+                                   send state.parent, :from_connection_callback
+                                 end
+                                 {:cont, state, [{:eval, fun}]}
+                               end
+                              ]}
 
       opts = [
         client_id: client_id,
@@ -716,6 +724,10 @@ defmodule Tortoise.ConnectionTest do
       assert_receive {{^handler_mod, :terminate}, :shutdown}
       assert_receive {{^handler_mod, :handle_connack}, %Package.Connack{}}
       refute_receive {{^handler_mod, _}, _}
+
+      # make sure user defined next actions works for the connection
+      # callback
+      assert_receive :from_connection_callback
     end
 
     test "user next actions", context do
