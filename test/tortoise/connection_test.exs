@@ -1018,6 +1018,148 @@ defmodule Tortoise.ConnectionTest do
     end
   end
 
+  describe "next actions" do
+    setup [:setup_scripted_mqtt_server]
+
+    test "Handling next actions from handle_puback callback", context do
+      Process.flag(:trap_exit, true)
+      scripted_mqtt_server = context.scripted_mqtt_server
+      client_id = context.client_id
+
+      script = [
+        {:receive, %Package.Connect{client_id: client_id}},
+        {:send, %Package.Connack{reason: :success, session_present: false}}
+      ]
+
+      {:ok, {ip, port}} = ScriptedMqttServer.enact(scripted_mqtt_server, script)
+
+      handler_opts = [
+        parent: self(),
+        handle_puback: fn %Package.Puback{}, state ->
+          {:cont, state, [{:subscribe, "foo/bar", qos: 0, identifier: 2}]}
+        end
+      ]
+
+      opts = [
+        client_id: client_id,
+        server: {Tortoise.Transport.Tcp, [host: ip, port: port]},
+        handler: {TestHandler, handler_opts}
+      ]
+
+      assert {:ok, connection_pid} = Connection.start_link(opts)
+
+      assert_receive {ScriptedMqttServer, {:received, %Package.Connect{}}}
+      assert_receive {ScriptedMqttServer, :completed}
+
+      publish = %Package.Publish{identifier: 1, topic: "foo/bar", qos: 1}
+      puback = %Package.Puback{identifier: 1}
+
+      default_subscription_opts = [
+        no_local: false,
+        retain_as_published: false,
+        retain_handling: 1
+      ]
+
+      subscribe =
+        Enum.into(
+          [{"foo/bar", [{:qos, 0} | default_subscription_opts]}],
+          %Package.Subscribe{identifier: 2}
+        )
+
+      suback = %Package.Suback{identifier: 2, acks: [{:ok, 0}]}
+
+      script = [
+        {:receive, publish},
+        {:send, puback},
+        {:receive, subscribe},
+        {:send, suback}
+      ]
+
+      {:ok, _} = ScriptedMqttServer.enact(context.scripted_mqtt_server, script)
+      pid = connection_pid
+
+      client_id = context.client_id
+      assert {:ok, ref} = Inflight.track(client_id, {:outgoing, publish})
+
+      refute_receive {:EXIT, ^pid, {:protocol_violation, {:unexpected_package, _}}}
+      assert_receive {ScriptedMqttServer, {:received, ^publish}}
+      assert_receive {ScriptedMqttServer, {:received, ^subscribe}}
+      assert_receive {ScriptedMqttServer, :completed}
+      # the caller should receive an :ok for the ref when it is published
+      assert_receive {{Tortoise, ^client_id}, {Package.Publish, ^ref}, :ok}
+      assert_receive {{TestHandler, :handle_suback}, {_subscribe, _suback}}
+    end
+
+    test "Handling next actions from handle_pubrel and handle_pubcomp callback", context do
+      Process.flag(:trap_exit, true)
+      scripted_mqtt_server = context.scripted_mqtt_server
+      client_id = context.client_id
+      expected_connack = %Package.Connack{reason: :success, session_present: false}
+
+      script = [
+        {:receive, %Package.Connect{client_id: client_id}},
+        {:send, expected_connack}
+      ]
+
+      {:ok, {ip, port}} = ScriptedMqttServer.enact(scripted_mqtt_server, script)
+
+      test_process = self()
+
+      send_back = fn package ->
+        fn _state ->
+          send(test_process, {:next_action_from, package})
+        end
+      end
+
+      handler_opts = [
+        parent: self(),
+        handle_connack: fn package, state ->
+          {:cont, state, [{:eval, send_back.(package)}]}
+        end,
+        handle_pubrec: fn package, state ->
+          {:cont, state, [{:eval, send_back.(package)}]}
+        end,
+        handle_pubcomp: fn package, state ->
+          {:cont, state, [{:eval, send_back.(package)}]}
+        end
+      ]
+
+      opts = [
+        client_id: client_id,
+        server: {Tortoise.Transport.Tcp, [host: ip, port: port]},
+        handler: {TestHandler, handler_opts}
+      ]
+
+      assert {:ok, connection_pid} = Connection.start_link(opts)
+      assert_receive {ScriptedMqttServer, {:received, %Package.Connect{}}}
+      assert_receive {ScriptedMqttServer, :completed}
+
+      publish = %Package.Publish{identifier: 1, topic: "foo/bar", qos: 2}
+      pubrec = %Package.Pubrec{identifier: 1}
+      pubrel = %Package.Pubrel{identifier: 1}
+      pubcomp = %Package.Pubcomp{identifier: 1}
+
+      script = [
+        {:receive, publish},
+        {:send, pubrec},
+        {:receive, pubrel},
+        {:send, pubcomp}
+      ]
+
+      {:ok, _} = ScriptedMqttServer.enact(scripted_mqtt_server, script)
+
+      assert {:ok, ref} = Inflight.track(context.client_id, {:outgoing, publish})
+
+      assert_receive {ScriptedMqttServer, :completed}
+      assert_receive {ScriptedMqttServer, {:received, %Package.Publish{}}}
+      assert_receive {ScriptedMqttServer, {:received, %Package.Pubrel{}}}
+
+      assert_receive {:next_action_from, ^expected_connack}
+      assert_receive {:next_action_from, ^pubrec}
+      assert_receive {:next_action_from, ^pubcomp}
+    end
+  end
+
   describe "Publish with QoS=2" do
     setup [:setup_scripted_mqtt_server, :setup_connection_and_perform_handshake]
 
