@@ -714,6 +714,7 @@ defmodule Tortoise.ConnectionTest do
       assert_receive {{^handler_mod, :init}, ^handler_init_opts}
       assert_receive {{^handler_mod, :connection}, :up}
       assert_receive {{^handler_mod, :terminate}, :shutdown}
+      assert_receive {{^handler_mod, :handle_connack}, %Package.Connack{}}
       refute_receive {{^handler_mod, _}, _}
     end
 
