@@ -680,15 +680,20 @@ defmodule Tortoise.ConnectionTest do
 
       {:ok, {ip, port}} = ScriptedMqttServer.enact(context.scripted_mqtt_server, script)
 
-      handler = {TestHandler, [parent: self(),
-                               connection: fn (status, state) ->
-                                 send state.parent, {{TestHandler, :connection}, status}
-                                 fun = fn (_) ->
-                                   send state.parent, :from_connection_callback
-                                 end
-                                 {:cont, state, [{:eval, fun}]}
-                               end
-                              ]}
+      handler =
+        {TestHandler,
+         [
+           parent: self(),
+           connection: fn status, state ->
+             send(state.parent, {{TestHandler, :connection}, status})
+
+             fun = fn _ ->
+               send(state.parent, :from_connection_callback)
+             end
+
+             {:cont, state, [{:eval, fun}]}
+           end
+         ]}
 
       opts = [
         client_id: client_id,
