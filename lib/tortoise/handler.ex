@@ -663,5 +663,7 @@ defmodule Tortoise.Handler do
   # disconnect
   defp valid_next_action?(:disconnect), do: true
 
+  defp valid_next_action?({:eval, fun}) when is_function(fun, 1), do: true
+
   defp valid_next_action?(_otherwise), do: false
 end

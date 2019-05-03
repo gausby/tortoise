@@ -798,6 +798,15 @@ defmodule Tortoise.Connection do
         :ok = Events.dispatch(client_id, :status, :terminating)
         :ok = Inflight.drain(client_id)
         {:stop, :normal}
+
+      {:eval, fun} when is_function(fun, 1) ->
+        try do
+          apply(fun, [state])
+        rescue
+          _disregard -> nil
+        end
+
+        {:keep_state, state}
     end
   end
 
