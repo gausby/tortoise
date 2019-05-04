@@ -944,9 +944,8 @@ defmodule Tortoise.Connection do
         %State{handler: handler} = data
       ) do
     case Handler.execute_handle_disconnect(handler, disconnect) do
-      {:cont, updated_handler, _next_actions} ->
-        # todo, handle next_actions
-        {:keep_state, %State{data | handler: updated_handler}}
+      {:ok, updated_handler, next_actions} ->
+        {:keep_state, %State{data | handler: updated_handler}, wrap_next_actions(next_actions)}
 
       {:stop, reason, updated_handler} ->
         {:stop, reason, %State{data | handler: updated_handler}}

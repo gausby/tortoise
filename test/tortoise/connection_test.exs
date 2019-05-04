@@ -1352,6 +1352,29 @@ defmodule Tortoise.ConnectionTest do
       # the callback tells it to stop normally
       assert_receive {:EXIT, ^pid, :normal}
     end
+
+    test "handle_disconnect producing next action", context do
+      disconnect = %Package.Disconnect{reason: :normal_disconnection}
+
+      callbacks = [
+        handle_disconnect: fn %Package.Disconnect{} = disconnect, state ->
+          %{parent: parent} = state
+          send(parent, {{TestHandler, :handle_disconnect}, disconnect})
+          fun = fn _ -> send(parent, {TestHandler, :from_eval_fun}) end
+          {:cont, state, [{:eval, fun}]}
+        end
+      ]
+
+      {:ok, context} = connect_and_perform_handshake(context, callbacks)
+
+      script = [{:send, disconnect}]
+      {:ok, _} = ScriptedMqttServer.enact(context.scripted_mqtt_server, script)
+
+      assert_receive {ScriptedMqttServer, :completed}
+      # the handle disconnect callback should have been called
+      assert_receive {{TestHandler, :handle_disconnect}, ^disconnect}
+      assert_receive {TestHandler, :from_eval_fun}
+    end
   end
 
   defp connect_and_perform_handshake(%{client_id: client_id} = context, callbacks) do
