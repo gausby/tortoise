@@ -470,10 +470,9 @@ defmodule Tortoise.Connection do
         %State{handler: handler} = data
       ) do
     case Handler.execute_handle_publish(handler, publish) do
-      {:ok, %Handler{} = updated_handler, _next_actions} ->
-        # todo, handle next_actions
+      {:ok, %Handler{} = updated_handler, next_actions} ->
         updated_data = %State{data | handler: updated_handler}
-        {:keep_state, updated_data}
+        {:keep_state, updated_data, wrap_next_actions(next_actions)}
 
         # handle stop
     end

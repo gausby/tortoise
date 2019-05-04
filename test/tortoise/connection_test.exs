@@ -944,15 +944,26 @@ defmodule Tortoise.ConnectionTest do
   end
 
   describe "Publish with QoS=0" do
-    setup [:setup_scripted_mqtt_server, :setup_connection_and_perform_handshake]
+    # , :setup_connection_and_perform_handshake
+    setup [:setup_scripted_mqtt_server]
 
     test "Receiving a publish", context do
       Process.flag(:trap_exit, true)
+
       publish = %Package.Publish{topic: "foo/bar", qos: 0}
 
-      script = [{:send, publish}]
+      callbacks = [
+        handle_publish: fn topic, %Package.Publish{}, %{parent: parent} = state ->
+          send(parent, {{TestHandler, :handle_publish}, publish})
+          send(parent, {{TestHandler, :altered_topic}, topic})
+          fun = fn _ -> send(parent, {TestHandler, :next_action_triggered}) end
+          {:cont, state, [{:eval, fun}]}
+        end
+      ]
 
-      {:ok, _} = ScriptedMqttServer.enact(context.scripted_mqtt_server, script)
+      {:ok, context} = connect_and_perform_handshake(context, callbacks)
+
+      {:ok, _} = ScriptedMqttServer.enact(context.scripted_mqtt_server, [{:send, publish}])
       pid = context.connection_pid
 
       refute_receive {:EXIT, ^pid, {:protocol_violation, {:unexpected_package, ^publish}}}
@@ -960,6 +971,9 @@ defmodule Tortoise.ConnectionTest do
 
       # the handle publish callback should have been called
       assert_receive {{TestHandler, :handle_publish}, ^publish}
+      expected_topic_list = ["foo", "bar"]
+      assert_receive {{TestHandler, :altered_topic}, ^expected_topic_list}
+      assert_receive {TestHandler, :next_action_triggered}
     end
   end
 
