@@ -476,7 +476,7 @@ defmodule Tortoise.TestGenerators do
       :topic_alias -> {type, choose(0x0001, 0xFFFF)}
       :maximum_qos -> {type, oneof([0, 1])}
       :retain_available -> {type, oneof([0, 1])}
-      :user_property -> {utf8(), utf8()}
+      :user_property -> {type, {utf8(), utf8()}}
       :maximum_packet_size -> {type, choose(1, 268_435_455)}
       :wildcard_subscription_available -> {type, oneof([0, 1])}
       :subscription_identifier_available -> {type, oneof([0, 1])}

@@ -21,7 +21,7 @@ defmodule Tortoise.Package.Unsuback do
             __META__: Package.Meta.t(),
             identifier: Tortoise.package_identifier(),
             results: [],
-            properties: [{:reason_string, any()}, {:user_property, any()}]
+            properties: [{:reason_string, any()}, {:user_property, {String.t(), String.t()}}]
           }
   @enforce_keys [:identifier]
   defstruct __META__: %Package.Meta{opcode: @opcode, flags: 0b0000},

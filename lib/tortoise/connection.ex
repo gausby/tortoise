@@ -76,6 +76,7 @@ defmodule Tortoise.Connection do
       opts: connection_opts,
       handler: handler
     }
+
     opts = Keyword.merge(opts, name: via_name(client_id))
     GenStateMachine.start_link(__MODULE__, initial, opts)
   end
@@ -156,12 +157,14 @@ defmodule Tortoise.Connection do
 
   def subscribe(client_id, [{_, topic_opts} | _] = topics, opts) when is_list(topic_opts) do
     caller = {_, ref} = {self(), make_ref()}
+    # todo, do something with timeout, or remove it
+    {opts, properties} = Keyword.split(opts, [:identifier, :timeout])
     {identifier, opts} = Keyword.pop_first(opts, :identifier, nil)
 
     subscribe =
       Enum.into(topics, %Package.Subscribe{
         identifier: identifier,
-        properties: Keyword.get(opts, :properties, [])
+        properties: properties
       })
 
     GenStateMachine.cast(via_name(client_id), {:subscribe, caller, subscribe, opts})
@@ -249,12 +252,13 @@ defmodule Tortoise.Connection do
 
   def unsubscribe(client_id, [topic | _] = topics, opts) when is_binary(topic) do
     caller = {_, ref} = {self(), make_ref()}
+    {opts, properties} = Keyword.split(opts, [:identifier, :timeout])
     {identifier, opts} = Keyword.pop_first(opts, :identifier, nil)
 
     unsubscribe = %Package.Unsubscribe{
       identifier: identifier,
       topics: topics,
-      properties: Keyword.get(opts, :properties, [])
+      properties: properties
     }
 
     GenStateMachine.cast(via_name(client_id), {:unsubscribe, caller, unsubscribe, opts})

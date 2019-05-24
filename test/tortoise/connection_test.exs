@@ -271,7 +271,7 @@ defmodule Tortoise.ConnectionTest do
       subscription_baz =
         Enum.into(
           [{"baz", [{:qos, 2} | default_subscription_opts]}],
-          %Package.Subscribe{identifier: 3, properties: [{"foo", "bar"}]}
+          %Package.Subscribe{identifier: 3, properties: [user_property: {"foo", "bar"}]}
         )
 
       suback_baz = %Package.Suback{identifier: 3, acks: [{:ok, 2}]}
@@ -307,7 +307,7 @@ defmodule Tortoise.ConnectionTest do
                Tortoise.Connection.subscribe(client_id, "baz",
                  qos: 2,
                  identifier: 3,
-                 properties: [{"foo", "bar"}]
+                 user_property: {"foo", "bar"}
                )
 
       assert_receive {{Tortoise, ^client_id}, ^ref, :ok}
@@ -336,7 +336,7 @@ defmodule Tortoise.ConnectionTest do
       unsubscribe_bar = %Package.Unsubscribe{
         identifier: 3,
         topics: ["bar"],
-        properties: [{"foo", "bar"}]
+        properties: [user_property: {"foo", "bar"}]
       }
 
       unsuback_bar = %Package.Unsuback{results: [:success], identifier: 3}
@@ -389,7 +389,7 @@ defmodule Tortoise.ConnectionTest do
       assert {:ok, ref} =
                Tortoise.Connection.unsubscribe(client_id, "bar",
                  identifier: 3,
-                 properties: [{"foo", "bar"}]
+                 user_property: {"foo", "bar"}
                )
 
       assert_receive {{Tortoise, ^client_id}, ^ref, :ok}

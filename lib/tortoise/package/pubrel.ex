@@ -14,7 +14,7 @@ defmodule Tortoise.Package.Pubrel do
             __META__: Package.Meta.t(),
             identifier: Tortoise.package_identifier(),
             reason: reason(),
-            properties: [{:reason_string, String.t()}, {:user_property, String.t()}]
+            properties: [{:reason_string, String.t()}, {:user_property, {String.t(), String.t()}}]
           }
   @enforce_keys [:identifier]
   defstruct __META__: %Package.Meta{opcode: @opcode, flags: 0b0010},

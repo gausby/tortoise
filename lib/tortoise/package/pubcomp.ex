@@ -14,7 +14,7 @@ defmodule Tortoise.Package.Pubcomp do
             __META__: Package.Meta.t(),
             identifier: Tortoise.package_identifier(),
             reason: reason(),
-            properties: [{:reason_string, String.t()}, {:user_property, String.t()}]
+            properties: [{:reason_string, String.t()}, {:user_property, {String.t(), String.t()}}]
           }
   defstruct __META__: %Package.Meta{opcode: @opcode, flags: 0},
             identifier: nil,

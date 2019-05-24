@@ -11,12 +11,25 @@ defmodule Tortoise.Package.Properties do
     |> Package.variable_length_encode()
   end
 
-  # User properties are special; we will allow them to be encoded as
-  # binaries to make the interface a bit cleaner to the end user
-  #
-  # Todo, revert this decision
-  defp encode_property({key, value}) when is_binary(key) do
+  # The `user_property` property should be specified as
+  # `{:user_property, {key, value}}` where both `key` and `value` are
+  # UTF-8 encoded strings. User properties with the same key are
+  # allowed, and by specifying it like this we make it possible to
+  # specify the order of the properties.
+  defp encode_property({:user_property, {<<key::binary>>, <<value::binary>>}}) do
     [0x26, length_encode(key), length_encode(value)]
+  end
+
+  # We allow the user to specify a list of key/value pairs when
+  # multiple user properties are needed; all items in the list must be
+  # 2-tuples of string/string.
+  defp encode_property({:user_property, [{<<_::binary>>, <<_::binary>>} | _] = properties}) do
+    for property <- properties, do: encode_property({:user_property, property})
+  end
+
+  # Ignore the user property if an empty list is passed in
+  defp encode_property({:user_property, []}) do
+    <<>>
   end
 
   defp encode_property({key, value}) do
@@ -238,7 +251,7 @@ defmodule Tortoise.Package.Properties do
     <<key::binary-size(length), rest::binary>> = rest
     <<length::integer-size(16), rest::binary>> = rest
     <<value::binary-size(length), rest::binary>> = rest
-    {{key, value}, rest}
+    {{:user_property, {key, value}}, rest}
   end
 
   defp decode_property(<<0x27, value::integer-size(32), rest::binary>>) do

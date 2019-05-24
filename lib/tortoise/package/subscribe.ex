@@ -23,7 +23,7 @@ defmodule Tortoise.Package.Subscribe do
             topics: topics(),
             properties: [
               {:subscription_identifier, 0x1..0xFFFFFFF},
-              {:user_property, binary()}
+              {:user_property, {String.t(), String.t()}}
             ]
           }
   defstruct __META__: %Package.Meta{opcode: @opcode, flags: 0b0010},

@@ -13,7 +13,7 @@ defmodule Tortoise.Package.Unsubscribe do
             __META__: Package.Meta.t(),
             identifier: Tortoise.package_identifier(),
             topics: [topic],
-            properties: [{:user_property, any()}]
+            properties: [{:user_property, {String.t(), String.t()}}]
           }
   defstruct __META__: %Package.Meta{opcode: @opcode, flags: 2},
             topics: [],

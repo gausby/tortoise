@@ -80,7 +80,7 @@ defmodule TortoiseTest do
       transforms = [
         publish: fn %type{properties: properties}, [:init] = state ->
           send(parent, {:callback, {type, properties}, state})
-          {:ok, [{"foo", "bar"} | properties], [type | state]}
+          {:ok, [{:user_property, {"foo", "bar"}} | properties], [type | state]}
         end,
         pubrec: fn %type{properties: properties}, state ->
           send(parent, {:callback, {type, properties}, state})
@@ -88,7 +88,7 @@ defmodule TortoiseTest do
         end,
         pubrel: fn %type{properties: properties}, state ->
           send(parent, {:callback, {type, properties}, state})
-          properties = [{"hello", "world"} | properties]
+          properties = [{:user_property, {"hello", "world"}} | properties]
           {:ok, properties, [type | state]}
         end,
         pubcomp: fn %type{properties: properties}, state ->
@@ -110,7 +110,7 @@ defmodule TortoiseTest do
                topic: "foo/bar",
                qos: 2,
                payload: nil,
-               properties: [{"foo", "bar"}]
+               properties: [user_property: {"foo", "bar"}]
              } = Package.decode(data)
 
       :ok = Inflight.update(context.client_id, {:received, %Package.Pubrec{identifier: id}})
@@ -119,7 +119,12 @@ defmodule TortoiseTest do
       :ok = Inflight.update(client_id, {:dispatch, pubrel})
 
       assert {:ok, data} = :gen_tcp.recv(context.server, 0, 500)
-      expected_pubrel = %Package.Pubrel{pubrel | properties: [{"hello", "world"}]}
+
+      expected_pubrel = %Package.Pubrel{
+        pubrel
+        | properties: [user_property: {"hello", "world"}]
+      }
+
       assert expected_pubrel == Package.decode(data)
 
       :ok = Inflight.update(client_id, {:received, %Package.Pubcomp{identifier: id}})
