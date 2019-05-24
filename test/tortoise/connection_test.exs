@@ -680,7 +680,20 @@ defmodule Tortoise.ConnectionTest do
 
       {:ok, {ip, port}} = ScriptedMqttServer.enact(context.scripted_mqtt_server, script)
 
-      handler = {TestHandler, [parent: self()]}
+      handler =
+        {TestHandler,
+         [
+           parent: self(),
+           connection: fn status, state ->
+             send(state.parent, {{TestHandler, :connection}, status})
+
+             fun = fn _ ->
+               send(state.parent, :from_connection_callback)
+             end
+
+             {:cont, state, [{:eval, fun}]}
+           end
+         ]}
 
       opts = [
         client_id: client_id,
@@ -714,7 +727,93 @@ defmodule Tortoise.ConnectionTest do
       assert_receive {{^handler_mod, :init}, ^handler_init_opts}
       assert_receive {{^handler_mod, :connection}, :up}
       assert_receive {{^handler_mod, :terminate}, :shutdown}
+      assert_receive {{^handler_mod, :handle_connack}, %Package.Connack{}}
       refute_receive {{^handler_mod, _}, _}
+
+      # make sure user defined next actions works for the connection
+      # callback
+      assert_receive :from_connection_callback
+    end
+
+    test "user next actions", context do
+      connect = %Package.Connect{client_id: context.client_id}
+      expected_connack = %Package.Connack{reason: :success, session_present: false}
+
+      subscribe = %Package.Subscribe{
+        identifier: 1,
+        properties: [],
+        topics: [
+          {"foo/bar", [qos: 1, no_local: false, retain_as_published: false, retain_handling: 1]}
+        ]
+      }
+
+      unsubscribe = %Package.Unsubscribe{
+        identifier: 2,
+        properties: [],
+        topics: ["foo/bar"]
+      }
+
+      suback = %Package.Suback{identifier: 1, acks: [{:ok, 0}]}
+      unsuback = %Package.Unsuback{identifier: 2, results: [:success]}
+      disconnect = %Package.Disconnect{}
+
+      script = [
+        {:receive, connect},
+        {:send, expected_connack},
+        {:receive, subscribe},
+        {:send, suback},
+        {:receive, unsubscribe},
+        {:send, unsuback},
+        {:receive, disconnect}
+      ]
+
+      {:ok, {ip, port}} = ScriptedMqttServer.enact(context.scripted_mqtt_server, script)
+
+      # the handler will contain a handle connack that will continue
+      # and setup a subscribe command; this should result in the
+      # server receiving a subscribe package.
+      handler =
+        {TestHandler,
+         [
+           parent: self(),
+           handle_connack: fn %Package.Connack{reason: :success}, state ->
+             {:cont, state, [{:subscribe, "foo/bar", qos: 1, identifier: 1}]}
+           end,
+           handle_suback: fn %Package.Subscribe{}, %Package.Suback{}, state ->
+             {:cont, state, [{:unsubscribe, "foo/bar", identifier: 2}]}
+           end,
+           handle_unsuback: fn %Package.Unsubscribe{}, %Package.Unsuback{}, state ->
+             {:cont, state, [:disconnect]}
+           end,
+           terminate: fn reason, %{parent: parent} ->
+             send(parent, {self(), {:terminating, reason}})
+             :ok
+           end
+         ]}
+
+      opts = [
+        client_id: context.client_id,
+        server: {Tortoise.Transport.Tcp, [host: ip, port: port]},
+        handler: handler
+      ]
+
+      assert {:ok, pid} = Connection.start_link(opts)
+      assert_receive {ScriptedMqttServer, {:received, ^connect}}
+      # the handle_connack will setup a subscribe command; tortoise
+      # should subscribe to the topic
+      assert_receive {ScriptedMqttServer, {:received, ^subscribe}}
+      # the handle_suback should generate an unsubscribe command
+      assert_receive {ScriptedMqttServer, {:received, ^unsubscribe}}
+      # the handle_unsuback callback should generate a disconnect
+      # command, which should disconnect the client from the server;
+      # which will receive the disconnect message, and the client
+      # process should terminate and exit
+      assert_receive {ScriptedMqttServer, {:received, ^disconnect}}
+      assert_receive {^pid, {:terminating, :normal}}
+      refute Process.alive?(pid)
+
+      # all done
+      assert_receive {ScriptedMqttServer, :completed}
     end
   end
 
@@ -845,15 +944,26 @@ defmodule Tortoise.ConnectionTest do
   end
 
   describe "Publish with QoS=0" do
-    setup [:setup_scripted_mqtt_server, :setup_connection_and_perform_handshake]
+    # , :setup_connection_and_perform_handshake
+    setup [:setup_scripted_mqtt_server]
 
     test "Receiving a publish", context do
       Process.flag(:trap_exit, true)
+
       publish = %Package.Publish{topic: "foo/bar", qos: 0}
 
-      script = [{:send, publish}]
+      callbacks = [
+        handle_publish: fn topic, %Package.Publish{}, %{parent: parent} = state ->
+          send(parent, {{TestHandler, :handle_publish}, publish})
+          send(parent, {{TestHandler, :altered_topic}, topic})
+          fun = fn _ -> send(parent, {TestHandler, :next_action_triggered}) end
+          {:cont, state, [{:eval, fun}]}
+        end
+      ]
 
-      {:ok, _} = ScriptedMqttServer.enact(context.scripted_mqtt_server, script)
+      {:ok, context} = connect_and_perform_handshake(context, callbacks)
+
+      {:ok, _} = ScriptedMqttServer.enact(context.scripted_mqtt_server, [{:send, publish}])
       pid = context.connection_pid
 
       refute_receive {:EXIT, ^pid, {:protocol_violation, {:unexpected_package, ^publish}}}
@@ -861,6 +971,9 @@ defmodule Tortoise.ConnectionTest do
 
       # the handle publish callback should have been called
       assert_receive {{TestHandler, :handle_publish}, ^publish}
+      expected_topic_list = ["foo", "bar"]
+      assert_receive {{TestHandler, :altered_topic}, ^expected_topic_list}
+      assert_receive {TestHandler, :next_action_triggered}
     end
   end
 
@@ -933,6 +1046,148 @@ defmodule Tortoise.ConnectionTest do
       assert_receive {ScriptedMqttServer, :completed}
       # the caller should receive an :ok for the ref when it is published
       assert_receive {:sync_call_result, ^test_ref, :ok}
+    end
+  end
+
+  describe "next actions" do
+    setup [:setup_scripted_mqtt_server]
+
+    test "Handling next actions from handle_puback callback", context do
+      Process.flag(:trap_exit, true)
+      scripted_mqtt_server = context.scripted_mqtt_server
+      client_id = context.client_id
+
+      script = [
+        {:receive, %Package.Connect{client_id: client_id}},
+        {:send, %Package.Connack{reason: :success, session_present: false}}
+      ]
+
+      {:ok, {ip, port}} = ScriptedMqttServer.enact(scripted_mqtt_server, script)
+
+      handler_opts = [
+        parent: self(),
+        handle_puback: fn %Package.Puback{}, state ->
+          {:cont, state, [{:subscribe, "foo/bar", qos: 0, identifier: 2}]}
+        end
+      ]
+
+      opts = [
+        client_id: client_id,
+        server: {Tortoise.Transport.Tcp, [host: ip, port: port]},
+        handler: {TestHandler, handler_opts}
+      ]
+
+      assert {:ok, connection_pid} = Connection.start_link(opts)
+
+      assert_receive {ScriptedMqttServer, {:received, %Package.Connect{}}}
+      assert_receive {ScriptedMqttServer, :completed}
+
+      publish = %Package.Publish{identifier: 1, topic: "foo/bar", qos: 1}
+      puback = %Package.Puback{identifier: 1}
+
+      default_subscription_opts = [
+        no_local: false,
+        retain_as_published: false,
+        retain_handling: 1
+      ]
+
+      subscribe =
+        Enum.into(
+          [{"foo/bar", [{:qos, 0} | default_subscription_opts]}],
+          %Package.Subscribe{identifier: 2}
+        )
+
+      suback = %Package.Suback{identifier: 2, acks: [{:ok, 0}]}
+
+      script = [
+        {:receive, publish},
+        {:send, puback},
+        {:receive, subscribe},
+        {:send, suback}
+      ]
+
+      {:ok, _} = ScriptedMqttServer.enact(context.scripted_mqtt_server, script)
+      pid = connection_pid
+
+      client_id = context.client_id
+      assert {:ok, ref} = Inflight.track(client_id, {:outgoing, publish})
+
+      refute_receive {:EXIT, ^pid, {:protocol_violation, {:unexpected_package, _}}}
+      assert_receive {ScriptedMqttServer, {:received, ^publish}}
+      assert_receive {ScriptedMqttServer, {:received, ^subscribe}}
+      assert_receive {ScriptedMqttServer, :completed}
+      # the caller should receive an :ok for the ref when it is published
+      assert_receive {{Tortoise, ^client_id}, {Package.Publish, ^ref}, :ok}
+      assert_receive {{TestHandler, :handle_suback}, {_subscribe, _suback}}
+    end
+
+    test "Handling next actions from handle_pubrel and handle_pubcomp callback", context do
+      Process.flag(:trap_exit, true)
+      scripted_mqtt_server = context.scripted_mqtt_server
+      client_id = context.client_id
+      expected_connack = %Package.Connack{reason: :success, session_present: false}
+
+      script = [
+        {:receive, %Package.Connect{client_id: client_id}},
+        {:send, expected_connack}
+      ]
+
+      {:ok, {ip, port}} = ScriptedMqttServer.enact(scripted_mqtt_server, script)
+
+      test_process = self()
+
+      send_back = fn package ->
+        fn _state ->
+          send(test_process, {:next_action_from, package})
+        end
+      end
+
+      handler_opts = [
+        parent: self(),
+        handle_connack: fn package, state ->
+          {:cont, state, [{:eval, send_back.(package)}]}
+        end,
+        handle_pubrec: fn package, state ->
+          {:cont, state, [{:eval, send_back.(package)}]}
+        end,
+        handle_pubcomp: fn package, state ->
+          {:cont, state, [{:eval, send_back.(package)}]}
+        end
+      ]
+
+      opts = [
+        client_id: client_id,
+        server: {Tortoise.Transport.Tcp, [host: ip, port: port]},
+        handler: {TestHandler, handler_opts}
+      ]
+
+      assert {:ok, connection_pid} = Connection.start_link(opts)
+      assert_receive {ScriptedMqttServer, {:received, %Package.Connect{}}}
+      assert_receive {ScriptedMqttServer, :completed}
+
+      publish = %Package.Publish{identifier: 1, topic: "foo/bar", qos: 2}
+      pubrec = %Package.Pubrec{identifier: 1}
+      pubrel = %Package.Pubrel{identifier: 1}
+      pubcomp = %Package.Pubcomp{identifier: 1}
+
+      script = [
+        {:receive, publish},
+        {:send, pubrec},
+        {:receive, pubrel},
+        {:send, pubcomp}
+      ]
+
+      {:ok, _} = ScriptedMqttServer.enact(scripted_mqtt_server, script)
+
+      assert {:ok, ref} = Inflight.track(context.client_id, {:outgoing, publish})
+
+      assert_receive {ScriptedMqttServer, :completed}
+      assert_receive {ScriptedMqttServer, {:received, %Package.Publish{}}}
+      assert_receive {ScriptedMqttServer, {:received, %Package.Pubrel{}}}
+
+      assert_receive {:next_action_from, ^expected_connack}
+      assert_receive {:next_action_from, ^pubrec}
+      assert_receive {:next_action_from, ^pubcomp}
     end
   end
 
@@ -1056,7 +1311,7 @@ defmodule Tortoise.ConnectionTest do
   end
 
   describe "Disconnect" do
-    setup [:setup_scripted_mqtt_server, :setup_connection_and_perform_handshake]
+    setup [:setup_scripted_mqtt_server]
 
     # [x] :normal_disconnection
     # [ ] :unspecified_error
@@ -1090,18 +1345,72 @@ defmodule Tortoise.ConnectionTest do
     test "normal disconnection", context do
       Process.flag(:trap_exit, true)
       disconnect = %Package.Disconnect{reason: :normal_disconnection}
-      script = [{:send, disconnect}]
 
+      callbacks = [
+        handle_disconnect: fn %Package.Disconnect{} = disconnect, state ->
+          send(state.parent, {{TestHandler, :handle_disconnect}, disconnect})
+          {:stop, :normal, state}
+        end
+      ]
+
+      {:ok, %{connection_pid: pid} = context} = connect_and_perform_handshake(context, callbacks)
+
+      script = [{:send, disconnect}]
       {:ok, _} = ScriptedMqttServer.enact(context.scripted_mqtt_server, script)
-      pid = context.connection_pid
 
       refute_receive {:EXIT, ^pid, {:protocol_violation, {:unexpected_package, ^disconnect}}}
       assert_receive {ScriptedMqttServer, :completed}
 
       # the handle disconnect callback should have been called
       assert_receive {{TestHandler, :handle_disconnect}, ^disconnect}
-      # the callback handler will tell it to stop normally
+      # the callback tells it to stop normally
       assert_receive {:EXIT, ^pid, :normal}
     end
+
+    test "handle_disconnect producing next action", context do
+      disconnect = %Package.Disconnect{reason: :normal_disconnection}
+
+      callbacks = [
+        handle_disconnect: fn %Package.Disconnect{} = disconnect, state ->
+          %{parent: parent} = state
+          send(parent, {{TestHandler, :handle_disconnect}, disconnect})
+          fun = fn _ -> send(parent, {TestHandler, :from_eval_fun}) end
+          {:cont, state, [{:eval, fun}]}
+        end
+      ]
+
+      {:ok, context} = connect_and_perform_handshake(context, callbacks)
+
+      script = [{:send, disconnect}]
+      {:ok, _} = ScriptedMqttServer.enact(context.scripted_mqtt_server, script)
+
+      assert_receive {ScriptedMqttServer, :completed}
+      # the handle disconnect callback should have been called
+      assert_receive {{TestHandler, :handle_disconnect}, ^disconnect}
+      assert_receive {TestHandler, :from_eval_fun}
+    end
+  end
+
+  defp connect_and_perform_handshake(%{client_id: client_id} = context, callbacks) do
+    script = [
+      {:receive, %Package.Connect{client_id: client_id}},
+      {:send, %Package.Connack{reason: :success, session_present: false}}
+    ]
+
+    {:ok, {ip, port}} = ScriptedMqttServer.enact(context.scripted_mqtt_server, script)
+
+    opts = [
+      client_id: context.client_id,
+      server: {Tortoise.Transport.Tcp, [host: ip, port: port]},
+      handler: {TestHandler, Keyword.merge([parent: self()], callbacks)}
+    ]
+
+    {:ok, connection_pid} = Connection.start_link(opts)
+
+    assert_receive {{TestHandler, :init}, _}
+    assert_receive {ScriptedMqttServer, {:received, %Package.Connect{}}}
+    assert_receive {ScriptedMqttServer, :completed}
+
+    {:ok, Map.put(context, :connection_pid, connection_pid)}
   end
 end

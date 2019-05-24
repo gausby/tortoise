@@ -618,7 +618,24 @@ defmodule Tortoise.Handler do
   defp transform_result({cont, updated_state, next_actions}) when is_list(next_actions) do
     case Enum.split_with(next_actions, &valid_next_action?/1) do
       {_, []} ->
-        {cont, updated_state, next_actions}
+        # add option lists to next actions that do not have them yet,
+        # this could probably be done in a smarter way; a function
+        # that both validate and coerce the arguments in one pass
+        coerced_next_actions =
+          for action <- next_actions do
+            case action do
+              {:subscribe, topic} ->
+                {:subscribe, topic, []}
+
+              {:unsubscribe, topic} ->
+                {:unsubscribe, topic, []}
+
+              otherwise ->
+                otherwise
+            end
+          end
+
+        {cont, updated_state, coerced_next_actions}
 
       {_, invalid_next_actions} ->
         {:error, {:invalid_next_action, invalid_next_actions}}
@@ -629,13 +646,24 @@ defmodule Tortoise.Handler do
     transform_result({cont, updated_state, []})
   end
 
+  # subscribe
+  defp valid_next_action?({:subscribe, topic}), do: is_binary(topic)
+
   defp valid_next_action?({:subscribe, topic, opts}) do
     is_binary(topic) and is_list(opts)
   end
 
-  defp valid_next_action?({:unsubscribe, topic}) do
-    is_binary(topic)
+  # unsubscribe
+  defp valid_next_action?({:unsubscribe, topic}), do: is_binary(topic)
+
+  defp valid_next_action?({:unsubscribe, topic, opts}) do
+    is_binary(topic) and is_list(opts)
   end
+
+  # disconnect
+  defp valid_next_action?(:disconnect), do: true
+
+  defp valid_next_action?({:eval, fun}) when is_function(fun, 1), do: true
 
   defp valid_next_action?(_otherwise), do: false
 end

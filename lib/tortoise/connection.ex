@@ -427,8 +427,7 @@ defmodule Tortoise.Connection do
         } = data
       ) do
     case Handler.execute_handle_connack(handler, connack) do
-      {:ok, %Handler{} = updated_handler, _next_actions} ->
-        # todo, add support for next actions
+      {:ok, %Handler{} = updated_handler, next_actions} ->
         :ok = Tortoise.Registry.put_meta(via_name(client_id), data.connection)
         :ok = Events.dispatch(client_id, :connection, data.connection)
         :ok = Events.dispatch(client_id, :status, :connected)
@@ -437,6 +436,9 @@ defmodule Tortoise.Connection do
         next_actions = [
           {:state_timeout, keep_alive * 1000, :keep_alive},
           {:next_event, :internal, {:execute_handler, {:connection, :up}}}
+          | for action <- next_actions do
+              {:next_event, :internal, {:user_action, action}}
+            end
         ]
 
         {:next_state, :connected, data, next_actions}
@@ -471,10 +473,9 @@ defmodule Tortoise.Connection do
         %State{handler: handler} = data
       ) do
     case Handler.execute_handle_publish(handler, publish) do
-      {:ok, %Handler{} = updated_handler, _next_actions} ->
-        # todo, handle next_actions
+      {:ok, %Handler{} = updated_handler, next_actions} ->
         updated_data = %State{data | handler: updated_handler}
-        {:keep_state, updated_data}
+        {:keep_state, updated_data, wrap_next_actions(next_actions)}
 
         # handle stop
     end
@@ -502,10 +503,9 @@ defmodule Tortoise.Connection do
     :ok = Inflight.update(client_id, {:received, puback})
 
     case Handler.execute_handle_puback(handler, puback) do
-      {:ok, %Handler{} = updated_handler, _next_actions} ->
-        # todo, handle next_actions
+      {:ok, %Handler{} = updated_handler, next_actions} ->
         updated_data = %State{data | handler: updated_handler}
-        {:keep_state, updated_data}
+        {:keep_state, updated_data, wrap_next_actions(next_actions)}
 
       {:error, reason} ->
         # todo
@@ -524,12 +524,11 @@ defmodule Tortoise.Connection do
 
     case Handler.execute_handle_pubrel(handler, pubrel) do
       {:ok, %Package.Pubcomp{identifier: ^id} = pubcomp, %Handler{} = updated_handler,
-       _next_actions} ->
-        # todo, handle next actions
+       next_actions} ->
         # dispatch the pubcomp
         :ok = Inflight.update(client_id, {:dispatch, pubcomp})
         updated_data = %State{data | handler: updated_handler}
-        {:keep_state, updated_data}
+        {:keep_state, updated_data, wrap_next_actions(next_actions)}
 
       {:error, reason} ->
         # todo
@@ -587,11 +586,10 @@ defmodule Tortoise.Connection do
     :ok = Inflight.update(client_id, {:received, pubrec})
 
     case Handler.execute_handle_pubrec(handler, pubrec) do
-      {:ok, %Package.Pubrel{identifier: ^id} = pubrel, %Handler{} = updated_handler,
-       _next_actions} ->
+      {:ok, %Package.Pubrel{identifier: ^id} = pubrel, %Handler{} = updated_handler, next_actions} ->
         updated_data = %State{data | handler: updated_handler}
         :ok = Inflight.update(client_id, {:dispatch, pubrel})
-        {:keep_state, updated_data}
+        {:keep_state, updated_data, wrap_next_actions(next_actions)}
 
       {:error, reason} ->
         # todo
@@ -608,10 +606,9 @@ defmodule Tortoise.Connection do
     :ok = Inflight.update(client_id, {:received, pubcomp})
 
     case Handler.execute_handle_pubcomp(handler, pubcomp) do
-      {:ok, %Handler{} = updated_handler, _next_actions} ->
-        # todo, handle next actions
+      {:ok, %Handler{} = updated_handler, next_actions} ->
         updated_data = %State{data | handler: updated_handler}
-        {:keep_state, updated_data}
+        {:keep_state, updated_data, wrap_next_actions(next_actions)}
 
       {:error, reason} ->
         # todo
@@ -681,9 +678,7 @@ defmodule Tortoise.Connection do
 
         next_actions = [
           {:next_event, :internal, {:reply, {pid, msg_ref}, :ok}}
-          | for action <- next_actions do
-              {:next_event, :internal, action}
-            end
+          | wrap_next_actions(next_actions)
         ]
 
         {:keep_state, data, next_actions}
@@ -757,9 +752,7 @@ defmodule Tortoise.Connection do
 
         next_actions = [
           {:next_event, :internal, {:reply, {pid, msg_ref}, :ok}}
-          | for action <- next_actions do
-              {:next_event, :internal, action}
-            end
+          | wrap_next_actions(next_actions)
         ]
 
         {:keep_state, data, next_actions}
@@ -775,6 +768,42 @@ defmodule Tortoise.Connection do
     {:keep_state_and_data, next_actions}
   end
 
+  # User actions are actions returned by the user defined callbacks;
+  # They inform the connection to perform an action, such as
+  # subscribing to a topic, and they are validated by the handler
+  # module, so there is no need to coerce here
+  def handle_event(:internal, {:user_action, action}, _, %State{client_id: client_id} = state) do
+    case action do
+      {:subscribe, topic, opts} when is_binary(topic) ->
+        caller = {self(), make_ref()}
+        {identifier, opts} = Keyword.pop_first(opts, :identifier, nil)
+        subscribe = %Package.Subscribe{identifier: identifier, topics: [{topic, opts}]}
+        next_actions = [{:next_event, :cast, {:subscribe, caller, subscribe, opts}}]
+        {:keep_state_and_data, next_actions}
+
+      {:unsubscribe, topic, opts} when is_binary(topic) ->
+        caller = {self(), make_ref()}
+        {identifier, opts} = Keyword.pop_first(opts, :identifier, nil)
+        subscribe = %Package.Unsubscribe{identifier: identifier, topics: [topic]}
+        next_actions = [{:next_event, :cast, {:unsubscribe, caller, subscribe, opts}}]
+        {:keep_state_and_data, next_actions}
+
+      :disconnect ->
+        :ok = Events.dispatch(client_id, :status, :terminating)
+        :ok = Inflight.drain(client_id)
+        {:stop, :normal}
+
+      {:eval, fun} when is_function(fun, 1) ->
+        try do
+          apply(fun, [state])
+        rescue
+          _disregard -> nil
+        end
+
+        {:keep_state, state}
+    end
+  end
+
   # dispatch to user defined handler
   def handle_event(
         :internal,
@@ -783,10 +812,9 @@ defmodule Tortoise.Connection do
         %State{handler: handler} = data
       ) do
     case Handler.execute_connection(handler, status) do
-      {:ok, %Handler{} = updated_handler, _next_actions} ->
-        # todo handle next_actions
+      {:ok, %Handler{} = updated_handler, next_actions} ->
         updated_data = %State{data | handler: updated_handler}
-        {:keep_state, updated_data}
+        {:keep_state, updated_data, wrap_next_actions(next_actions)}
 
         # handle stop
     end
@@ -918,9 +946,8 @@ defmodule Tortoise.Connection do
         %State{handler: handler} = data
       ) do
     case Handler.execute_handle_disconnect(handler, disconnect) do
-      {:cont, updated_handler, _next_actions} ->
-        # todo, handle next_actions
-        {:keep_state, %State{data | handler: updated_handler}}
+      {:ok, updated_handler, next_actions} ->
+        {:keep_state, %State{data | handler: updated_handler}, wrap_next_actions(next_actions)}
 
       {:stop, reason, updated_handler} ->
         {:stop, reason, %State{data | handler: updated_handler}}
@@ -972,4 +999,14 @@ defmodule Tortoise.Connection do
         :ok
     end
   end
+
+  # wrapping the user specified next actions in gen_statem next actions;
+  # this is used in all the handle callback functions, so we inline it
+  defp wrap_next_actions(next_actions) do
+    for action <- next_actions do
+      {:next_event, :internal, {:user_action, action}}
+    end
+  end
+
+  @compile {:inline, wrap_next_actions: 1}
 end

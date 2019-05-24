@@ -328,7 +328,7 @@ defmodule Tortoise.HandlerTest do
       suback_fn = fn ^subscribe, ^suback, state -> {:cont, state, next_actions} end
       handler = set_state(context.handler, suback: suback_fn)
 
-      assert {:ok, %Handler{} = state, ^next_actions} =
+      assert {:ok, %Handler{} = state, [{:unsubscribe, "foo/bar", []}]} =
                Handler.execute_handle_suback(handler, subscribe, suback)
     end
   end
@@ -351,7 +351,7 @@ defmodule Tortoise.HandlerTest do
       unsuback_fn = fn ^unsubscribe, ^unsuback, state -> {:cont, state, next_actions} end
       handler = set_state(context.handler, unsuback: unsuback_fn)
 
-      assert {:ok, %Handler{} = state, ^next_actions} =
+      assert {:ok, %Handler{} = state, [{:unsubscribe, "foo/bar", []}]} =
                Handler.execute_handle_unsuback(handler, unsubscribe, unsuback)
     end
   end
