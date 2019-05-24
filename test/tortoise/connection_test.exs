@@ -736,6 +736,7 @@ defmodule Tortoise.ConnectionTest do
     end
 
     test "user next actions", context do
+      Process.flag(:trap_exit, true)
       connect = %Package.Connect{client_id: context.client_id}
       expected_connack = %Package.Connack{reason: :success, session_present: false}
 
@@ -810,7 +811,6 @@ defmodule Tortoise.ConnectionTest do
       # process should terminate and exit
       assert_receive {ScriptedMqttServer, {:received, ^disconnect}}
       assert_receive {^pid, {:terminating, :normal}}
-      refute Process.alive?(pid)
 
       # all done
       assert_receive {ScriptedMqttServer, :completed}
