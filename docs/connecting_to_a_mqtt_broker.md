@@ -67,9 +67,11 @@ configuration options. The most important additional options are:
     possible to pass a list of binary (DER encoded) root CA
     certificates using the `cacerts` option instead.
   - `certfile` and `keyfile` are needed if the server authenticates
-    clients using a client certificate. The `cert` and `key` options
-    can be used instead to pass the client certificate and key as
-    DER binaries instead of paths.
+    clients using a client certificate. The `cert` option can be
+    used to pass the client certificate as DER binary, and the
+    `key` option can be used to pass the key using
+    [Erlang's ssl format](http://erlang.org/doc/man/ssl.html#type-key)
+    (e.g. `{:RSAPrivateKey, der_binary_key}`).
   - `verify` defaults to `:verify_peer`, enabling server certificate
     verification. To override, include `verify: :verify_none` in the
     server options. In that case there is no need to define CA
