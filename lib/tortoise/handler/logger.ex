@@ -39,7 +39,7 @@ defmodule Tortoise.Handler.Logger do
   end
 
   def handle_connack(%Package.Connack{reason: {:refused, refusal}}, state) do
-    Logger.error("Server refused connection: #{inspect refusal}")
+    Logger.error("Server refused connection: #{inspect(refusal)}")
     {:cont, state}
   end
 
@@ -51,12 +51,15 @@ defmodule Tortoise.Handler.Logger do
           Logger.info("Subscribed to #{topic} with the expected qos: #{qos}")
 
         {req_qos, {:ok, accepted_qos}} ->
-          Logger.warn("Subscribed to #{topic} with QoS #{req_qos} but got accepted as #{accepted_qos}")
+          Logger.warn(
+            "Subscribed to #{topic} with QoS #{req_qos} but got accepted as #{accepted_qos}"
+          )
 
         {_, {:error, reason}} ->
-          Logger.error("Failed to subscribe to topic: #{topic} reason: #{inspect reason}")
+          Logger.error("Failed to subscribe to topic: #{topic} reason: #{inspect(reason)}")
       end
     end
+
     {:cont, state}
   end
 
@@ -68,6 +71,7 @@ defmodule Tortoise.Handler.Logger do
           Logger.info("Successfully unsubscribed from #{topic}")
       end
     end
+
     {:cont, state}
   end
 

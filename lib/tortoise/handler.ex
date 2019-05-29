@@ -338,7 +338,12 @@ defmodule Tortoise.Handler do
             when reason: :normal | :shutdown | {:shutdown, term()},
                  ignored: term()
 
-  @optional_callbacks status_change: 2, handle_pubrec: 2, handle_pubrel: 2, handle_pubcomp: 2, handle_puback: 2, terminate: 2
+  @optional_callbacks status_change: 2,
+                      handle_pubrec: 2,
+                      handle_pubrel: 2,
+                      handle_pubcomp: 2,
+                      handle_puback: 2,
+                      terminate: 2
 
   @doc false
   @spec execute_init(t) :: {:ok, t} | :ignore | {:stop, term()}

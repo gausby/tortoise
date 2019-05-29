@@ -406,9 +406,10 @@ defmodule Tortoise.Connection do
 
   @impl true
   def terminate(reason, _state, %State{handler: handler}) do
-    _ignored = if function_exported?(handler.module, :terminate, 2) do
-      Handler.execute_terminate(handler, reason)
-    end
+    _ignored =
+      if function_exported?(handler.module, :terminate, 2) do
+        Handler.execute_terminate(handler, reason)
+      end
   end
 
   @impl true
@@ -527,7 +528,7 @@ defmodule Tortoise.Connection do
     if function_exported?(handler.module, :handle_pubrel, 2) do
       case Handler.execute_handle_pubrel(handler, pubrel) do
         {:ok, %Package.Pubcomp{identifier: ^id} = pubcomp, %Handler{} = updated_handler,
-          next_actions} ->
+         next_actions} ->
           # dispatch the pubcomp
           :ok = Inflight.update(client_id, {:dispatch, pubcomp})
           updated_data = %State{data | handler: updated_handler}
@@ -595,7 +596,8 @@ defmodule Tortoise.Connection do
 
     if function_exported?(handler.module, :handle_pubrec, 2) do
       case Handler.execute_handle_pubrec(handler, pubrec) do
-        {:ok, %Package.Pubrel{identifier: ^id} = pubrel, %Handler{} = updated_handler, next_actions} ->
+        {:ok, %Package.Pubrel{identifier: ^id} = pubrel, %Handler{} = updated_handler,
+         next_actions} ->
           updated_data = %State{data | handler: updated_handler}
           :ok = Inflight.update(client_id, {:dispatch, pubrel})
           {:keep_state, updated_data, wrap_next_actions(next_actions)}
