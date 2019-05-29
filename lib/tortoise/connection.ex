@@ -522,17 +522,23 @@ defmodule Tortoise.Connection do
       ) do
     :ok = Inflight.update(client_id, {:received, pubrel})
 
-    case Handler.execute_handle_pubrel(handler, pubrel) do
-      {:ok, %Package.Pubcomp{identifier: ^id} = pubcomp, %Handler{} = updated_handler,
-       next_actions} ->
-        # dispatch the pubcomp
-        :ok = Inflight.update(client_id, {:dispatch, pubcomp})
-        updated_data = %State{data | handler: updated_handler}
-        {:keep_state, updated_data, wrap_next_actions(next_actions)}
+    if function_exported?(handler.module, :handle_pubrel, 2) do
+      case Handler.execute_handle_pubrel(handler, pubrel) do
+        {:ok, %Package.Pubcomp{identifier: ^id} = pubcomp, %Handler{} = updated_handler,
+          next_actions} ->
+          # dispatch the pubcomp
+          :ok = Inflight.update(client_id, {:dispatch, pubcomp})
+          updated_data = %State{data | handler: updated_handler}
+          {:keep_state, updated_data, wrap_next_actions(next_actions)}
 
-      {:error, reason} ->
-        # todo
-        {:stop, reason, data}
+        {:error, reason} ->
+          # todo
+          {:stop, reason, data}
+      end
+    else
+      pubcomp = %Package.Pubcomp{identifier: id}
+      :ok = Inflight.update(client_id, {:dispatch, pubcomp})
+      :keep_state_and_data
     end
   end
 
@@ -585,15 +591,21 @@ defmodule Tortoise.Connection do
       ) do
     :ok = Inflight.update(client_id, {:received, pubrec})
 
-    case Handler.execute_handle_pubrec(handler, pubrec) do
-      {:ok, %Package.Pubrel{identifier: ^id} = pubrel, %Handler{} = updated_handler, next_actions} ->
-        updated_data = %State{data | handler: updated_handler}
-        :ok = Inflight.update(client_id, {:dispatch, pubrel})
-        {:keep_state, updated_data, wrap_next_actions(next_actions)}
+    if function_exported?(handler.module, :handle_pubrec, 2) do
+      case Handler.execute_handle_pubrec(handler, pubrec) do
+        {:ok, %Package.Pubrel{identifier: ^id} = pubrel, %Handler{} = updated_handler, next_actions} ->
+          updated_data = %State{data | handler: updated_handler}
+          :ok = Inflight.update(client_id, {:dispatch, pubrel})
+          {:keep_state, updated_data, wrap_next_actions(next_actions)}
 
-      {:error, reason} ->
-        # todo
-        {:stop, reason, data}
+        {:error, reason} ->
+          # todo
+          {:stop, reason, data}
+      end
+    else
+      pubrel = %Package.Pubrel{identifier: id}
+      :ok = Inflight.update(client_id, {:dispatch, pubrel})
+      :keep_state_and_data
     end
   end
 
@@ -605,14 +617,18 @@ defmodule Tortoise.Connection do
       ) do
     :ok = Inflight.update(client_id, {:received, pubcomp})
 
-    case Handler.execute_handle_pubcomp(handler, pubcomp) do
-      {:ok, %Handler{} = updated_handler, next_actions} ->
-        updated_data = %State{data | handler: updated_handler}
-        {:keep_state, updated_data, wrap_next_actions(next_actions)}
+    if function_exported?(handler.module, :handle_pubcomp, 2) do
+      case Handler.execute_handle_pubcomp(handler, pubcomp) do
+        {:ok, %Handler{} = updated_handler, next_actions} ->
+          updated_data = %State{data | handler: updated_handler}
+          {:keep_state, updated_data, wrap_next_actions(next_actions)}
 
-      {:error, reason} ->
-        # todo
-        {:stop, reason, data}
+        {:error, reason} ->
+          # todo
+          {:stop, reason, data}
+      end
+    else
+      :keep_state_and_data
     end
   end
 
