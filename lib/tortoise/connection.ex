@@ -406,7 +406,9 @@ defmodule Tortoise.Connection do
 
   @impl true
   def terminate(reason, _state, %State{handler: handler}) do
-    _ignored = Handler.execute_terminate(handler, reason)
+    _ignored = if function_exported?(handler.module, :terminate, 2) do
+      Handler.execute_terminate(handler, reason)
+    end
   end
 
   @impl true
