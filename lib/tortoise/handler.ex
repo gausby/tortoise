@@ -134,7 +134,7 @@ defmodule Tortoise.Handler do
 
       @impl true
       def handle_publish(_topic_list, _publish, state) do
-        {:cont, state, []}
+        {:cont, state}
       end
 
       @impl true
