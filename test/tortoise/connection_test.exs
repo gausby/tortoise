@@ -684,8 +684,8 @@ defmodule Tortoise.ConnectionTest do
         {TestHandler,
          [
            parent: self(),
-           connection: fn status, state ->
-             send(state.parent, {{TestHandler, :connection}, status})
+           status_change: fn status, state ->
+             send(state.parent, {{TestHandler, :status_change}, status})
 
              fun = fn _ ->
                send(state.parent, :from_connection_callback)
@@ -725,7 +725,7 @@ defmodule Tortoise.ConnectionTest do
       # triggered during this exchange
       {handler_mod, handler_init_opts} = handler
       assert_receive {{^handler_mod, :init}, ^handler_init_opts}
-      assert_receive {{^handler_mod, :connection}, :up}
+      assert_receive {{^handler_mod, :status_change}, :up}
       assert_receive {{^handler_mod, :terminate}, :shutdown}
       assert_receive {{^handler_mod, :handle_connack}, %Package.Connack{}}
       refute_receive {{^handler_mod, _}, _}

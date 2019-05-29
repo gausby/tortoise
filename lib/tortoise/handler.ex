@@ -133,11 +133,6 @@ defmodule Tortoise.Handler do
       end
 
       @impl true
-      def connection(_status, state) do
-        {:cont, state}
-      end
-
-      @impl true
       def handle_connack(_connack, state) do
         {:cont, state}
       end
@@ -227,9 +222,9 @@ defmodule Tortoise.Handler do
   a list of next actions such as `{:unsubscribe, "foo/bar"}` will
   result in the state being returned and the next actions performed.
   """
-  @callback connection(status, state :: term()) ::
-              {:ok, new_state}
-              | {:ok, new_state, [next_action()]}
+  @callback status_change(status, state :: term()) ::
+              {:cont, new_state}
+              | {:cont, new_state, [next_action()]}
             when status: :up | :down,
                  new_state: term()
 
@@ -368,6 +363,8 @@ defmodule Tortoise.Handler do
             when reason: :normal | :shutdown | {:shutdown, term()},
                  ignored: term()
 
+  @optional_callbacks status_change: 2
+
   @doc false
   @spec execute_init(t) :: {:ok, t} | :ignore | {:stop, term()}
   def execute_init(handler) do
@@ -385,11 +382,13 @@ defmodule Tortoise.Handler do
     end
   end
 
+  # todo, fix the type spec here so it contain the next actions and
+  # error path as well
   @doc false
-  @spec execute_connection(t, status) :: {:ok, t}
+  @spec execute_status_change(t, status) :: {:ok, t}
         when status: :up | :down
-  def execute_connection(handler, status) do
-    apply(handler.module, :connection, [status, handler.state])
+  def execute_status_change(handler, status) do
+    apply(handler.module, :status_change, [status, handler.state])
     |> transform_result()
     |> case do
       {:cont, updated_state, next_actions} ->

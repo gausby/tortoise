@@ -31,10 +31,10 @@ defmodule TestHandler do
     end
   end
 
-  def connection(status, state) do
-    case state[:connection] do
+  def status_change(status, state) do
+    case state[:status_change] do
       nil ->
-        send(state[:parent], {{__MODULE__, :connection}, status})
+        send(state[:parent], {{__MODULE__, :status_change}, status})
         {:cont, state}
 
       fun when is_function(fun, 2) ->

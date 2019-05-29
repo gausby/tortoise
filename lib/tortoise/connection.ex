@@ -811,12 +811,16 @@ defmodule Tortoise.Connection do
         :connected,
         %State{handler: handler} = data
       ) do
-    case Handler.execute_connection(handler, status) do
-      {:ok, %Handler{} = updated_handler, next_actions} ->
-        updated_data = %State{data | handler: updated_handler}
-        {:keep_state, updated_data, wrap_next_actions(next_actions)}
+    if function_exported?(handler.module, :status_change, 2) do
+      case Handler.execute_status_change(handler, status) do
+        {:ok, %Handler{} = updated_handler, next_actions} ->
+          updated_data = %State{data | handler: updated_handler}
+          {:keep_state, updated_data, wrap_next_actions(next_actions)}
 
-        # handle stop
+          # handle stop
+      end
+    else
+      :keep_state_and_data
     end
   end
 

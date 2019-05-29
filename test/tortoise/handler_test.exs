@@ -45,8 +45,8 @@ defmodule Tortoise.HandlerTest do
       end
     end
 
-    def connection(status, state) do
-      case state[:connection] do
+    def status_change(status, state) do
+      case state[:status_change] do
         nil ->
           {:cont, state}
 
@@ -188,41 +188,41 @@ defmodule Tortoise.HandlerTest do
     end
   end
 
-  describe "execute connection/2" do
+  describe "execute status_change/2" do
     test "return continues", context do
       parent = self()
 
-      connection_fn = fn status, state ->
-        send(parent, {:connection, status})
+      status_change_fn = fn status, state ->
+        send(parent, {:status_change, status})
         {:cont, state}
       end
 
-      handler = set_state(context.handler, connection: connection_fn)
-      assert {:ok, %Handler{}, []} = Handler.execute_connection(handler, :up)
-      assert_receive {:connection, :up}
+      handler = set_state(context.handler, status_change: status_change_fn)
+      assert {:ok, %Handler{}, []} = Handler.execute_status_change(handler, :up)
+      assert_receive {:status_change, :up}
 
-      assert {:ok, %Handler{}, []} = Handler.execute_connection(handler, :down)
-      assert_receive {:connection, :down}
+      assert {:ok, %Handler{}, []} = Handler.execute_status_change(handler, :down)
+      assert_receive {:status_change, :down}
     end
 
     test "return continue with next actions", context do
       next_actions = [{:subscribe, "foo/bar", qos: 0}]
       parent = self()
 
-      connection_fn = fn status, state ->
-        send(parent, {:connection, status})
+      status_change_fn = fn status, state ->
+        send(parent, {:status_change, status})
         {:cont, state, next_actions}
       end
 
-      handler = set_state(context.handler, connection: connection_fn)
+      handler = set_state(context.handler, status_change: status_change_fn)
 
-      assert {:ok, %Handler{}, ^next_actions} = Handler.execute_connection(handler, :up)
+      assert {:ok, %Handler{}, ^next_actions} = Handler.execute_status_change(handler, :up)
 
-      assert_receive {:connection, :up}
+      assert_receive {:status_change, :up}
 
-      assert {:ok, %Handler{}, ^next_actions} = Handler.execute_connection(handler, :down)
+      assert {:ok, %Handler{}, ^next_actions} = Handler.execute_status_change(handler, :down)
 
-      assert_receive {:connection, :down}
+      assert_receive {:status_change, :down}
     end
   end
 

@@ -17,17 +17,17 @@ defmodule Tortoise.Handler.Logger do
   end
 
   @impl true
-  def connection(:up, state) do
+  def status_change(:up, state) do
     Logger.info("Connection has been established")
     {:cont, state}
   end
 
-  def connection(:down, state) do
+  def status_change(:down, state) do
     Logger.warn("Connection has been dropped")
     {:cont, state}
   end
 
-  def connection(:terminating, state) do
+  def status_change(:terminating, state) do
     Logger.warn("Connection is terminating")
     {:cont, state}
   end
