@@ -203,56 +203,11 @@ defmodule Tortoise.Handler do
             when status: :up | :down,
                  new_state: term()
 
-  # todo, connection/2 should perhaps be handle_connack ?
-
   @callback handle_connack(connack, state :: term()) ::
               {:ok, new_state}
               | {:ok, new_state, [next_action()]}
             when connack: Package.Connack.t(),
                  new_state: term()
-
-  # todo, handle_auth
-
-  # @doc """
-  # Invoked when the subscription of a topic filter changes status.
-
-  # The `status` of a subscription can be one of:
-
-  #   - `:up`, triggered when the subscription has been accepted by the
-  #     MQTT broker with the requested quality of service
-
-  #   - `{:warn, [requested: req_qos, accepted: qos]}`, triggered when
-  #      the subscription is accepted by the MQTT broker, but with a
-  #      different quality of service `qos` than the one requested
-  #      `req_qos`
-
-  #   - `{:error, reason}`, triggered when the subscription is rejected
-  #     with the reason `reason` such as `:access_denied`
-
-  #   - `:down`, triggered when the subscription of the given topic
-  #     filter has been successfully acknowledged as unsubscribed by the
-  #     MQTT broker
-
-  # The `topic_filter` is the topic filter in question, and the `state`
-  # is the internal state being passed through transitions.
-
-  # Returning `{:ok, new_state}` will set the state for later
-  # invocations.
-
-  # Returning `{:ok, new_state, next_actions}`, where `next_actions` is
-  # a list of next actions such as `{:unsubscribe, "foo/bar"}` will
-  # result in the state being returned and the next actions performed.
-  # """
-  # @callback subscription(status, topic_filter, state :: term) ::
-  #             {:ok, new_state}
-  #             | {:ok, new_state, [next_action()]}
-  #           when status:
-  #                  :up
-  #                  | :down
-  #                  | {:warn, [requested: Tortoise.qos(), accepted: Tortoise.qos()]}
-  #                  | {:error, term()},
-  #                topic_filter: Tortoise.topic_filter(),
-  #                new_state: term
 
   @callback handle_suback(subscribe, suback, state :: term) :: {:ok, new_state}
             when subscribe: Package.Subscribe.t(),
