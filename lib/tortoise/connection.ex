@@ -480,7 +480,8 @@ defmodule Tortoise.Connection do
         updated_data = %State{data | handler: updated_handler}
         {:keep_state, updated_data, wrap_next_actions(next_actions)}
 
-        # handle stop
+      {:error, reason} ->
+        {:stop, reason, data}
     end
   end
 
