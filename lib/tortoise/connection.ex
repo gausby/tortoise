@@ -110,9 +110,18 @@ defmodule Tortoise.Connection do
   inflight messages and send the proper disconnect message to the
   broker. The session will get terminated on the server.
   """
-  @spec disconnect(Tortoise.client_id()) :: :ok
-  def disconnect(client_id) do
-    GenStateMachine.call(via_name(client_id), :disconnect)
+  @spec disconnect(Tortoise.client_id(), reason, properties) :: :ok
+        when reason: Tortoise.Package.Disconnect.reason(),
+             properties: [property],
+             property:
+               {:reason_string, String.t()}
+               | {:server_reference, String.t()}
+               | {:session_expiry_interval, 0..0xFFFFFFFF}
+               | {:user_property, {String.t(), String.t()}}
+
+  def disconnect(client_id, reason \\ :normal_disconnection, properties \\ []) do
+    disconnect = %Package.Disconnect{reason: reason, properties: properties}
+    GenStateMachine.call(via_name(client_id), {:disconnect, disconnect})
   end
 
   @doc """
@@ -811,7 +820,8 @@ defmodule Tortoise.Connection do
 
       :disconnect ->
         :ok = Events.dispatch(client_id, :status, :terminating)
-        :ok = Inflight.drain(client_id)
+        disconnect = %Package.Disconnect{reason: :normal_disconnection}
+        :ok = Inflight.drain(client_id, disconnect)
         {:stop, :normal}
 
       {:eval, fun} when is_function(fun, 1) ->
@@ -886,20 +896,20 @@ defmodule Tortoise.Connection do
   # disconnect protocol messages ---------------------------------------
   def handle_event(
         {:call, from},
-        :disconnect,
+        {:disconnect, %Package.Disconnect{} = disconnect},
         :connected,
         %State{client_id: client_id} = data
       ) do
     :ok = Events.dispatch(client_id, :status, :terminating)
 
-    :ok = Inflight.drain(client_id)
+    :ok = Inflight.drain(client_id, disconnect)
 
     {:stop_and_reply, :shutdown, [{:reply, from, :ok}], data}
   end
 
   def handle_event(
         {:call, _from},
-        :disconnect,
+        {:disconnect, _reason},
         _,
         %State{}
       ) do
@@ -963,14 +973,14 @@ defmodule Tortoise.Connection do
     {:keep_state, %State{data | ping: {:idle, []}}, next_actions}
   end
 
-  # disconnect packages
+  # server initiated disconnect packages
   def handle_event(
         :internal,
         {:received, %Package.Disconnect{} = disconnect},
         _current_state,
         %State{handler: handler} = data
       ) do
-    case Handler.execute_handle_disconnect(handler, disconnect) do
+    case Handler.execute_handle_disconnect(handler, {:server, disconnect}) do
       {:ok, updated_handler, next_actions} ->
         {:keep_state, %State{data | handler: updated_handler}, wrap_next_actions(next_actions)}
 

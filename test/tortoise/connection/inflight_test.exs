@@ -269,7 +269,8 @@ defmodule Tortoise.Connection.InflightTest do
       expected = publish |> Package.encode() |> IO.iodata_to_binary()
       assert {:ok, ^expected} = :gen_tcp.recv(context.server, byte_size(expected), 500)
       # start draining
-      :ok = Inflight.drain(client_id)
+      disconnect = %Package.Disconnect{reason: :normal_disconnection}
+      :ok = Inflight.drain(client_id, disconnect)
       # updates should have no effect at this point
       :ok = Inflight.update(client_id, {:received, %Package.Puback{identifier: 1}})
       # the calling process should get a result response

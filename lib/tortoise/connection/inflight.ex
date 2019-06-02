@@ -33,8 +33,8 @@ defmodule Tortoise.Connection.Inflight do
   end
 
   @doc false
-  def drain(client_id) do
-    GenStateMachine.call(via_name(client_id), :drain)
+  def drain(client_id, %Package.Disconnect{} = disconnect) do
+    GenStateMachine.call(via_name(client_id), {:drain, disconnect})
   end
 
   @doc false
@@ -384,13 +384,17 @@ defmodule Tortoise.Connection.Inflight do
     end
   end
 
-  def handle_event({:call, from}, :drain, {:connected, {transport, socket}}, %State{} = data) do
+  def handle_event(
+        {:call, from},
+        {:drain, %Package.Disconnect{} = disconnect},
+        {:connected, {transport, socket}},
+        %State{} = data
+      ) do
     for {_, %Track{polarity: :negative, caller: {pid, ref}}} <- data.pending do
       send(pid, {{Tortoise, data.client_id}, ref, {:error, :canceled}})
     end
 
     data = %State{data | pending: %{}, order: []}
-    disconnect = %Package.Disconnect{}
 
     case apply(transport, :send, [socket, Package.encode(disconnect)]) do
       :ok ->

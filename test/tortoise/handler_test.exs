@@ -97,7 +97,7 @@ defmodule Tortoise.HandlerTest do
       make_return(pubcomp, state)
     end
 
-    def handle_disconnect(disconnect, state) do
+    def handle_disconnect({:server, disconnect}, state) do
       make_return(disconnect, state)
     end
 
@@ -511,7 +511,7 @@ defmodule Tortoise.HandlerTest do
       handler = set_state(context.handler, disconnect: disconnect_fn)
 
       assert {:ok, %Handler{} = state, []} =
-               Handler.execute_handle_disconnect(handler, disconnect)
+               Handler.execute_handle_disconnect(handler, {:server, disconnect})
     end
 
     test "return continue with next actions", context do
@@ -522,7 +522,7 @@ defmodule Tortoise.HandlerTest do
       handler = set_state(context.handler, disconnect: disconnect_fn)
 
       assert {:ok, %Handler{} = state, ^next_actions} =
-               Handler.execute_handle_disconnect(handler, disconnect)
+               Handler.execute_handle_disconnect(handler, {:server, disconnect})
     end
 
     test "return stop with normal reason", context do
@@ -531,7 +531,7 @@ defmodule Tortoise.HandlerTest do
       handler = set_state(context.handler, disconnect: disconnect_fn)
 
       assert {:stop, :normal, %Handler{} = state} =
-               Handler.execute_handle_disconnect(handler, disconnect)
+               Handler.execute_handle_disconnect(handler, {:server, disconnect})
     end
   end
 

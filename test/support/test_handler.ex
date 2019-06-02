@@ -46,8 +46,8 @@ defmodule TestHandler do
     end
   end
 
-  def handle_disconnect(%Package.Disconnect{} = disconnect, state) do
   @impl true
+  def handle_disconnect({_source, %Package.Disconnect{} = disconnect}, state) do
     case state[:handle_disconnect] do
       nil ->
         send(state[:parent], {{__MODULE__, :handle_disconnect}, disconnect})

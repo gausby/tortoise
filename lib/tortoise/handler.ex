@@ -278,7 +278,8 @@ defmodule Tortoise.Handler do
                  new_state: term()
 
   @callback handle_disconnect(disconnect, state :: term()) :: {:ok, new_state}
-            when disconnect: Package.Disconnect.t(),
+            when source: :server | :network,
+                 disconnect: {source, Package.Disconnect.t()},
                  new_state: term()
 
   # todo, should we do handle_pingresp as well ?
@@ -351,8 +352,10 @@ defmodule Tortoise.Handler do
   end
 
   @doc false
-  @spec execute_handle_disconnect(t, %Package.Disconnect{}) :: {:stop, term(), t}
-  def execute_handle_disconnect(handler, %Package.Disconnect{} = disconnect) do
+  @spec execute_handle_disconnect(t, disconnect) :: {:stop, term(), t}
+        when disconnect: {:server, %Package.Disconnect{}} | {:network, atom()}
+  def execute_handle_disconnect(handler, {source, _reason} = disconnect)
+      when source in [:server, :network] do
     apply(handler.module, :handle_disconnect, [disconnect, handler.state])
     |> transform_result()
     |> case do
