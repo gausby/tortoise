@@ -1,14 +1,16 @@
 defmodule TestHandler do
-  use Tortoise.Handler
+  @behaviour Tortoise.Handler
 
   alias Tortoise.Package
 
+  @impl true
   def init(opts) do
     state = Enum.into(opts, %{})
     send(state[:parent], {{__MODULE__, :init}, opts})
     {:ok, state}
   end
 
+  @impl true
   def handle_connack(%Package.Connack{} = connack, state) do
     case state[:handle_connack] do
       nil ->
@@ -20,6 +22,7 @@ defmodule TestHandler do
     end
   end
 
+  @impl true
   def terminate(reason, state) do
     case state[:terminate] do
       nil ->
@@ -31,6 +34,7 @@ defmodule TestHandler do
     end
   end
 
+  @impl true
   def status_change(status, state) do
     case state[:status_change] do
       nil ->
@@ -43,6 +47,7 @@ defmodule TestHandler do
   end
 
   def handle_disconnect(%Package.Disconnect{} = disconnect, state) do
+  @impl true
     case state[:handle_disconnect] do
       nil ->
         send(state[:parent], {{__MODULE__, :handle_disconnect}, disconnect})
@@ -53,6 +58,7 @@ defmodule TestHandler do
     end
   end
 
+  @impl true
   def handle_publish(topic, %Package.Publish{} = publish, state) do
     case state[:handle_publish] do
       nil ->
@@ -64,6 +70,7 @@ defmodule TestHandler do
     end
   end
 
+  @impl true
   def handle_puback(%Package.Puback{} = puback, state) do
     case state[:handle_puback] do
       nil ->
@@ -75,6 +82,7 @@ defmodule TestHandler do
     end
   end
 
+  @impl true
   def handle_pubrec(%Package.Pubrec{} = pubrec, state) do
     case state[:handle_pubrec] do
       nil ->
@@ -86,6 +94,7 @@ defmodule TestHandler do
     end
   end
 
+  @impl true
   def handle_pubrel(%Package.Pubrel{} = pubrel, state) do
     case state[:handle_pubrel] do
       nil ->
@@ -97,6 +106,7 @@ defmodule TestHandler do
     end
   end
 
+  @impl true
   def handle_pubcomp(%Package.Pubcomp{} = pubcomp, state) do
     case state[:handle_pubcomp] do
       nil ->
@@ -108,6 +118,7 @@ defmodule TestHandler do
     end
   end
 
+  @impl true
   def handle_suback(%Package.Subscribe{} = subscribe, %Package.Suback{} = suback, state) do
     case state[:handle_suback] do
       nil ->
@@ -119,6 +130,7 @@ defmodule TestHandler do
     end
   end
 
+  @impl true
   def handle_unsuback(%Package.Unsubscribe{} = unsubscribe, %Package.Unsuback{} = unsuback, state) do
     case state[:handle_unsuback] do
       nil ->
