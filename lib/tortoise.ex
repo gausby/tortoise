@@ -147,6 +147,12 @@ defmodule Tortoise do
   """
   @type topic() :: String.t()
 
+  # todo, documentation
+  @type topic_alias :: 0x0001..0xFFFF
+
+  # todo, documentation
+  @type topic_or_topic_alias() :: topic() | topic_alias()
+
   @typedoc """
   A topic filter for a subscription.
 
@@ -246,14 +252,17 @@ defmodule Tortoise do
   with `Tortoise` so it is easy to see where the message originated
   from.
   """
-  @spec publish(client_id(), topic(), payload, [options]) ::
-          :ok | {:ok, reference()} | {:error, :unknown_connection}
+  @spec publish(client_id(), topic_or_topic_alias(), payload, [options]) ::
+          :ok | {:ok, reference()} | {:error, reason}
         when payload: binary() | nil,
              options:
                {:qos, qos()}
                | {:retain, boolean()}
-               | {:identifier, package_identifier()}
-  def publish(client_id, topic, payload \\ nil, opts \\ []) do
+               | {:identifier, package_identifier()},
+             reason: :unknown_connection | :topic_alias_specified_twice
+  def publish(client_id, topic, payload \\ nil, opts \\ [])
+
+  def publish(client_id, topic, payload, opts) when is_binary(topic) do
     {opts, properties} = Keyword.split(opts, [:retain, :qos, :transforms])
     qos = Keyword.get(opts, :qos, 0)
 
@@ -278,6 +287,24 @@ defmodule Tortoise do
     else
       {:error, :unknown_connection} ->
         {:error, :unknown_connection}
+    end
+  end
+
+  # Support passing in a topic alias instead of a proper topic, in
+  # this case we will lift the topic alias into a topic_alias value in
+  # the property list, set the topic to an empty string and pass it on
+  # to the regular `publish/4`
+  def publish(client_id, topic_alias, payload, opts)
+      when is_integer(topic_alias) and topic_alias > 0 do
+    case Keyword.get(opts, :topic_alias) do
+      nil ->
+        publish(client_id, "", payload, Keyword.put(opts, :topic_alias, topic_alias))
+
+      ^topic_alias ->
+        publish(client_id, "", payload, opts)
+
+      _otherwise ->
+        {:error, :topic_alias_specified_twice}
     end
   end
 
@@ -307,15 +334,18 @@ defmodule Tortoise do
 
   See the documentation for `Tortoise.publish/4` for configuration.
   """
-  @spec publish_sync(client_id(), topic(), payload, [options]) ::
-          :ok | {:error, :unknown_connection}
+  @spec publish_sync(client_id(), topic_or_topic_alias(), payload, [options]) ::
+          :ok | {:error, reason}
         when payload: binary() | nil,
              options:
                {:qos, qos()}
                | {:retain, boolean()}
                | {:identifier, package_identifier()}
-               | {:timeout, timeout()}
-  def publish_sync(client_id, topic, payload \\ nil, opts \\ []) do
+               | {:timeout, timeout()},
+             reason: :unknown_connection | :topic_alias_specified_twice
+  def publish_sync(client_id, topic, payload \\ nil, opts \\ [])
+
+  def publish_sync(client_id, topic, payload, opts) when is_binary(topic) do
     {opts, properties} = Keyword.split(opts, [:retain, :qos, :transforms])
     qos = Keyword.get(opts, :qos, 0)
     timeout = Keyword.get(opts, :timeout, :infinity)
@@ -341,6 +371,24 @@ defmodule Tortoise do
     else
       {:error, :unknown_connection} ->
         {:error, :unknown_connection}
+    end
+  end
+
+  # Support passing in a topic alias instead of a proper topic, in
+  # this case we will lift the topic alias into a topic_alias value in
+  # the property list, set the topic to an empty string and pass it on
+  # to the regular `publish_sync/4`
+  def publish_sync(client_id, topic_alias, payload, opts)
+      when is_integer(topic_alias) and topic_alias > 0 do
+    case Keyword.get(opts, :topic_alias) do
+      nil ->
+        publish(client_id, "", payload, Keyword.put(opts, :topic_alias, topic_alias))
+
+      ^topic_alias ->
+        publish(client_id, "", payload, opts)
+
+      _otherwise ->
+        {:error, :topic_alias_specified_twice}
     end
   end
 end
