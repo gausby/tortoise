@@ -17,7 +17,7 @@ A minimal connection specification looks like this:
   )
 ```
 
-This will establish a TPC connection to a broker running on
+This will establish a TCP connection to a broker running on
 *localhost* port *1883*. The connection takes a module that implements
 the `Tortoise.Handler` behaviour; In this case the
 `Tortoise.Handler.Logger` callback module, which will print a log
