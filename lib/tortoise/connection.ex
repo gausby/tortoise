@@ -515,14 +515,18 @@ defmodule Tortoise.Connection do
       ) do
     :ok = Inflight.update(client_id, {:received, puback})
 
-    case Handler.execute_handle_puback(handler, puback) do
-      {:ok, %Handler{} = updated_handler, next_actions} ->
-        updated_data = %State{data | handler: updated_handler}
-        {:keep_state, updated_data, wrap_next_actions(next_actions)}
+    if function_exported?(handler.module, :handle_puback, 2) do
+      case Handler.execute_handle_puback(handler, puback) do
+        {:ok, %Handler{} = updated_handler, next_actions} ->
+          updated_data = %State{data | handler: updated_handler}
+          {:keep_state, updated_data, wrap_next_actions(next_actions)}
 
-      {:error, reason} ->
-        # todo
-        {:stop, reason, data}
+        {:error, reason} ->
+          # todo
+          {:stop, reason, data}
+      end
+    else
+      :keep_state_and_data
     end
   end
 
