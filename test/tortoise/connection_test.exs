@@ -407,7 +407,87 @@ defmodule Tortoise.ConnectionTest do
       assert_receive {{Tortoise, ^client_id}, ^unsub_ref, :ok}, 0
     end
 
-    # @todo unsuccessful unsubscribe
+    test "unsuccessful unsubscribe: not authorized", context do
+      client_id = context.client_id
+
+      unsubscribe_foo = %Package.Unsubscribe{identifier: 2, topics: ["foo"]}
+      unsuback_foo = %Package.Unsuback{results: [error: :not_authorized], identifier: 2}
+
+      script = [
+        {:receive,
+         %Package.Subscribe{
+           topics: [
+             {"foo", [qos: 0, no_local: false, retain_as_published: false, retain_handling: 1]}
+           ],
+           identifier: 1
+         }},
+        {:send, %Package.Suback{acks: [ok: 0], identifier: 1}},
+        # unsubscribe foo
+        {:receive, unsubscribe_foo},
+        {:send, unsuback_foo}
+      ]
+
+      {:ok, _} = ScriptedMqttServer.enact(context.scripted_mqtt_server, script)
+
+      subscribe = %Package.Subscribe{
+        topics: [
+          {"foo", [qos: 0, no_local: false, retain_as_published: false, retain_handling: 1]}
+        ],
+        identifier: 1
+      }
+
+      {:ok, _sub_ref} = Tortoise.Connection.subscribe(client_id, subscribe.topics, identifier: 1)
+      assert_receive {ScriptedMqttServer, {:received, ^subscribe}}
+      assert_receive {{TestHandler, :handle_suback}, {_, %Package.Suback{identifier: 1}}}
+
+      subscriptions = Tortoise.Connection.subscriptions(client_id)
+      {:ok, unsub_ref} = Tortoise.Connection.unsubscribe(client_id, "foo", identifier: 2)
+      assert_receive {{Tortoise, client_id}, ^unsub_ref, :ok}
+      assert_receive {Tortoise.Integration.ScriptedMqttServer, :completed}
+      assert ^subscriptions = Tortoise.Connection.subscriptions(client_id)
+    end
+
+    test "unsuccessful unsubscribe: no subscription existed", context do
+      client_id = context.client_id
+
+      unsubscribe_foo = %Package.Unsubscribe{identifier: 2, topics: ["foo"]}
+      unsuback_foo = %Package.Unsuback{results: [error: :no_subscription_existed], identifier: 2}
+
+      script = [
+        {:receive,
+         %Package.Subscribe{
+           topics: [
+             {"foo", [qos: 0, no_local: false, retain_as_published: false, retain_handling: 1]}
+           ],
+           identifier: 1
+         }},
+        {:send, %Package.Suback{acks: [ok: 0], identifier: 1}},
+        # unsubscribe foo
+        {:receive, unsubscribe_foo},
+        {:send, unsuback_foo}
+      ]
+
+      {:ok, _} = ScriptedMqttServer.enact(context.scripted_mqtt_server, script)
+
+      subscribe = %Package.Subscribe{
+        topics: [
+          {"foo", [qos: 0, no_local: false, retain_as_published: false, retain_handling: 1]}
+        ],
+        identifier: 1
+      }
+
+      {:ok, _sub_ref} = Tortoise.Connection.subscribe(client_id, subscribe.topics, identifier: 1)
+      assert_receive {ScriptedMqttServer, {:received, ^subscribe}}
+      assert_receive {{TestHandler, :handle_suback}, {_, %Package.Suback{identifier: 1}}}
+
+      assert Tortoise.Connection.subscriptions(client_id) |> Map.has_key?("foo")
+      {:ok, unsub_ref} = Tortoise.Connection.unsubscribe(client_id, "foo", identifier: 2)
+      assert_receive {{Tortoise, client_id}, ^unsub_ref, :ok}
+      assert_receive {Tortoise.Integration.ScriptedMqttServer, :completed}
+      # the client should update it state to not include the foo topic
+      # as the server told us that it is not subscribed
+      refute Tortoise.Connection.subscriptions(client_id) |> Map.has_key?("foo")
+    end
   end
 
   describe "encrypted connection" do

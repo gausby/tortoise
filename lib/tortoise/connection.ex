@@ -767,10 +767,21 @@ defmodule Tortoise.Connection do
     {{pid, msg_ref}, updated_pending} = Map.pop(pending, ref)
     data = %State{data | pending_refs: updated_pending}
 
-    # todo, if the results in unsuback contain an error, such as
-    # `{:error, :no_subscription_existed}` then we would be out of
-    # sync! What should we do here?
-    subscriptions = Map.drop(data.subscriptions, unsubscribe.topics)
+    # When updating the internal subscription state tracker we will
+    # disregard the unsuccessful unsubacks, as we can assume it wasn't
+    # in the subscription list to begin with, or that we are still
+    # subscribed as we are not autorized to unsubscribe for the given
+    # topic; one exception is when the server report no subscription
+    # existed; then we will update the client state
+    to_remove =
+      for {topic, result} <- Enum.zip(unsubscribe.topics, unsuback.results),
+          match?(
+            reason when reason == :success or reason == {:error, :no_subscription_existed},
+            result
+          ),
+          do: topic
+
+    subscriptions = Map.drop(data.subscriptions, to_remove)
 
     case Handler.execute_handle_unsuback(handler, unsubscribe, unsuback) do
       {:ok, %Handler{} = updated_handler, next_actions} ->
