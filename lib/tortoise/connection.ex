@@ -448,9 +448,7 @@ defmodule Tortoise.Connection do
         next_actions = [
           {:state_timeout, keep_alive * 1000, :keep_alive},
           {:next_event, :internal, {:execute_handler, {:connection, :up}}}
-          | for action <- next_actions do
-              {:next_event, :internal, {:user_action, action}}
-            end
+          | wrap_next_actions(next_actions)
         ]
 
         {:next_state, :connected, data, next_actions}
@@ -569,14 +567,12 @@ defmodule Tortoise.Connection do
         %State{client_id: client_id, handler: handler} = data
       ) do
     case Handler.execute_handle_publish(handler, publish) do
-      {:ok, %Package.Puback{identifier: ^id} = puback, %Handler{} = updated_handler,
-       _next_actions} ->
-        # todo handle next actions
+      {:ok, %Package.Puback{identifier: ^id} = puback, %Handler{} = updated_handler, next_actions} ->
         # respond with a puback
         :ok = Inflight.update(client_id, {:dispatch, puback})
         # - - -
         updated_data = %State{data | handler: updated_handler}
-        {:keep_state, updated_data}
+        {:keep_state, updated_data, wrap_next_actions(next_actions)}
 
         # handle stop
     end
@@ -589,13 +585,12 @@ defmodule Tortoise.Connection do
         %State{client_id: client_id, handler: handler} = data
       ) do
     case Handler.execute_handle_publish(handler, publish) do
-      {:ok, %Package.Pubrec{identifier: ^id} = pubrec, %Handler{} = updated_handler,
-       _next_actions} ->
+      {:ok, %Package.Pubrec{identifier: ^id} = pubrec, %Handler{} = updated_handler, next_actions} ->
         # respond with pubrec
         :ok = Inflight.update(client_id, {:dispatch, pubrec})
         # - - -
         updated_data = %State{data | handler: updated_handler}
-        {:keep_state, updated_data}
+        {:keep_state, updated_data, wrap_next_actions(next_actions)}
     end
   end
 
