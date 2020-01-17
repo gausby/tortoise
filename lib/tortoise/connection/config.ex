@@ -13,8 +13,7 @@ defmodule Tortoise.Connection.Config do
             receive_maximum: 0xFFFF,
             maximum_qos: 2,
             retain_available: true,
-            # how big is it actually?
-            maximum_packet_size: :infinity,
+            maximum_packet_size: 268_435_455,
             assigned_client_identifier: nil,
             topic_alias_maximum: 0,
             wildcard_subscription_available: true,
