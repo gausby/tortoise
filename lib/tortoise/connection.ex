@@ -19,7 +19,8 @@ defmodule Tortoise.Connection do
             connection: nil,
             ping: {:idle, []},
             handler: nil,
-            receiver: nil
+            receiver: nil,
+            config: nil
 
   alias __MODULE__, as: State
 
@@ -357,6 +358,13 @@ defmodule Tortoise.Connection do
     end
   end
 
+  @doc """
+  Get the info on the current connection configuration
+  """
+  def info(client_id) do
+    GenStateMachine.call(via_name(client_id), :get_info)
+  end
+
   @doc false
   @spec connection(Tortoise.client_id(), [opts]) ::
           {:ok, {module(), term()}} | {:error, :unknown_connection} | {:error, :timeout}
@@ -430,11 +438,11 @@ defmodule Tortoise.Connection do
   # connection acknowledgement
   def handle_event(
         :internal,
-        {:received, %Package.Connack{} = connack},
+        {:received, %Package.Connack{properties: properties} = connack},
         :connecting,
         %State{
           client_id: client_id,
-          connect: %Package.Connect{keep_alive: keep_alive},
+          connect: %Package.Connect{keep_alive: keep_alive} = connect,
           handler: handler
         } = data
       ) do
@@ -443,7 +451,13 @@ defmodule Tortoise.Connection do
         :ok = Tortoise.Registry.put_meta(via_name(client_id), data.connection)
         :ok = Events.dispatch(client_id, :connection, data.connection)
         :ok = Events.dispatch(client_id, :status, :connected)
-        data = %State{data | backoff: Backoff.reset(data.backoff), handler: updated_handler}
+
+        data = %State{
+          data
+          | backoff: Backoff.reset(data.backoff),
+            handler: updated_handler,
+            config: Tortoise.Connection.Config.merge(connect, properties)
+        }
 
         next_actions = [
           {:state_timeout, keep_alive * 1000, :keep_alive},
@@ -470,6 +484,19 @@ defmodule Tortoise.Connection do
       ) do
     reason = %{expected: [Package.Connack, Package.Auth], got: package}
     {:stop, {:protocol_violation, reason}, data}
+  end
+
+  # get status =========================================================
+  def handle_event({:call, from}, :get_info, :connected, data) do
+    next_actions = [{:reply, from, {:connected, data.config}}]
+
+    {:keep_state_and_data, next_actions}
+  end
+
+  def handle_event({:call, from}, :get_info, state, _data) do
+    next_actions = [{:reply, from, state}]
+
+    {:keep_state_and_data, next_actions}
   end
 
   # publish packages ===================================================

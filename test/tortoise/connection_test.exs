@@ -77,7 +77,7 @@ defmodule Tortoise.ConnectionTest do
       connect = %Package.Connect{client_id: client_id, clean_start: true}
       expected_connack = %Package.Connack{reason: :success, session_present: false}
 
-      script = [{:receive, connect}, {:send, expected_connack}]
+      script = [{:receive, connect}, {:send, expected_connack}, :pause]
 
       {:ok, {ip, port}} = ScriptedMqttServer.enact(context.scripted_mqtt_server, script)
 
@@ -89,6 +89,18 @@ defmodule Tortoise.ConnectionTest do
 
       assert {:ok, _pid} = Connection.start_link(opts)
       assert_receive {ScriptedMqttServer, {:received, ^connect}}
+      assert_receive {ScriptedMqttServer, :paused}
+
+      # Should be able to get a connection when we have connected
+      assert {:ok, {Tortoise.Transport.Tcp, _port}} = Connection.connection(client_id)
+
+      # If the server does not specify a server_keep_alive interval we
+      # should use the one that was provided in the connect message,
+      # besides that the values of the config should be the defaults
+      expected_connection_config = %Connection.Config{server_keep_alive: connect.keep_alive}
+      assert {:connected, ^expected_connection_config} = Connection.info(client_id)
+
+      send(context.scripted_mqtt_server, :continue)
       assert_receive {ScriptedMqttServer, :completed}
     end
 
@@ -117,6 +129,41 @@ defmodule Tortoise.ConnectionTest do
       assert {:ok, _pid} = Connection.start_link(opts)
       assert_receive {ScriptedMqttServer, {:received, ^connect}}
       assert_receive {ScriptedMqttServer, {:received, ^reconnect}}
+      assert_receive {ScriptedMqttServer, :completed}
+    end
+
+    test "client should pick the servers keep alive interval if set", context do
+      client_id = context.client_id
+      connect = %Package.Connect{client_id: client_id}
+      keep_alive = 0xCAFE
+
+      script = [
+        {:receive, connect},
+        {:send, %Package.Connack{reason: :success, properties: [server_keep_alive: keep_alive]}},
+        :pause
+      ]
+
+      {:ok, {ip, port}} = ScriptedMqttServer.enact(context.scripted_mqtt_server, script)
+
+      opts = [
+        client_id: client_id,
+        server: {Tortoise.Transport.Tcp, [host: ip, port: port]},
+        handler: {Tortoise.Handler.Default, []}
+      ]
+
+      assert {:ok, _pid} = Connection.start_link(opts)
+      assert_receive {ScriptedMqttServer, {:received, ^connect}}
+
+      # Should be able to get a connection when we have connected
+      assert {:ok, {Tortoise.Transport.Tcp, _port}} = Connection.connection(client_id)
+
+      # If the server does not specify a server_keep_alive interval we
+      # should use the one that was provided in the connect message,
+      # besides that the values of the config should be the defaults
+      expected_connection_config = %Connection.Config{server_keep_alive: keep_alive}
+      assert {:connected, ^expected_connection_config} = Connection.info(client_id)
+
+      send(context.scripted_mqtt_server, :continue)
       assert_receive {ScriptedMqttServer, :completed}
     end
   end
