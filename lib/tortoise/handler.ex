@@ -128,8 +128,31 @@ defmodule Tortoise.Handler do
       end
 
       @impl true
-      def handle_connack(_connack, state) do
+      def handle_connack(%Package.Connack{reason: :success}, state) do
         {:cont, state}
+      end
+
+      def handle_connack(%Package.Connack{reason: {:refused, reason}}, _state) do
+        # todo, we could categorize the reasons into user error,
+        # network error, etc error...
+        case reason do
+          :unsupported_protocol_version ->
+            {:error, {:connection_failed, :unsupported_protocol_version}}
+
+          :not_authorized ->
+            {:error, {:connection_failed, :not_authorized}}
+
+          :server_unavailable ->
+            {:error, {:connection_failed, :server_unavailable}}
+
+          :client_identifier_not_valid ->
+            {:error, {:connection_failed, :client_identifier_not_valid}}
+
+          :bad_user_name_or_password ->
+            {:error, {:connection_failed, :bad_user_name_or_password}}
+
+            # todo, list not exhaustive
+        end
       end
 
       @impl true
@@ -206,6 +229,7 @@ defmodule Tortoise.Handler do
   @callback handle_connack(connack, state :: term()) ::
               {:ok, new_state}
               | {:ok, new_state, [next_action()]}
+              | {:error, reason :: term()}
             when connack: Package.Connack.t(),
                  new_state: term()
 
@@ -345,6 +369,9 @@ defmodule Tortoise.Handler do
       {:cont, updated_state, next_actions} ->
         updated_handler = %__MODULE__{handler | state: updated_state}
         {:ok, updated_handler, next_actions}
+
+      {:stop, reason, updated_state} ->
+        {:stop, reason, %__MODULE__{handler | state: updated_state}}
 
       {:error, reason} ->
         {:error, reason}
@@ -550,6 +577,10 @@ defmodule Tortoise.Handler do
 
   defp transform_result({:stop, reason, updated_state}) do
     {:stop, reason, updated_state}
+  end
+
+  defp transform_result({:error, reason}) do
+    {:error, reason}
   end
 
   defp transform_result({cont, updated_state, next_actions}) when is_list(next_actions) do

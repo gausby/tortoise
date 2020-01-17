@@ -430,7 +430,7 @@ defmodule Tortoise.Connection do
   # connection acknowledgement
   def handle_event(
         :internal,
-        {:received, %Package.Connack{reason: :success} = connack},
+        {:received, %Package.Connack{} = connack},
         :connecting,
         %State{
           client_id: client_id,
@@ -452,17 +452,14 @@ defmodule Tortoise.Connection do
         ]
 
         {:next_state, :connected, data, next_actions}
-    end
-  end
 
-  def handle_event(
-        :internal,
-        {:received, %Package.Connack{reason: {:refused, reason}} = _connack},
-        :connecting,
-        %State{handler: _handler} = data
-      ) do
-    # todo, pass this through to the user defined callback handler
-    {:stop, {:connection_failed, reason}, data}
+      {:stop, reason, %Handler{} = updated_handler} ->
+        data = %State{data | handler: updated_handler}
+        {:stop, reason, data}
+
+      {:error, reason} ->
+        {:stop, reason, data}
+    end
   end
 
   def handle_event(
