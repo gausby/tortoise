@@ -465,9 +465,9 @@ defmodule Tortoise.TestGenerators do
       :server_keep_alive -> {type, choose(0x0000, 0xFFFF)}
       :authentication_method -> {type, utf8()}
       :authentication_data -> {type, binary()}
-      :request_problem_information -> {type, oneof([0, 1])}
+      :request_problem_information -> {type, bool()}
       :will_delay_interval -> {type, choose(0, 4_294_967_295)}
-      :request_response_information -> {type, oneof([0, 1])}
+      :request_response_information -> {type, bool()}
       :response_information -> {type, utf8()}
       :server_reference -> {type, utf8()}
       :reason_string -> {type, utf8()}
@@ -475,12 +475,12 @@ defmodule Tortoise.TestGenerators do
       :topic_alias_maximum -> {type, choose(0x0000, 0xFFFF)}
       :topic_alias -> {type, choose(0x0001, 0xFFFF)}
       :maximum_qos -> {type, oneof([0, 1])}
-      :retain_available -> {type, oneof([0, 1])}
+      :retain_available -> {type, bool()}
       :user_property -> {type, {utf8(), utf8()}}
       :maximum_packet_size -> {type, choose(1, 268_435_455)}
-      :wildcard_subscription_available -> {type, oneof([0, 1])}
-      :subscription_identifier_available -> {type, oneof([0, 1])}
-      :shared_subscription_available -> {type, oneof([0, 1])}
+      :wildcard_subscription_available -> {type, bool()}
+      :subscription_identifier_available -> {type, bool()}
+      :shared_subscription_available -> {type, bool()}
     end
   end
 end

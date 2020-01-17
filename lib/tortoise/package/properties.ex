@@ -34,7 +34,7 @@ defmodule Tortoise.Package.Properties do
 
   defp encode_property({key, value}) do
     case key do
-      :payload_format_indicator ->
+      :payload_format_indicator when value in [0, 1] ->
         [0x01, <<value::8>>]
 
       :message_expiry_interval ->
@@ -67,14 +67,14 @@ defmodule Tortoise.Package.Properties do
       :authentication_data when is_binary(value) ->
         [0x16, length_encode(value)]
 
-      :request_problem_information ->
-        [0x17, <<value::8>>]
+      :request_problem_information when is_boolean(value) ->
+        [0x17, boolean_to_byte(value)]
 
       :will_delay_interval when is_integer(value) ->
         [0x18, <<value::integer-size(32)>>]
 
-      :request_response_information ->
-        [0x19, <<value::8>>]
+      :request_response_information when is_boolean(value) ->
+        [0x19, boolean_to_byte(value)]
 
       :response_information ->
         [0x1A, length_encode(value)]
@@ -94,25 +94,28 @@ defmodule Tortoise.Package.Properties do
       :topic_alias ->
         [0x23, <<value::integer-size(16)>>]
 
-      :maximum_qos ->
+      :maximum_qos when value in [0, 1] ->
         [0x24, <<value::8>>]
 
-      :retain_available ->
-        [0x25, <<value::8>>]
+      :retain_available when is_boolean(value) ->
+        [0x25, boolean_to_byte(value)]
 
       :maximum_packet_size ->
         [0x27, <<value::integer-size(32)>>]
 
-      :wildcard_subscription_available ->
-        [0x28, <<value::8>>]
+      :wildcard_subscription_available when is_boolean(value) ->
+        [0x28, boolean_to_byte(value)]
 
-      :subscription_identifier_available ->
-        [0x29, <<value::8>>]
+      :subscription_identifier_available when is_boolean(value) ->
+        [0x29, boolean_to_byte(value)]
 
-      :shared_subscription_available ->
-        [0x2A, <<value::8>>]
+      :shared_subscription_available when is_boolean(value) ->
+        [0x2A, boolean_to_byte(value)]
     end
   end
+
+  defp boolean_to_byte(true), do: <<1::8>>
+  defp boolean_to_byte(false), do: <<0::8>>
 
   # ---
   def decode(data) do
@@ -134,7 +137,7 @@ defmodule Tortoise.Package.Properties do
     {nil, <<>>}
   end
 
-  defp decode_property(<<0x01, value::8, rest::binary>>) do
+  defp decode_property(<<0x01, value::8, rest::binary>>) when value in [0, 1] do
     {{:payload_format_indicator, value}, rest}
   end
 
@@ -199,16 +202,16 @@ defmodule Tortoise.Package.Properties do
     {{:authentication_data, value}, rest}
   end
 
-  defp decode_property(<<0x17, value::8, rest::binary>>) do
-    {{:request_problem_information, value}, rest}
+  defp decode_property(<<0x17, value::8, rest::binary>>) when value in [0, 1] do
+    {{:request_problem_information, value == 1}, rest}
   end
 
   defp decode_property(<<0x18, value::integer-size(32), rest::binary>>) do
     {{:will_delay_interval, value}, rest}
   end
 
-  defp decode_property(<<0x19, value::8, rest::binary>>) do
-    {{:request_response_information, value}, rest}
+  defp decode_property(<<0x19, value::8, rest::binary>>) when value in [0, 1] do
+    {{:request_response_information, value == 1}, rest}
   end
 
   defp decode_property(<<0x1A, length::integer-size(16), rest::binary>>) do
@@ -238,12 +241,12 @@ defmodule Tortoise.Package.Properties do
     {{:topic_alias, value}, rest}
   end
 
-  defp decode_property(<<0x24, value::8, rest::binary>>) do
+  defp decode_property(<<0x24, value::8, rest::binary>>) when value in [0, 1] do
     {{:maximum_qos, value}, rest}
   end
 
-  defp decode_property(<<0x25, value::8, rest::binary>>) do
-    {{:retain_available, value}, rest}
+  defp decode_property(<<0x25, value::8, rest::binary>>) when value in [0, 1] do
+    {{:retain_available, value == 1}, rest}
   end
 
   defp decode_property(<<0x26, rest::binary>>) do
@@ -259,14 +262,14 @@ defmodule Tortoise.Package.Properties do
   end
 
   defp decode_property(<<0x28, value::8, rest::binary>>) do
-    {{:wildcard_subscription_available, value}, rest}
+    {{:wildcard_subscription_available, value == 1}, rest}
   end
 
   defp decode_property(<<0x29, value::8, rest::binary>>) do
-    {{:subscription_identifier_available, value}, rest}
+    {{:subscription_identifier_available, value == 1}, rest}
   end
 
   defp decode_property(<<0x2A, value::8, rest::binary>>) do
-    {{:shared_subscription_available, value}, rest}
+    {{:shared_subscription_available, value == 1}, rest}
   end
 end
