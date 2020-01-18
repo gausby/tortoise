@@ -672,18 +672,28 @@ defmodule Tortoise.Connection do
   # subscription logic
   def handle_event(
         :cast,
+        {:subscribe, caller, %Package.Subscribe{topics: []}, _opts},
+        :connected,
+        _data
+      ) do
+    # This should not really be able to happen as the API will not
+    # allow the user to specify an empty list, but this is added for
+    # good measure
+    reply = {:error, :empty_topic_filter_list}
+    next_actions = [{:next_event, :internal, {:reply, caller, reply}}]
+    {:keep_state_and_data, next_actions}
+  end
+
+  def handle_event(
+        :cast,
         {:subscribe, caller, subscribe, _opts},
         :connected,
         %State{client_id: client_id} = data
       ) do
-    unless Enum.empty?(subscribe) do
-      {:ok, ref} = Inflight.track(client_id, {:outgoing, subscribe})
-      pending = Map.put_new(data.pending_refs, ref, caller)
+    {:ok, ref} = Inflight.track(client_id, {:outgoing, subscribe})
+    pending = Map.put_new(data.pending_refs, ref, caller)
 
-      {:keep_state, %State{data | pending_refs: pending}}
-    else
-      :keep_state_and_data
-    end
+    {:keep_state, %State{data | pending_refs: pending}}
   end
 
   def handle_event(:cast, {:subscribe, _, _, _}, _state_name, _data) do
