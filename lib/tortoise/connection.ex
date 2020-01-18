@@ -442,7 +442,7 @@ defmodule Tortoise.Connection do
         :connecting,
         %State{
           client_id: client_id,
-          connect: %Package.Connect{keep_alive: keep_alive} = connect,
+          connect: %Package.Connect{} = connect,
           handler: handler
         } = data
       ) do
@@ -460,7 +460,7 @@ defmodule Tortoise.Connection do
         }
 
         next_actions = [
-          {:state_timeout, keep_alive * 1000, :keep_alive},
+          {:next_event, :internal, :setup_keep_alive_timer},
           {:next_event, :internal, {:execute_handler, {:connection, :up}}}
           | wrap_next_actions(next_actions)
         ]
@@ -954,8 +954,7 @@ defmodule Tortoise.Connection do
   def handle_event(:cast, {:ping, caller}, :connected, %State{} = data) do
     case data.ping do
       {:idle, awaiting} ->
-        # set the keep alive timeout to trigger instantly
-        next_actions = [{:state_timeout, 0, :keep_alive}]
+        next_actions = [{:next_event, :internal, :trigger_keep_alive}]
         {:keep_state, %State{data | ping: {:idle, [caller | awaiting]}}, next_actions}
 
       {{:pinging, start_time}, awaiting} ->
@@ -966,6 +965,27 @@ defmodule Tortoise.Connection do
   # not connected yet
   def handle_event(:cast, {:ping, {caller_pid, ref}}, _, %State{client_id: client_id}) do
     send(caller_pid, {{Tortoise, client_id}, {Package.Pingreq, ref}, :not_connected})
+    :keep_state_and_data
+  end
+
+  # keep alive ---------------------------------------------------------
+  def handle_event(:internal, :setup_keep_alive_timer, :connected, data) do
+    timeout = data.config.server_keep_alive * 1000
+    next_actions = [{:state_timeout, timeout, :keep_alive}]
+    {:keep_state_and_data, next_actions}
+  end
+
+  def handle_event(:internal, :setup_keep_alive_timer, _other_states, _data) do
+    :keep_state_and_data
+  end
+
+  def handle_event(:internal, :trigger_keep_alive, :connected, _data) do
+    # set the keep alive timeout to trigger instantly
+    next_actions = [{:state_timeout, 0, :keep_alive}]
+    {:keep_state_and_data, next_actions}
+  end
+
+  def handle_event(:internal, :trigger_keep_alive, _other_states, _data) do
     :keep_state_and_data
   end
 
@@ -988,8 +1008,7 @@ defmodule Tortoise.Connection do
         :connected,
         %State{
           client_id: client_id,
-          ping: {{:pinging, start_time}, awaiting},
-          connect: %Package.Connect{keep_alive: keep_alive}
+          ping: {{:pinging, start_time}, awaiting}
         } = data
       ) do
     round_trip_time =
@@ -998,11 +1017,11 @@ defmodule Tortoise.Connection do
 
     :ok = Events.dispatch(client_id, :ping_response, round_trip_time)
 
-    for {caller, ref} <- awaiting do
+    Enum.each(awaiting, fn {caller, ref} ->
       send(caller, {{Tortoise, client_id}, {Package.Pingreq, ref}, round_trip_time})
-    end
+    end)
 
-    next_actions = [{:state_timeout, keep_alive * 1000, :keep_alive}]
+    next_actions = [{:next_event, :internal, :setup_keep_alive_timer}]
 
     {:keep_state, %State{data | ping: {:idle, []}}, next_actions}
   end
