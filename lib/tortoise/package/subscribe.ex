@@ -82,7 +82,7 @@ defmodule Tortoise.Package.Subscribe do
     def encode(
           %Package.Subscribe{
             identifier: identifier,
-            # a valid subscribe package has at least one topic/qos_opts pair
+            # a valid subscribe package has at least one topic/opts pair
             topics: [{<<_topic_filter::binary>>, opts} | _]
           } = t
         )

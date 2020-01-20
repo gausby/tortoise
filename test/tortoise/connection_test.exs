@@ -19,9 +19,9 @@ defmodule Tortoise.ConnectionTest do
     {:ok, %{client_id: client_id}}
   end
 
-  def setup_scripted_mqtt_server(_context) do
+  def setup_scripted_mqtt_server(context) do
     {:ok, pid} = ScriptedMqttServer.start_link()
-    {:ok, %{scripted_mqtt_server: pid}}
+    {:ok, Map.put(context, :scripted_mqtt_server, pid)}
   end
 
   def setup_scripted_mqtt_server_ssl(_context) do
@@ -534,6 +534,46 @@ defmodule Tortoise.ConnectionTest do
       # the client should update it state to not include the foo topic
       # as the server told us that it is not subscribed
       refute Tortoise.Connection.subscriptions(client_id) |> Map.has_key?("foo")
+    end
+  end
+
+  describe "subscription features" do
+    setup [:setup_scripted_mqtt_server]
+
+    test "subscribing to a shared topic filter when feature is disabled", context do
+      # The client should receive an error if it attempt to subscribe
+      # to a shared topic on a server that does not allow shared
+      # topics
+      client_id = context.client_id
+
+      script = [
+        {:receive, %Package.Connect{client_id: client_id}},
+        {:send,
+         %Package.Connack{
+           reason: :success,
+           properties: [shared_subscription_available: false]
+         }}
+      ]
+
+      {:ok, {ip, port}} = ScriptedMqttServer.enact(context.scripted_mqtt_server, script)
+
+      assert {:ok, connection_pid} =
+               Connection.start_link(
+                 client_id: client_id,
+                 server: {Tortoise.Transport.Tcp, [host: ip, port: port]},
+                 handler: {TestHandler, [parent: self()]}
+               )
+
+      assert_receive {ScriptedMqttServer, {:received, %Package.Connect{}}}
+
+      assert {:ok, {Tortoise.Transport.Tcp, _port}} = Connection.connection(client_id)
+
+      assert {:connected, %{shared_subscription_available: false}} = Connection.info(client_id)
+
+      assert {:error, {:subscription_failure, reasons}} =
+               Connection.subscribe_sync(client_id, {"$share/foo/bar", qos: 0})
+
+      assert {:shared_subscription_not_available, "$share/foo/bar"} in reasons
     end
   end
 

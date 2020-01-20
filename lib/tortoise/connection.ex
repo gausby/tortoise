@@ -690,10 +690,18 @@ defmodule Tortoise.Connection do
         :connected,
         %State{client_id: client_id} = data
       ) do
-    {:ok, ref} = Inflight.track(client_id, {:outgoing, subscribe})
-    pending = Map.put_new(data.pending_refs, ref, caller)
+    case State.Config.validate(data.config, subscribe) do
+      :valid ->
+        {:ok, ref} = Inflight.track(client_id, {:outgoing, subscribe})
+        pending = Map.put_new(data.pending_refs, ref, caller)
 
-    {:keep_state, %State{data | pending_refs: pending}}
+        {:keep_state, %State{data | pending_refs: pending}}
+
+      {:invalid, reasons} ->
+        reply = {:error, {:subscription_failure, reasons}}
+        next_actions = [{:next_event, :internal, {:reply, caller, reply}}]
+        {:keep_state_and_data, next_actions}
+    end
   end
 
   def handle_event(:cast, {:subscribe, _, _, _}, _state_name, _data) do
