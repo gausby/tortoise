@@ -106,7 +106,7 @@ defmodule Tortoise.Package.Properties do
       :wildcard_subscription_available when is_boolean(value) ->
         [0x28, boolean_to_byte(value)]
 
-      :subscription_identifier_available when is_boolean(value) ->
+      :subscription_identifiers_available when is_boolean(value) ->
         [0x29, boolean_to_byte(value)]
 
       :shared_subscription_available when is_boolean(value) ->
@@ -266,7 +266,7 @@ defmodule Tortoise.Package.Properties do
   end
 
   defp decode_property(<<0x29, value::8, rest::binary>>) do
-    {{:subscription_identifier_available, value == 1}, rest}
+    {{:subscription_identifiers_available, value == 1}, rest}
   end
 
   defp decode_property(<<0x2A, value::8, rest::binary>>) do

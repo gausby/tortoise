@@ -112,6 +112,24 @@ defmodule Tortoise.Connection.Config do
     do_validate(rest, package, acc)
   end
 
+  # subscription identifiers -------------------------------------------
+  defp do_validate(
+         [{:subscription_identifiers_available, false} | rest],
+         %Subscribe{properties: properties} = package,
+         acc
+       ) do
+    if Enum.any?(properties, &match?({:subscription_identifier, _}, &1)) do
+      do_validate(rest, package, [:subscription_identifier_not_available | acc])
+    else
+      do_validate(rest, package, acc)
+    end
+  end
+
+  defp do_validate([{:subscription_identifiers_available, _ignored} | rest], package, acc) do
+    # This is only relevant for Subscribe packages
+    do_validate(rest, package, acc)
+  end
+
   # catch all; if an option is enabled, or not accounted for, we just
   # assume it is okay at this point
   defp do_validate([{_option, _value} | rest], subscribe, acc) do

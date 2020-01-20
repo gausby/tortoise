@@ -616,6 +616,46 @@ defmodule Tortoise.ConnectionTest do
 
       assert {:wildcard_subscription_not_available, "foo/#"} in reasons
     end
+
+    test "subscribing with a subscription identifier when feature is disabled", context do
+      # The client should receive an error if it attempt to subscribe
+      # to a topic filter and specifying a subscription identifier on
+      # a server that does not allow subscription identifiers in topic
+      # filters
+      client_id = context.client_id
+
+      script = [
+        {:receive, %Package.Connect{client_id: client_id}},
+        {:send,
+         %Package.Connack{
+           reason: :success,
+           properties: [subscription_identifiers_available: false]
+         }}
+      ]
+
+      {:ok, {ip, port}} = ScriptedMqttServer.enact(context.scripted_mqtt_server, script)
+
+      assert {:ok, connection_pid} =
+               Connection.start_link(
+                 client_id: client_id,
+                 server: {Tortoise.Transport.Tcp, [host: ip, port: port]},
+                 handler: {TestHandler, [parent: self()]}
+               )
+
+      assert_receive {ScriptedMqttServer, {:received, %Package.Connect{}}}
+
+      assert {:ok, {Tortoise.Transport.Tcp, _port}} = Connection.connection(client_id)
+
+      assert {:connected, %{subscription_identifiers_available: false}} =
+               Connection.info(client_id)
+
+      assert {:error, {:subscription_failure, reasons}} =
+               Connection.subscribe_sync(client_id, {"foo/+/bar", qos: 0},
+                 subscription_identifier: 5
+               )
+
+      assert :subscription_identifier_not_available in reasons
+    end
   end
 
   describe "encrypted connection" do

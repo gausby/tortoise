@@ -444,7 +444,7 @@ defmodule Tortoise.TestGenerators do
               :user_property,
               :maximum_packet_size,
               :wildcard_subscription_available,
-              :subscription_identifier_available,
+              :subscription_identifiers_available,
               :shared_subscription_available
             ])
           ) do
@@ -479,7 +479,7 @@ defmodule Tortoise.TestGenerators do
       :user_property -> {type, {utf8(), utf8()}}
       :maximum_packet_size -> {type, choose(1, 268_435_455)}
       :wildcard_subscription_available -> {type, bool()}
-      :subscription_identifier_available -> {type, bool()}
+      :subscription_identifiers_available -> {type, bool()}
       :shared_subscription_available -> {type, bool()}
     end
   end
