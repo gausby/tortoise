@@ -44,6 +44,40 @@ defmodule Tortoise.Connection.Config do
     do_validate(rest, package, acc)
   end
 
+  # wildcard subscriptions ---------------------------------------------
+  defp do_validate(
+         [{:wildcard_subscription_available, false} | rest],
+         %Subscribe{topics: topics} = package,
+         acc
+       ) do
+    issues =
+      Enum.reduce(topics, [], fn {topic, _opts}, acc ->
+        topic_list = String.split(topic, "/")
+
+        cond do
+          Enum.member?(topic_list, "+") ->
+            [{:wildcard_subscription_not_available, topic} | acc]
+
+          Enum.member?(topic_list, "#") ->
+            # multi-level wildcards are only allowed on the last
+            # position, but we test for each of the positions because
+            # we would have to iterate all the elements if we did a
+            # `List.last/1` anyways
+            [{:wildcard_subscription_not_available, topic} | acc]
+
+          true ->
+            acc
+        end
+      end)
+
+    do_validate(rest, package, issues ++ acc)
+  end
+
+  defp do_validate([{:wildcard_subscription_available, _ignored} | rest], package, acc) do
+    # This is only relevant for Subscribe packages
+    do_validate(rest, package, acc)
+  end
+
   # shared subscriptions -----------------------------------------------
   defp do_validate(
          [{:shared_subscription_available, false} | rest],
@@ -73,8 +107,8 @@ defmodule Tortoise.Connection.Config do
     do_validate(rest, package, acc)
   end
 
-  # Don't check anything for non subscribe packages
-  defp do_validate([{:shared_subscription_available, _} | rest], package, acc) do
+  defp do_validate([{:shared_subscription_available, _ignored} | rest], package, acc) do
+    # This is only relevant for Subscribe packages
     do_validate(rest, package, acc)
   end
 

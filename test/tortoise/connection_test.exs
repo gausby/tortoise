@@ -575,6 +575,47 @@ defmodule Tortoise.ConnectionTest do
 
       assert {:shared_subscription_not_available, "$share/foo/bar"} in reasons
     end
+
+    test "subscribing to a topic filter with wildcard when feature is disabled", context do
+      # The client should receive an error if it attempt to subscribe
+      # to a topic filter containing a wildcard on a server that does
+      # not allow wildcards in topic filters
+      client_id = context.client_id
+
+      script = [
+        {:receive, %Package.Connect{client_id: client_id}},
+        {:send,
+         %Package.Connack{
+           reason: :success,
+           properties: [wildcard_subscription_available: false]
+         }}
+      ]
+
+      {:ok, {ip, port}} = ScriptedMqttServer.enact(context.scripted_mqtt_server, script)
+
+      assert {:ok, connection_pid} =
+               Connection.start_link(
+                 client_id: client_id,
+                 server: {Tortoise.Transport.Tcp, [host: ip, port: port]},
+                 handler: {TestHandler, [parent: self()]}
+               )
+
+      assert_receive {ScriptedMqttServer, {:received, %Package.Connect{}}}
+
+      assert {:ok, {Tortoise.Transport.Tcp, _port}} = Connection.connection(client_id)
+
+      assert {:connected, %{wildcard_subscription_available: false}} = Connection.info(client_id)
+
+      assert {:error, {:subscription_failure, reasons}} =
+               Connection.subscribe_sync(client_id, {"foo/+/bar", qos: 0})
+
+      assert {:wildcard_subscription_not_available, "foo/+/bar"} in reasons
+
+      assert {:error, {:subscription_failure, reasons}} =
+               Connection.subscribe_sync(client_id, {"foo/#", qos: 0})
+
+      assert {:wildcard_subscription_not_available, "foo/#"} in reasons
+    end
   end
 
   describe "encrypted connection" do

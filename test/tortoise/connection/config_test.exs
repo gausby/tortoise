@@ -21,4 +21,26 @@ defmodule Tortoise.Connection.ConfigTest do
       assert {:shared_subscription_not_available, shared_topic_filter} in reasons
     end
   end
+
+  describe "wildcard_subscription_available: false" do
+    test "return error if a subscription with a wildcard is placed" do
+      no_shared_subscription = create_config(wildcard_subscription_available: false)
+
+      topic_filter_with_single_level_wildcard = "foo/+/bar"
+      topic_filter_with_multi_level_wildcard = "foo/#"
+
+      subscribe = %Subscribe{
+        topics: [
+          {topic_filter_with_single_level_wildcard, qos: 0},
+          {topic_filter_with_multi_level_wildcard, qos: 0}
+        ]
+      }
+
+      assert {:invalid, reasons} = Config.validate(no_shared_subscription, subscribe)
+
+      assert {:wildcard_subscription_not_available, topic_filter_with_single_level_wildcard} in reasons
+
+      assert {:wildcard_subscription_not_available, topic_filter_with_multi_level_wildcard} in reasons
+    end
+  end
 end
