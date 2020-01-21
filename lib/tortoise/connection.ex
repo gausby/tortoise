@@ -13,7 +13,6 @@ defmodule Tortoise.Connection do
             connect: nil,
             server: nil,
             backoff: nil,
-            subscriptions: %{},
             opts: nil,
             pending_refs: %{},
             connection: nil,
@@ -723,7 +722,8 @@ defmodule Tortoise.Connection do
         :info,
         {{Tortoise, client_id}, {Package.Subscribe, ref}, {subscribe, suback}},
         _current_state,
-        %State{client_id: client_id, handler: handler, pending_refs: %{} = pending} = data
+        %State{client_id: client_id, handler: handler, pending_refs: %{} = pending, info: info} =
+          data
       ) do
     {{pid, msg_ref}, updated_pending} = Map.pop(pending, ref)
     data = %State{data | pending_refs: updated_pending}
@@ -731,7 +731,7 @@ defmodule Tortoise.Connection do
     updated_subscriptions =
       subscribe.topics
       |> Enum.zip(suback.acks)
-      |> Enum.reduce(data.subscriptions, fn
+      |> Enum.reduce(data.info.subscriptions, fn
         {{topic, opts}, {:ok, accepted_qos}}, acc ->
           Map.put(acc, topic, Keyword.replace!(opts, :qos, accepted_qos))
 
@@ -744,7 +744,7 @@ defmodule Tortoise.Connection do
         data = %State{
           data
           | handler: updated_handler,
-            subscriptions: updated_subscriptions
+            info: put_in(info.subscriptions, updated_subscriptions)
         }
 
         next_actions = [
@@ -803,7 +803,8 @@ defmodule Tortoise.Connection do
         :info,
         {{Tortoise, client_id}, {Package.Unsubscribe, ref}, {unsubscribe, unsuback}},
         _current_state,
-        %State{client_id: client_id, handler: handler, pending_refs: %{} = pending} = data
+        %State{client_id: client_id, handler: handler, pending_refs: %{} = pending, info: info} =
+          data
       ) do
     {{pid, msg_ref}, updated_pending} = Map.pop(pending, ref)
     data = %State{data | pending_refs: updated_pending}
@@ -822,14 +823,14 @@ defmodule Tortoise.Connection do
           ),
           do: topic
 
-    subscriptions = Map.drop(data.subscriptions, to_remove)
+    subscriptions = Map.drop(data.info.subscriptions, to_remove)
 
     case Handler.execute_handle_unsuback(handler, unsubscribe, unsuback) do
       {:ok, %Handler{} = updated_handler, next_actions} ->
         data = %State{
           data
           | handler: updated_handler,
-            subscriptions: subscriptions
+            info: put_in(info.subscriptions, subscriptions)
         }
 
         next_actions = [
@@ -845,7 +846,9 @@ defmodule Tortoise.Connection do
     end
   end
 
-  def handle_event({:call, from}, :subscriptions, _, %State{subscriptions: subscriptions}) do
+  def handle_event({:call, from}, :subscriptions, _, %State{
+        info: %Info{subscriptions: subscriptions}
+      }) do
     next_actions = [{:reply, from, subscriptions}]
     {:keep_state_and_data, next_actions}
   end

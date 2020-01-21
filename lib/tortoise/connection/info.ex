@@ -1,6 +1,7 @@
 defmodule Tortoise.Connection.Info do
   @enforce_keys [:keep_alive]
   defstruct client_id: nil,
+            subscriptions: %{},
             keep_alive: nil,
             capabilities: nil
 
