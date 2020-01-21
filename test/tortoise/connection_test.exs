@@ -99,6 +99,7 @@ defmodule Tortoise.ConnectionTest do
       # besides that the values of the config should be the defaults
       expected_connection_info = %Connection.Info{
         keep_alive: connect.keep_alive,
+        client_id: Atom.to_string(context.test),
         capabilities: %Connection.Info.Capabilities{
           server_keep_alive: nil
         }
@@ -172,7 +173,8 @@ defmodule Tortoise.ConnectionTest do
         capabilities: %Connection.Info.Capabilities{
           server_keep_alive: server_keep_alive
         },
-        keep_alive: server_keep_alive
+        keep_alive: server_keep_alive,
+        client_id: Atom.to_string(context.test)
       }
 
       assert {:connected, ^expected_connection_config} = Connection.info(client_id)

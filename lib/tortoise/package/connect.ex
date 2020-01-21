@@ -29,7 +29,7 @@ defmodule Tortoise.Package.Connect do
             will: Package.Publish.t() | nil,
             properties: [{any(), any()}]
           }
-  @enforce_keys [:client_id]
+
   defstruct __META__: %Package.Meta{opcode: @opcode},
             protocol: "MQTT",
             protocol_version: 0b00000101,
