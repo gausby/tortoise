@@ -20,12 +20,12 @@ defmodule Tortoise.Connection do
             ping: {:idle, []},
             handler: nil,
             receiver: nil,
-            config: nil
+            info: nil
 
   alias __MODULE__, as: State
 
   alias Tortoise.{Handler, Transport, Package, Events}
-  alias Tortoise.Connection.{Receiver, Inflight, Backoff}
+  alias Tortoise.Connection.{Info, Receiver, Inflight, Backoff}
   alias Tortoise.Package.Connect
 
   @doc """
@@ -438,7 +438,7 @@ defmodule Tortoise.Connection do
   # connection acknowledgement
   def handle_event(
         :internal,
-        {:received, %Package.Connack{properties: properties} = connack},
+        {:received, %Package.Connack{reason: connection_result} = connack},
         :connecting,
         %State{
           client_id: client_id,
@@ -447,7 +447,7 @@ defmodule Tortoise.Connection do
         } = data
       ) do
     case Handler.execute_handle_connack(handler, connack) do
-      {:ok, %Handler{} = updated_handler, next_actions} ->
+      {:ok, %Handler{} = updated_handler, next_actions} when connection_result == :success ->
         :ok = Tortoise.Registry.put_meta(via_name(client_id), data.connection)
         :ok = Events.dispatch(client_id, :connection, data.connection)
         :ok = Events.dispatch(client_id, :status, :connected)
@@ -456,7 +456,7 @@ defmodule Tortoise.Connection do
           data
           | backoff: Backoff.reset(data.backoff),
             handler: updated_handler,
-            config: Tortoise.Connection.Config.merge(connect, properties)
+            info: Info.merge(connect, connack)
         }
 
         next_actions = [
@@ -488,7 +488,7 @@ defmodule Tortoise.Connection do
 
   # get status =========================================================
   def handle_event({:call, from}, :get_info, :connected, data) do
-    next_actions = [{:reply, from, {:connected, data.config}}]
+    next_actions = [{:reply, from, {:connected, data.info}}]
 
     {:keep_state_and_data, next_actions}
   end
@@ -690,7 +690,7 @@ defmodule Tortoise.Connection do
         :connected,
         %State{client_id: client_id} = data
       ) do
-    case State.Config.validate(data.config, subscribe) do
+    case Info.Capabilities.validate(data.info.capabilities, subscribe) do
       :valid ->
         {:ok, ref} = Inflight.track(client_id, {:outgoing, subscribe})
         pending = Map.put_new(data.pending_refs, ref, caller)
@@ -987,9 +987,13 @@ defmodule Tortoise.Connection do
   end
 
   # keep alive ---------------------------------------------------------
-  def handle_event(:internal, :setup_keep_alive_timer, :connected, data) do
-    timeout = data.config.server_keep_alive * 1000
-    next_actions = [{:state_timeout, timeout, :keep_alive}]
+  def handle_event(
+        :internal,
+        :setup_keep_alive_timer,
+        :connected,
+        %State{info: %Info{keep_alive: keep_alive}}
+      ) do
+    next_actions = [{:state_timeout, keep_alive * 1000, :keep_alive}]
     {:keep_state_and_data, next_actions}
   end
 

@@ -97,8 +97,14 @@ defmodule Tortoise.ConnectionTest do
       # If the server does not specify a server_keep_alive interval we
       # should use the one that was provided in the connect message,
       # besides that the values of the config should be the defaults
-      expected_connection_config = %Connection.Config{server_keep_alive: connect.keep_alive}
-      assert {:connected, ^expected_connection_config} = Connection.info(client_id)
+      expected_connection_info = %Connection.Info{
+        keep_alive: connect.keep_alive,
+        capabilities: %Connection.Info.Capabilities{
+          server_keep_alive: nil
+        }
+      }
+
+      assert {:connected, ^expected_connection_info} = Connection.info(client_id)
 
       send(context.scripted_mqtt_server, :continue)
       assert_receive {ScriptedMqttServer, :completed}
@@ -135,11 +141,12 @@ defmodule Tortoise.ConnectionTest do
     test "client should pick the servers keep alive interval if set", context do
       client_id = context.client_id
       connect = %Package.Connect{client_id: client_id}
-      keep_alive = 0xCAFE
+      server_keep_alive = 0xCAFE
 
       script = [
         {:receive, connect},
-        {:send, %Package.Connack{reason: :success, properties: [server_keep_alive: keep_alive]}},
+        {:send,
+         %Package.Connack{reason: :success, properties: [server_keep_alive: server_keep_alive]}},
         :pause
       ]
 
@@ -157,10 +164,17 @@ defmodule Tortoise.ConnectionTest do
       # Should be able to get a connection when we have connected
       assert {:ok, {Tortoise.Transport.Tcp, _port}} = Connection.connection(client_id)
 
-      # If the server does not specify a server_keep_alive interval we
-      # should use the one that was provided in the connect message,
-      # besides that the values of the config should be the defaults
-      expected_connection_config = %Connection.Config{server_keep_alive: keep_alive}
+      # If the server does specify a server_keep_alive interval we
+      # should use that one for the keep_alive instead of the user
+      # provided one in the connect message, besides that the values
+      # of the config should be the defaults
+      expected_connection_config = %Connection.Info{
+        capabilities: %Connection.Info.Capabilities{
+          server_keep_alive: server_keep_alive
+        },
+        keep_alive: server_keep_alive
+      }
+
       assert {:connected, ^expected_connection_config} = Connection.info(client_id)
 
       send(context.scripted_mqtt_server, :continue)
@@ -568,7 +582,12 @@ defmodule Tortoise.ConnectionTest do
 
       assert {:ok, {Tortoise.Transport.Tcp, _port}} = Connection.connection(client_id)
 
-      assert {:connected, %{shared_subscription_available: false}} = Connection.info(client_id)
+      assert {:connected,
+              %Connection.Info{
+                capabilities: %Connection.Info.Capabilities{
+                  shared_subscription_available: false
+                }
+              }} = Connection.info(client_id)
 
       assert {:error, {:subscription_failure, reasons}} =
                Connection.subscribe_sync(client_id, {"$share/foo/bar", qos: 0})
@@ -604,7 +623,8 @@ defmodule Tortoise.ConnectionTest do
 
       assert {:ok, {Tortoise.Transport.Tcp, _port}} = Connection.connection(client_id)
 
-      assert {:connected, %{wildcard_subscription_available: false}} = Connection.info(client_id)
+      assert {:connected, %{capabilities: %{wildcard_subscription_available: false}}} =
+               Connection.info(client_id)
 
       assert {:error, {:subscription_failure, reasons}} =
                Connection.subscribe_sync(client_id, {"foo/+/bar", qos: 0})
@@ -646,8 +666,12 @@ defmodule Tortoise.ConnectionTest do
 
       assert {:ok, {Tortoise.Transport.Tcp, _port}} = Connection.connection(client_id)
 
-      assert {:connected, %{subscription_identifiers_available: false}} =
-               Connection.info(client_id)
+      assert {:connected,
+              %Connection.Info{
+                capabilities: %Connection.Info.Capabilities{
+                  subscription_identifiers_available: false
+                }
+              }} = Connection.info(client_id)
 
       assert {:error, {:subscription_failure, reasons}} =
                Connection.subscribe_sync(client_id, {"foo/+/bar", qos: 0},
