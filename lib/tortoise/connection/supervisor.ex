@@ -24,7 +24,7 @@ defmodule Tortoise.Connection.Supervisor do
   def init(opts) do
     children = [
       {Inflight, Keyword.take(opts, [:client_id, :parent])},
-      {Receiver, Keyword.take(opts, [:client_id, :transport, :parent])}
+      {Receiver, Keyword.take(opts, [:session_ref, :transport, :parent])}
     ]
 
     Supervisor.init(children, strategy: :rest_for_one, max_seconds: 30, max_restarts: 10)

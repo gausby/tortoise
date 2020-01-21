@@ -97,15 +97,15 @@ defmodule Tortoise.ConnectionTest do
       # If the server does not specify a server_keep_alive interval we
       # should use the one that was provided in the connect message,
       # besides that the values of the config should be the defaults
-      expected_connection_info = %Connection.Info{
-        keep_alive: connect.keep_alive,
-        client_id: Atom.to_string(context.test),
-        capabilities: %Connection.Info.Capabilities{
-          server_keep_alive: nil
-        }
-      }
+      keep_alive = connect.keep_alive
 
-      assert {:connected, ^expected_connection_info} = Connection.info(client_id)
+      assert {:connected,
+              %Connection.Info{
+                keep_alive: ^keep_alive,
+                capabilities: %Connection.Info.Capabilities{
+                  server_keep_alive: nil
+                }
+              }} = Connection.info(client_id)
 
       send(context.scripted_mqtt_server, :continue)
       assert_receive {ScriptedMqttServer, :completed}
@@ -169,15 +169,7 @@ defmodule Tortoise.ConnectionTest do
       # should use that one for the keep_alive instead of the user
       # provided one in the connect message, besides that the values
       # of the config should be the defaults
-      expected_connection_config = %Connection.Info{
-        capabilities: %Connection.Info.Capabilities{
-          server_keep_alive: server_keep_alive
-        },
-        keep_alive: server_keep_alive,
-        client_id: Atom.to_string(context.test)
-      }
-
-      assert {:connected, ^expected_connection_config} = Connection.info(client_id)
+      assert {:connected, %{keep_alive: ^server_keep_alive}} = Connection.info(client_id)
 
       send(context.scripted_mqtt_server, :continue)
       assert_receive {ScriptedMqttServer, :completed}
@@ -982,7 +974,12 @@ defmodule Tortoise.ConnectionTest do
       cs_ref = Process.monitor(cs_pid)
 
       inflight_pid = Connection.Inflight.whereis(client_id)
-      receiver_pid = Connection.Receiver.whereis(client_id)
+      {:ok, {Tortoise.Transport.Tcp, _}} = Connection.connection(client_id)
+
+      {:connected,
+       %{
+         receiver_pid: receiver_pid
+       }} = Connection.info(client_id)
 
       assert :ok = Tortoise.Connection.disconnect(client_id)
 

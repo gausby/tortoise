@@ -8,18 +8,24 @@ defmodule Tortoise.Connection.ReceiverTest do
   alias Tortoise.Integration.TestTCPTunnel
 
   setup context do
-    {:ok, %{client_id: context.test}}
+    {:ok, %{session_ref: context.test}}
   end
 
   def setup_receiver(context) do
     {:ok, ref, transport} = TestTCPTunnel.new(Tortoise.Transport.Tcp)
-    opts = [client_id: context.client_id, transport: transport, parent: self()]
+
+    opts = [
+      session_ref: context.session_ref,
+      transport: transport,
+      parent: self()
+    ]
+
     {:ok, receiver_pid} = Receiver.start_link(opts)
     {:ok, %{connection_ref: ref, transport: transport, receiver_pid: receiver_pid}}
   end
 
   def setup_connection(%{connection_ref: ref} = context) when is_reference(ref) do
-    {:ok, _connection} = Receiver.connect(context.client_id)
+    {:ok, _connection} = Receiver.connect(context.receiver_pid)
     assert_receive {:server_socket, ^ref, server_socket}
     {:ok, Map.put(context, :server, server_socket)}
   end

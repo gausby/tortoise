@@ -3,6 +3,7 @@ defmodule Tortoise.Connection.Info do
   defstruct client_id: nil,
             subscriptions: %{},
             keep_alive: nil,
+            receiver_pid: nil,
             capabilities: nil
 
   alias __MODULE__

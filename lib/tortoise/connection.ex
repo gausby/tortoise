@@ -9,7 +9,8 @@ defmodule Tortoise.Connection do
 
   require Logger
 
-  defstruct client_id: nil,
+  defstruct session_ref: nil,
+            client_id: nil,
             connect: nil,
             server: nil,
             backoff: nil,
@@ -69,6 +70,7 @@ defmodule Tortoise.Connection do
     ]
 
     initial = %State{
+      session_ref: make_ref(),
       client_id: connect.client_id,
       server: server,
       connect: connect,
@@ -486,8 +488,8 @@ defmodule Tortoise.Connection do
   end
 
   # get status =========================================================
-  def handle_event({:call, from}, :get_info, :connected, data) do
-    next_actions = [{:reply, from, {:connected, data.info}}]
+  def handle_event({:call, from}, :get_info, :connected, %{receiver: {receiver_pid, _}} = data) do
+    next_actions = [{:reply, from, {:connected, struct(data.info, receiver_pid: receiver_pid)}}]
 
     {:keep_state_and_data, next_actions}
   end
@@ -913,7 +915,12 @@ defmodule Tortoise.Connection do
   # connection logic ===================================================
   def handle_event(:internal, :connect, :connecting, %State{} = data) do
     :ok = Tortoise.Registry.put_meta(via_name(data.client_id), :connecting)
-    :ok = start_connection_supervisor([{:parent, self()} | data.opts])
+
+    :ok =
+      start_connection_supervisor([
+        {:session_ref, data.session_ref},
+        {:parent, self()} | data.opts
+      ])
 
     case await_and_monitor_receiver(data) do
       {:ok, data} ->
@@ -927,9 +934,12 @@ defmodule Tortoise.Connection do
         :state_timeout,
         :attempt_connection,
         :connecting,
-        %State{connect: connect} = data
+        %State{
+          connect: connect,
+          receiver: {receiver_pid, _mon_ref}
+        } = data
       ) do
-    with {:ok, {transport, socket}} <- Receiver.connect(data.client_id),
+    with {:ok, {transport, socket}} <- Receiver.connect(receiver_pid),
          :ok = transport.send(socket, Package.encode(connect)) do
       new_data = %State{
         data
@@ -1089,9 +1099,11 @@ defmodule Tortoise.Connection do
     {:next_state, :connecting, updated_data, next_actions}
   end
 
-  defp await_and_monitor_receiver(%State{client_id: client_id, receiver: nil} = data) do
+  defp await_and_monitor_receiver(%State{receiver: nil} = data) do
+    session_ref = data.session_ref
+
     receive do
-      {{Tortoise, ^client_id}, Receiver, {:ready, pid}} ->
+      {{Tortoise, ^session_ref}, Receiver, {:ready, pid}} ->
         {:ok, %State{data | receiver: {pid, Process.monitor(pid)}}}
     after
       5000 ->

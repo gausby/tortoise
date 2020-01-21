@@ -3,31 +3,24 @@ defmodule Tortoise.Connection.Receiver do
 
   use GenStateMachine
 
-  alias Tortoise.{Events, Transport}
+  alias Tortoise.Transport
 
-  defstruct client_id: nil, transport: nil, socket: nil, buffer: <<>>, parent: nil
+  defstruct session_ref: nil,
+            transport: nil,
+            socket: nil,
+            buffer: <<>>,
+            parent: nil
+
   alias __MODULE__, as: State
 
   def start_link(opts) do
-    client_id = Keyword.fetch!(opts, :client_id)
-
     data = %State{
-      client_id: client_id,
+      session_ref: Keyword.fetch!(opts, :session_ref),
       transport: Keyword.fetch!(opts, :transport),
       parent: Keyword.fetch!(opts, :parent)
     }
 
-    GenStateMachine.start_link(__MODULE__, data, name: via_name(client_id))
-  end
-
-  defp via_name(client_id) do
-    Tortoise.Registry.via_name(__MODULE__, client_id)
-  end
-
-  def whereis(client_id) do
-    __MODULE__
-    |> Tortoise.Registry.reg_name(client_id)
-    |> Registry.whereis_name()
+    GenStateMachine.start_link(__MODULE__, data)
   end
 
   def child_spec(opts) do
@@ -40,17 +33,18 @@ defmodule Tortoise.Connection.Receiver do
     }
   end
 
-  def connect(client_id) do
-    GenStateMachine.call(via_name(client_id), :connect)
+  def connect(pid) do
+    GenStateMachine.call(pid, :connect)
   end
 
   @impl true
   def init(%State{} = data) do
-    send(data.parent, {{Tortoise, data.client_id}, __MODULE__, {:ready, self()}})
+    send(data.parent, {{Tortoise, data.session_ref}, __MODULE__, {:ready, self()}})
     {:ok, :disconnected, data}
   end
 
-  def terminate(_reason, _state) do
+  @impl true
+  def terminate(_reason, _state, _data) do
     :ok
   end
 
