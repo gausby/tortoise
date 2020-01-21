@@ -9,14 +9,12 @@ defmodule Tortoise.RegistryTest do
              Tortoise.Registry.via_name(mod, name)
   end
 
-  test "meta put, get, delete", context do
+  test "meta put, get", context do
     key = Tortoise.Registry.via_name(__MODULE__, context.test)
     value = :crypto.strong_rand_bytes(2)
 
     assert :error == Tortoise.Registry.meta(key)
     assert :ok = Tortoise.Registry.put_meta(key, value)
     assert {:ok, ^value} = Tortoise.Registry.meta(key)
-    assert :ok = Tortoise.Registry.delete_meta(key)
-    assert :error == Tortoise.Registry.meta(key)
   end
 end

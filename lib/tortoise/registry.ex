@@ -25,15 +25,4 @@ defmodule Tortoise.Registry do
   def put_meta(key, value) do
     :ok = Registry.put_meta(__MODULE__, key, value)
   end
-
-  @spec delete_meta(key :: term()) :: :ok | no_return
-  def delete_meta(key) do
-    try do
-      :ets.delete(__MODULE__, key)
-      :ok
-    catch
-      :error, :badarg ->
-        raise ArgumentError, "unknown registry: #{inspect(__MODULE__)}"
-    end
-  end
 end
