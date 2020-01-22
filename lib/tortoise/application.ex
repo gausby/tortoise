@@ -1,4 +1,4 @@
-defmodule Tortoise.App do
+defmodule Tortoise.Application do
   @moduledoc false
 
   use Application
