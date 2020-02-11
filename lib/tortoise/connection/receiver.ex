@@ -140,27 +140,6 @@ defmodule Tortoise.Connection.Receiver do
     :keep_state_and_data
   end
 
-  def handle_event({:call, from}, {:handle_socket, transport, socket}, :disconnected, data) do
-    new_state = {:connected, :receiving_fixed_header}
-
-    next_actions = [
-      {:reply, from, {:ok, self()}},
-      {:next_event, :internal, :activate_socket},
-      {:next_event, :internal, :consume_buffer}
-    ]
-
-    # better reset the buffer
-    new_data = %State{data | transport: transport, socket: socket, buffer: <<>>}
-
-    {:next_state, new_state, new_data, next_actions}
-  end
-
-  def handle_event({:call, from}, {:handle_socket, _transport, _socket}, current_state, data) do
-    next_actions = [{:reply, from, {:error, :not_ready}}]
-    reason = {:got_socket_in_wrong_state, current_state}
-    {:stop_and_reply, reason, next_actions, data}
-  end
-
   # connect
   def handle_event(
         {:call, from},
@@ -180,7 +159,7 @@ defmodule Tortoise.Connection.Receiver do
           {:next_event, :internal, :consume_buffer}
         ]
 
-        # better reset the buffer
+        # better make sure the buffer state is empty
         new_data = %State{data | socket: socket, buffer: <<>>}
         {:next_state, new_state, new_data, next_actions}
 
