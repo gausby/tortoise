@@ -367,10 +367,16 @@ defmodule Tortoise.Connection do
   end
 
   @doc false
-  @spec connection(Tortoise.client_id(), [opts]) ::
+  @spec connection(Tortoise.client_id() | pid(), [opts]) ::
           {:ok, {module(), term()}} | {:error, :unknown_connection} | {:error, :timeout}
         when opts: {:timeout, timeout()} | {:active, boolean()}
-  def connection(client_id, opts \\ [active: false]) do
+  def connection(pid, _opts \\ [active: false])
+
+  def connection(pid, _opts) when is_pid(pid) do
+    GenStateMachine.call(pid, :get_connection)
+  end
+
+  def connection(client_id, opts) do
     # register a connection subscription in the case we are currently
     # in the connect phase; this solves a possible race condition
     # where the connection is requested while the status is
@@ -410,9 +416,19 @@ defmodule Tortoise.Connection do
   def init(%State{} = state) do
     case Handler.execute_init(state.handler) do
       {:ok, %Handler{} = updated_handler} ->
-        next_events = [{:next_event, :internal, :connect}]
         updated_state = %State{state | handler: updated_handler}
-        {:ok, :connecting, updated_state, next_events}
+        # TODO, perhaps the supervision should get reconsidered
+        :ok =
+          start_connection_supervisor([
+            {:session_ref, updated_state.session_ref},
+            {:parent, self()} | updated_state.opts
+          ])
+
+        transition_actions = [
+          {:next_event, :internal, :connect}
+        ]
+
+        {:ok, :connecting, updated_state, transition_actions}
 
       :ignore ->
         :ignore
@@ -450,7 +466,9 @@ defmodule Tortoise.Connection do
     case Handler.execute_handle_connack(handler, connack) do
       {:ok, %Handler{} = updated_handler, next_actions} when connection_result == :success ->
         :ok = Tortoise.Registry.put_meta(via_name(client_id), data.connection)
+        # todo, get rid of the connection event
         :ok = Events.dispatch(client_id, :connection, data.connection)
+        :ok = Inflight.update_connection(client_id, data.connection)
         :ok = Events.dispatch(client_id, :status, :connected)
 
         data = %State{
@@ -498,6 +516,16 @@ defmodule Tortoise.Connection do
     next_actions = [{:reply, from, state}]
 
     {:keep_state_and_data, next_actions}
+  end
+
+  # a process request the connection; postpone if we are not yet connected
+  def handle_event({:call, _from}, :get_connection, :connecting, _data) do
+    {:keep_state_and_data, [:postpone]}
+  end
+
+  def handle_event({:call, from}, :get_connection, :connected, data) do
+    transition_actions = [{:reply, from, {:ok, data.connection}}]
+    {:keep_state, data, transition_actions}
   end
 
   # publish packages ===================================================
@@ -916,12 +944,6 @@ defmodule Tortoise.Connection do
   def handle_event(:internal, :connect, :connecting, %State{} = data) do
     :ok = Tortoise.Registry.put_meta(via_name(data.client_id), :connecting)
 
-    :ok =
-      start_connection_supervisor([
-        {:session_ref, data.session_ref},
-        {:parent, self()} | data.opts
-      ])
-
     case await_and_monitor_receiver(data) do
       {:ok, data} ->
         {timeout, updated_data} = Map.get_and_update(data, :backoff, &Backoff.next/1)
@@ -939,22 +961,26 @@ defmodule Tortoise.Connection do
           receiver: {receiver_pid, _mon_ref}
         } = data
       ) do
-    with {:ok, {transport, socket}} <- Receiver.connect(receiver_pid),
-         :ok = transport.send(socket, Package.encode(connect)) do
-      new_data = %State{
-        data
-        | connect: %Connect{connect | clean_start: false},
-          connection: {transport, socket}
-      }
+    case Receiver.connect(receiver_pid) do
+      {:ok, {transport, socket} = connection} ->
+        # TODO: send this to the client handler allowing the user to
+        # specify a custom connect package
+        :ok = transport.send(socket, Package.encode(connect))
 
-      {:keep_state, new_data}
-    else
+        new_data = %State{
+          data
+          | connect: %Connect{connect | clean_start: false},
+            connection: connection
+        }
+
+        {:keep_state, new_data}
+
       {:error, {:stop, reason}} ->
         {:stop, reason, data}
 
       {:error, {:retry, _reason}} ->
-        next_actions = [{:next_event, :internal, :connect}]
-        {:keep_state, data, next_actions}
+        transition_actions = [{:next_event, :internal, :connect}]
+        {:keep_state, data, transition_actions}
     end
   end
 

@@ -15,18 +15,25 @@ defmodule Tortoise.Connection.InflightTest do
     key = Tortoise.Registry.via_name(Tortoise.Connection, context.client_id)
     Tortoise.Registry.put_meta(key, connection)
     Tortoise.Events.dispatch(context.client_id, :connection, connection)
-    {:ok, Map.merge(context, %{client: client_socket, server: server_socket})}
+
+    {:ok,
+     Map.merge(context, %{client: client_socket, server: server_socket, connection: connection})}
   end
 
   defp drop_connection(%{server: server} = context) do
     :ok = :gen_tcp.close(server)
     :ok = Tortoise.Events.dispatch(context.client_id, :status, :down)
-    {:ok, Map.drop(context, [:client, :server])}
+    {:ok, Map.drop(context, [:client, :server, :connection])}
+  end
+
+  def setup_inflight(%{inflight_pid: pid} = context) when is_pid(pid) do
+    Inflight.update_connection(pid, context.connection)
+    {:ok, context}
   end
 
   def setup_inflight(context) do
     {:ok, pid} = Inflight.start_link(client_id: context.client_id, parent: self())
-    {:ok, %{inflight_pid: pid}}
+    setup_inflight(Map.put(context, :inflight_pid, pid))
   end
 
   describe "life-cycle" do
@@ -62,6 +69,7 @@ defmodule Tortoise.Connection.InflightTest do
       # drop and reestablish the connection
       {:ok, context} = drop_connection(context)
       {:ok, context} = setup_connection(context)
+      {:ok, context} = setup_inflight(context)
 
       # the inflight process should now re-transmit the publish
       assert {:ok, package} = :gen_tcp.recv(context.server, 0, 500)
@@ -92,6 +100,7 @@ defmodule Tortoise.Connection.InflightTest do
       # drop and reestablish the connection
       {:ok, context} = drop_connection(context)
       {:ok, context} = setup_connection(context)
+      {:ok, context} = setup_inflight(context)
 
       # now we should receive the same pubrec message
       assert {:ok, ^data} = :gen_tcp.recv(context.server, 0, 500)
@@ -117,6 +126,7 @@ defmodule Tortoise.Connection.InflightTest do
       # drop and reestablish the connection
       {:ok, context} = drop_connection(context)
       {:ok, context} = setup_connection(context)
+      {:ok, context} = setup_inflight(context)
       # the publish should get re-transmitted
       publish = %Package.Publish{publish | dup: true}
       assert {:ok, package} = :gen_tcp.recv(context.server, 0, 500)
@@ -134,6 +144,7 @@ defmodule Tortoise.Connection.InflightTest do
       # drop and reestablish the connection
       {:ok, context} = drop_connection(context)
       {:ok, context} = setup_connection(context)
+      {:ok, context} = setup_inflight(context)
       # re-transmit the pubrel
       assert {:ok, ^pubrel_encoded} = :gen_tcp.recv(context.server, 0, 500)
 
@@ -166,6 +177,7 @@ defmodule Tortoise.Connection.InflightTest do
       # drop and reestablish the connection
       {:ok, context} = drop_connection(context)
       {:ok, context} = setup_connection(context)
+      {:ok, context} = setup_inflight(context)
       # re-transmit the subscribe package
       assert {:ok, ^package} = :gen_tcp.recv(context.server, 0, 500)
 
@@ -198,6 +210,7 @@ defmodule Tortoise.Connection.InflightTest do
       # drop and reestablish the connection
       {:ok, context} = drop_connection(context)
       {:ok, context} = setup_connection(context)
+      {:ok, context} = setup_inflight(context)
       # re-transmit the subscribe package
       assert {:ok, ^package} = :gen_tcp.recv(context.server, 0, 500)
 
@@ -231,6 +244,7 @@ defmodule Tortoise.Connection.InflightTest do
       # drop and reestablish the connection
       {:ok, context} = drop_connection(context)
       {:ok, context} = setup_connection(context)
+      {:ok, context} = setup_inflight(context)
 
       # the in flight manager should now re-transmit the publish
       # messages in the same order they arrived

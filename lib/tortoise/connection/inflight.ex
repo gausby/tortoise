@@ -1,7 +1,7 @@
 defmodule Tortoise.Connection.Inflight do
   @moduledoc false
 
-  alias Tortoise.{Package, Connection}
+  alias Tortoise.Package
   alias Tortoise.Connection.Inflight.Track
 
   use GenStateMachine
@@ -30,6 +30,11 @@ defmodule Tortoise.Connection.Inflight do
 
   def stop(client_id) do
     GenStateMachine.stop(via_name(client_id))
+  end
+
+  @doc false
+  def update_connection(client_id, {_, _} = connection) do
+    GenStateMachine.call(via_name(client_id), {:set_connection, connection})
   end
 
   @doc false
@@ -102,67 +107,35 @@ defmodule Tortoise.Connection.Inflight do
     parent_pid = Keyword.fetch!(opts, :parent)
     initial_data = %State{client_id: client_id, parent: parent_pid}
 
-    next_actions = [
-      {:next_event, :internal, :post_init}
-    ]
-
-    {:ok, _} = Tortoise.Events.register(client_id, :status)
-
-    {:ok, :disconnected, initial_data, next_actions}
+    {:ok, :disconnected, initial_data}
   end
 
   @impl true
-  def handle_event(:internal, :post_init, :disconnected, data) do
-    case Connection.connection(data.client_id, active: true) do
-      {:ok, {_transport, _socket} = connection} ->
-        {:next_state, {:connected, connection}, data}
-
-      {:error, :timeout} ->
-        {:stop, :connection_timeout}
-
-      {:error, :unknown_connection} ->
-        {:stop, :unknown_connection}
-    end
-  end
-
   # When we receive a new connection we will use that for our future
   # transmissions.
   def handle_event(
-        :info,
-        {{Tortoise, client_id}, :connection, connection},
+        {:call, from},
+        {:set_connection, connection},
         _current_state,
-        %State{client_id: client_id, pending: pending} = data
+        %State{pending: pending} = data
       ) do
-    next_actions =
-      for identifier <- Enum.reverse(data.order) do
-        case Map.get(pending, identifier, :unknown) do
-          %Track{pending: [[{:dispatch, %Package.Publish{} = publish} | action] | pending]} =
-              track ->
-            publish = %Package.Publish{publish | dup: true}
-            track = %Track{track | pending: [[{:dispatch, publish} | action] | pending]}
-            {:next_event, :internal, {:execute, track}}
+    next_actions = [
+      {:reply, from, :ok}
+      | for identifier <- Enum.reverse(data.order) do
+          case Map.get(pending, identifier, :unknown) do
+            %Track{pending: [[{:dispatch, %Package.Publish{} = publish} | action] | pending]} =
+                track ->
+              publish = %Package.Publish{publish | dup: true}
+              track = %Track{track | pending: [[{:dispatch, publish} | action] | pending]}
+              {:next_event, :internal, {:execute, track}}
 
-          %Track{} = track ->
-            {:next_event, :internal, {:execute, track}}
+            %Track{} = track ->
+              {:next_event, :internal, {:execute, track}}
+          end
         end
-      end
+    ]
 
     {:next_state, {:connected, connection}, data, next_actions}
-  end
-
-  # Connection status events; when we go offline we should transition
-  # into the disconnected state. Everything else will get ignored.
-  def handle_event(
-        :info,
-        {{Tortoise, client_id}, :status, :down},
-        _current_state,
-        %State{client_id: client_id} = data
-      ) do
-    {:next_state, :disconnected, data}
-  end
-
-  def handle_event(:info, {{Tortoise, _}, :status, _}, _, %State{}) do
-    :keep_state_and_data
   end
 
   # Create. Notice: we will only receive publish packages from the
@@ -213,6 +186,11 @@ defmodule Tortoise.Connection.Inflight do
       _otherwise ->
         {:stop, :state_out_of_sync, data}
     end
+  end
+
+  def handle_event(:cast, {:outgoing, _caller, _package}, :disconnected, %State{}) do
+    # await a connection
+    {:keep_state_and_data, [:postpone]}
   end
 
   def handle_event(:cast, {:outgoing, {pid, ref}, _}, :draining, data) do
@@ -427,7 +405,7 @@ defmodule Tortoise.Connection.Inflight do
       nil ->
         {package, track}
 
-      fun when is_function(fun) ->
+      fun when is_function(fun, 2) ->
         case apply(fun, [package, track.state]) do
           {:ok, updated_state} ->
             # just update the track session state

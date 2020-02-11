@@ -12,6 +12,7 @@ defmodule Tortoise.PipeTest do
   def setup_inflight(context) do
     opts = [client_id: context.client_id, parent: self()]
     {:ok, inflight_pid} = Inflight.start_link(opts)
+    :ok = Inflight.update_connection(inflight_pid, context.connection)
     {:ok, %{inflight_pid: inflight_pid}}
   end
 
@@ -26,7 +27,7 @@ defmodule Tortoise.PipeTest do
     connection = {Tortoise.Transport.Tcp, client_socket}
     key = Tortoise.Registry.via_name(Tortoise.Connection, context.client_id)
     Tortoise.Registry.put_meta(key, connection)
-    {:ok, %{client: client_socket, server: server_socket}}
+    {:ok, %{client: client_socket, server: server_socket, connection: connection}}
   end
 
   # update the context during a test run

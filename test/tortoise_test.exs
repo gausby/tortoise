@@ -12,13 +12,15 @@ defmodule TortoiseTest do
   def setup_connection(context) do
     {:ok, client_socket, server_socket} = Tortoise.Integration.TestTCPTunnel.new()
     name = Tortoise.Connection.via_name(context.client_id)
-    :ok = Tortoise.Registry.put_meta(name, {context.transport, client_socket})
-    {:ok, %{client: client_socket, server: server_socket}}
+    connection = {context.transport, client_socket}
+    :ok = Tortoise.Registry.put_meta(name, connection)
+    {:ok, %{client: client_socket, server: server_socket, connection: connection}}
   end
 
   def setup_inflight(context) do
     opts = [client_id: context.client_id, parent: self()]
     {:ok, pid} = Inflight.start_link(opts)
+    :ok = Inflight.update_connection(pid, context.connection)
     {:ok, %{inflight_pid: pid}}
   end
 
