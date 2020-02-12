@@ -470,7 +470,6 @@ defmodule Tortoise.Connection do
         # todo, get rid of the connection event
         :ok = Events.dispatch(client_id, :connection, data.connection)
         :ok = Inflight.update_connection(client_id, data.connection)
-        :ok = Events.dispatch(client_id, :status, :connected)
 
         data = %State{
           data
@@ -911,7 +910,6 @@ defmodule Tortoise.Connection do
         {:keep_state_and_data, next_actions}
 
       :disconnect ->
-        :ok = Events.dispatch(client_id, :status, :terminating)
         disconnect = %Package.Disconnect{reason: :normal_disconnection}
         :ok = Inflight.drain(client_id, disconnect)
         {:stop, :normal}
@@ -998,8 +996,6 @@ defmodule Tortoise.Connection do
         :connected,
         %State{client_id: client_id} = data
       ) do
-    :ok = Events.dispatch(client_id, :status, :terminating)
-
     :ok = Inflight.drain(client_id, disconnect)
 
     {:stop_and_reply, :shutdown, [{:reply, from, :ok}], data}

@@ -1102,15 +1102,15 @@ defmodule Tortoise.ConnectionTest do
       assert_receive {ScriptedMqttServer, :completed}
     end
 
-    test "ping_sync/2", %{client_id: client_id} = context do
-      {:ok, _} = Tortoise.Events.register(client_id, :status)
-      assert_receive {{Tortoise, ^client_id}, :status, :connected}
-
+    test "ping_sync/2", context do
       ping_request = %Package.Pingreq{}
       expected_pingresp = %Package.Pingresp{}
       script = [{:receive, ping_request}, {:send, expected_pingresp}]
 
       {:ok, _} = ScriptedMqttServer.enact(context.scripted_mqtt_server, script)
+
+      # make sure the client is connected
+      assert_receive {{TestHandler, :handle_connack}, %Tortoise.Package.Connack{}}
 
       {parent, ref} = {self(), make_ref()}
 

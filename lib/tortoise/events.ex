@@ -9,7 +9,7 @@ defmodule Tortoise.Events do
   `Tortoise.Events.unregister/2` for how to unsubscribe.
   """
 
-  @types [:connection, :status, :ping_response]
+  @types [:connection, :ping_response]
 
   @doc """
   Subscribe to messages on the client with the client id `client_id`
@@ -25,10 +25,6 @@ defmodule Tortoise.Events do
   multiple clients. The value depends on the message type.
 
   Possible message types are:
-
-    - `:status` dispatched when the connection of a client changes
-      status. The value will be `:up` when the client goes online, and
-      `:down` when it goes offline.
 
     - `:ping_response` dispatched when the connection receive a
       response from a keep alive message. The value is the round trip

@@ -22,7 +22,6 @@ defmodule Tortoise.Connection.InflightTest do
 
   defp drop_connection(%{server: server} = context) do
     :ok = :gen_tcp.close(server)
-    :ok = Tortoise.Events.dispatch(context.client_id, :status, :down)
     {:ok, Map.drop(context, [:client, :server, :connection])}
   end
 
