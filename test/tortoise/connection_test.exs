@@ -87,12 +87,12 @@ defmodule Tortoise.ConnectionTest do
         handler: {Tortoise.Handler.Default, []}
       ]
 
-      assert {:ok, _pid} = Connection.start_link(opts)
+      assert {:ok, pid} = Connection.start_link(opts)
       assert_receive {ScriptedMqttServer, {:received, ^connect}}
       assert_receive {ScriptedMqttServer, :paused}
 
       # Should be able to get a connection when we have connected
-      assert {:ok, {Tortoise.Transport.Tcp, _port}} = Connection.connection(client_id)
+      assert {:ok, {Tortoise.Transport.Tcp, _port}} = Connection.connection(pid)
 
       # If the server does not specify a server_keep_alive interval we
       # should use the one that was provided in the connect message,
@@ -159,17 +159,17 @@ defmodule Tortoise.ConnectionTest do
         handler: {Tortoise.Handler.Default, []}
       ]
 
-      assert {:ok, _pid} = Connection.start_link(opts)
+      assert {:ok, pid} = Connection.start_link(opts)
       assert_receive {ScriptedMqttServer, {:received, ^connect}}
 
       # Should be able to get a connection when we have connected
-      assert {:ok, {Tortoise.Transport.Tcp, _port}} = Connection.connection(client_id)
+      assert {:ok, {Tortoise.Transport.Tcp, _port}} = Connection.connection(pid)
 
       # If the server does specify a server_keep_alive interval we
       # should use that one for the keep_alive instead of the user
       # provided one in the connect message, besides that the values
       # of the config should be the defaults
-      assert {:connected, %{keep_alive: ^server_keep_alive}} = Connection.info(client_id)
+      assert {:connected, %{keep_alive: ^server_keep_alive}} = Connection.info(pid)
 
       send(context.scripted_mqtt_server, :continue)
       assert_receive {ScriptedMqttServer, :completed}
@@ -1091,19 +1091,18 @@ defmodule Tortoise.ConnectionTest do
   describe "ping" do
     setup [:setup_scripted_mqtt_server, :setup_connection_and_perform_handshake]
 
-    test "send pingreq and receive a pingresp", %{client_id: client_id} = context do
-      {:ok, _} = Tortoise.Events.register(client_id, :status)
-      assert_receive {{Tortoise, ^client_id}, :status, :connected}
-
+    test "send pingreq and receive a pingresp", %{connection_pid: connection_pid} = context do
       ping_request = %Package.Pingreq{}
       expected_pingresp = %Package.Pingresp{}
       script = [{:receive, ping_request}, {:send, expected_pingresp}]
 
       {:ok, _} = ScriptedMqttServer.enact(context.scripted_mqtt_server, script)
+      assert_receive {{TestHandler, :handle_connack}, %Tortoise.Package.Connack{}}
 
-      {:ok, ref} = Connection.ping(context.client_id)
+      {:ok, ref} = Connection.ping(context.connection_pid)
       assert_receive {ScriptedMqttServer, {:received, ^ping_request}}
-      assert_receive {{Tortoise, ^client_id}, {Package.Pingreq, ^ref}, _}
+      assert_receive {{Tortoise, ^connection_pid}, {Package.Pingreq, ^ref}, _}
+      assert_receive {ScriptedMqttServer, :completed}
     end
 
     test "ping_sync/2", %{client_id: client_id} = context do
@@ -1119,7 +1118,8 @@ defmodule Tortoise.ConnectionTest do
       {parent, ref} = {self(), make_ref()}
 
       spawn_link(fn ->
-        send(parent, {{:child_result, ref}, Connection.ping_sync(client_id)})
+        ping_res = Connection.ping_sync(context.connection_pid)
+        send(parent, {{:child_result, ref}, ping_res})
       end)
 
       assert_receive {ScriptedMqttServer, {:received, ^ping_request}}

@@ -328,10 +328,10 @@ defmodule Tortoise.Connection do
   better to listen on `:ping_response` using the `Tortoise.Events`
   PubSub.
   """
-  @spec ping(Tortoise.client_id()) :: {:ok, reference()}
-  def ping(client_id) do
+  @spec ping(pid()) :: {:ok, reference()}
+  def ping(pid) do
     ref = make_ref()
-    :ok = GenStateMachine.cast(via_name(client_id), {:ping, {self(), ref}})
+    :ok = GenStateMachine.cast(pid, {:ping, {self(), ref}})
     {:ok, ref}
   end
 
@@ -1067,20 +1067,14 @@ defmodule Tortoise.Connection do
         :internal,
         {:received, %Package.Pingresp{}},
         :connected,
-        %State{
-          client_id: client_id,
-          ping: {{:pinging, start_time}, awaiting}
-        } = data
+        %State{ping: {{:pinging, start_time}, awaiting}} = data
       ) do
     round_trip_time =
       (System.monotonic_time() - start_time)
       |> System.convert_time_unit(:native, :microsecond)
 
-    :ok = Events.dispatch(client_id, :ping_response, round_trip_time)
-
-    Enum.each(awaiting, fn {caller, ref} ->
-      send(caller, {{Tortoise, client_id}, {Package.Pingreq, ref}, round_trip_time})
-    end)
+    # reply to the clients
+    Enum.each(awaiting, &send_reply(&1, Package.Pingreq, round_trip_time))
 
     next_actions = [{:next_event, :internal, :setup_keep_alive_timer}]
 
@@ -1159,5 +1153,9 @@ defmodule Tortoise.Connection do
     end
   end
 
-  @compile {:inline, wrap_next_actions: 1}
+  defp send_reply({caller, ref}, topic, payload) when is_pid(caller) and is_reference(ref) do
+    send(caller, {{Tortoise, self()}, {topic, ref}, payload})
+  end
+
+  @compile {:inline, wrap_next_actions: 1, send_reply: 3}
 end
