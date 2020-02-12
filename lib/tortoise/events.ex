@@ -9,7 +9,7 @@ defmodule Tortoise.Events do
   `Tortoise.Events.unregister/2` for how to unsubscribe.
   """
 
-  @types [:connection, :ping_response]
+  @types [:connection]
 
   @doc """
   Subscribe to messages on the client with the client id `client_id`
@@ -24,12 +24,7 @@ defmodule Tortoise.Events do
   Making it possible to pattern match on multiple message types on
   multiple clients. The value depends on the message type.
 
-  Possible message types are:
-
-    - `:ping_response` dispatched when the connection receive a
-      response from a keep alive message. The value is the round trip
-      time in milliseconds, and can be used to track the latency over
-      time.
+  Possible message types are: None, don't use them.
 
   Other message types exist, but unless they are mentioned in the
   possible message types above they should be considered for internal
