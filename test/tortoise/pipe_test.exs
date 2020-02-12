@@ -45,11 +45,13 @@ defmodule Tortoise.PipeTest do
   describe "new/2" do
     setup [:setup_registry]
 
+    @tag skip: true
     test "generating a pipe when the connection is up", context do
       context = run_setup(context, :setup_connection)
       assert %Pipe{} = Pipe.new(context.client_id)
     end
 
+    @tag skip: true
     test "generating a pipe while the connection is in connecting state", context do
       parent = self()
       client_id = context.client_id
@@ -72,6 +74,7 @@ defmodule Tortoise.PipeTest do
   describe "publish/4" do
     setup [:setup_registry, :setup_connection]
 
+    @tag skip: true
     test "publish a message", context do
       pipe = Pipe.new(context.test)
       topic = "foo/bar"
@@ -82,6 +85,7 @@ defmodule Tortoise.PipeTest do
       assert %Package.Publish{topic: ^topic, payload: ^payload} = Package.decode(package)
     end
 
+    @tag skip: true
     test "replace pipe during a publish if the socket is closed (active:false)", context do
       client_id = context.client_id
       parent = self()
@@ -126,17 +130,20 @@ defmodule Tortoise.PipeTest do
   describe "await/1" do
     setup [:setup_registry, :setup_connection, :setup_inflight]
 
+    @tag skip: true
     test "awaiting an empty pending list should complete instantly", context do
       pipe = Pipe.new(context.client_id)
       {:ok, %Pipe{pending: []}} = Pipe.await(pipe)
     end
 
+    @tag skip: true
     test "error with a timeout if given timeout is reached", context do
       pipe = Pipe.new(context.client_id)
       pipe = Pipe.publish(pipe, "foo/bar", nil, qos: 1)
       {:error, :timeout} = Pipe.await(pipe, 20)
     end
 
+    @tag skip: true
     test "block until pending packages has been acknowledged", context do
       client_id = context.client_id
       parent = self()

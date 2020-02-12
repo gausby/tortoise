@@ -873,14 +873,14 @@ defmodule Tortoise.ConnectionTest do
   describe "socket subscription" do
     setup [:setup_scripted_mqtt_server]
 
-    test "return error if asking for a connection on an non-existent connection", context do
-      assert {:error, :unknown_connection} = Connection.connection(context.client_id)
+    test "return error if asking for a connection on an non-existent connection" do
+      {pid, ref} = spawn_monitor(fn -> nil end)
+      assert_receive {:DOWN, ^ref, :process, ^pid, :normal}
+      assert {:error, :unknown_connection} = Connection.connection(pid)
     end
 
     test "receive a socket from a connection", context do
-      client_id = context.client_id
-
-      connect = %Package.Connect{client_id: client_id, clean_start: true}
+      connect = %Package.Connect{client_id: context.client_id, clean_start: true}
       expected_connack = %Package.Connack{reason: :success, session_present: false}
 
       script = [{:receive, connect}, {:send, expected_connack}]
@@ -888,40 +888,43 @@ defmodule Tortoise.ConnectionTest do
       {:ok, {ip, port}} = ScriptedMqttServer.enact(context.scripted_mqtt_server, script)
 
       opts = [
-        client_id: client_id,
+        client_id: context.client_id,
         server: {Tortoise.Transport.Tcp, [host: ip, port: port]},
         handler: {Tortoise.Handler.Default, []}
       ]
 
-      assert {:ok, _pid} = Connection.start_link(opts)
+      assert {:ok, connection} = Connection.start_link(opts)
       assert_receive {ScriptedMqttServer, {:received, ^connect}}
 
       assert {:ok, {Tortoise.Transport.Tcp, _socket}} =
-               Connection.connection(client_id, timeout: 500)
+               Connection.connection(connection, timeout: 500)
 
       assert_receive {ScriptedMqttServer, :completed}
     end
 
     test "timeout on a socket from a connection", context do
-      client_id = context.client_id
-
-      connect = %Package.Connect{client_id: client_id, clean_start: true}
+      connect = %Package.Connect{client_id: context.client_id, clean_start: true}
 
       script = [{:receive, connect}, :pause]
 
       {:ok, {ip, port}} = ScriptedMqttServer.enact(context.scripted_mqtt_server, script)
 
       opts = [
-        client_id: client_id,
+        client_id: context.client_id,
         server: {Tortoise.Transport.Tcp, [host: ip, port: port]},
         handler: {Tortoise.Handler.Default, []}
       ]
 
-      assert {:ok, _pid} = Connection.start_link(opts)
+      assert {:ok, connection} = Connection.start_link(opts)
       assert_receive {ScriptedMqttServer, {:received, ^connect}}
       assert_receive {ScriptedMqttServer, :paused}
 
-      assert {:error, :timeout} = Connection.connection(client_id, timeout: 5)
+      {child_pid, mon_ref} =
+        spawn_monitor(fn ->
+          Connection.connection(connection, timeout: 5)
+        end)
+
+      assert_receive {:DOWN, ^mon_ref, :process, ^child_pid, {:timeout, _}}
 
       send(context.scripted_mqtt_server, :continue)
       assert_receive {ScriptedMqttServer, :completed}
@@ -964,24 +967,24 @@ defmodule Tortoise.ConnectionTest do
         handler: handler
       ]
 
-      assert {:ok, pid} = Connection.start_link(opts)
+      assert {:ok, connection_pid} = Connection.start_link(opts)
       assert_receive {ScriptedMqttServer, {:received, ^connect}}
 
       cs_pid = Connection.Supervisor.whereis(client_id)
       cs_ref = Process.monitor(cs_pid)
 
       inflight_pid = Connection.Inflight.whereis(client_id)
-      {:ok, {Tortoise.Transport.Tcp, _}} = Connection.connection(client_id)
+      {:ok, {Tortoise.Transport.Tcp, _}} = Connection.connection(connection_pid)
 
       {:connected,
        %{
          receiver_pid: receiver_pid
-       }} = Connection.info(client_id)
+       }} = Connection.info(connection_pid)
 
-      assert :ok = Tortoise.Connection.disconnect(client_id)
+      assert :ok = Tortoise.Connection.disconnect(connection_pid)
 
       assert_receive {ScriptedMqttServer, {:received, ^disconnect}}
-      assert_receive {:EXIT, ^pid, :shutdown}
+      assert_receive {:EXIT, ^connection_pid, :shutdown}
 
       assert_receive {ScriptedMqttServer, :completed}
 

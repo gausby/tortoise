@@ -24,7 +24,7 @@ defmodule Tortoise.Connection do
 
   alias __MODULE__, as: State
 
-  alias Tortoise.{Handler, Transport, Package, Events}
+  alias Tortoise.{Handler, Transport, Package}
   alias Tortoise.Connection.{Info, Receiver, Inflight, Backoff}
   alias Tortoise.Package.Connect
 
@@ -373,44 +373,51 @@ defmodule Tortoise.Connection do
         when opts: {:timeout, timeout()} | {:active, boolean()}
   def connection(pid, _opts \\ [active: false])
 
-  def connection(pid, _opts) when is_pid(pid) do
-    GenStateMachine.call(pid, :get_connection)
-  end
+  def connection(pid, opts) when is_pid(pid) do
+    timeout = Keyword.get(opts, :timeout, :infinity)
 
-  def connection(client_id, opts) do
-    # register a connection subscription in the case we are currently
-    # in the connect phase; this solves a possible race condition
-    # where the connection is requested while the status is
-    # connecting, but will reach the receive block after the message
-    # has been dispatched from the pubsub; previously we registered
-    # for the connection message in this window.
-    {:ok, _} = Events.register(client_id, :connection)
-
-    case Tortoise.Registry.meta(via_name(client_id)) do
-      {:ok, {_transport, _socket} = connection} ->
-        {:ok, connection}
-
-      {:ok, :connecting} ->
-        timeout = Keyword.get(opts, :timeout, :infinity)
-
-        receive do
-          {{Tortoise, ^client_id}, :connection, {transport, socket}} ->
-            {:ok, {transport, socket}}
-        after
-          timeout ->
-            {:error, :timeout}
-        end
-
-      :error ->
-        {:error, :unknown_connection}
+    # make it possible to subscribe to a connection using "active"!
+    if Process.alive?(pid) do
+      GenStateMachine.call(pid, :get_connection, timeout)
+    else
+      {:error, :unknown_connection}
     end
-  after
-    # if the connection subscription is non-active we should remove it
-    # from the registry, so the process will not receive connection
-    # messages when the connection is reestablished.
-    active? = Keyword.get(opts, :active, false)
-    unless active?, do: Events.unregister(client_id, :connection)
   end
+
+  # def connection(client_id, opts) do
+  #   # register a connection subscription in the case we are currently
+  #   # in the connect phase; this solves a possible race condition
+  #   # where the connection is requested while the status is
+  #   # connecting, but will reach the receive block after the message
+  #   # has been dispatched from the pubsub; previously we registered
+  #   # for the connection message in this window.
+  #   {:ok, _} = Events.register(client_id, :connection)
+
+  #   case Tortoise.Registry.meta(via_name(client_id)) do
+  #     {:ok, {_transport, _socket} = connection} ->
+  #       {:ok, connection}
+
+  #     {:ok, :connecting} ->
+  #       timeout = Keyword.get(opts, :timeout, :infinity)
+
+  #       receive do
+  #         {{Tortoise, ^client_id}, :connection, {transport, socket}} ->
+  #           {:ok, {transport, socket}}
+  #       after
+  #         timeout ->
+  #           {:error, :timeout}
+  #       end
+
+  #     :error ->
+  #       {:error, :unknown_connection}
+  #   end
+  # after
+  #   # if the connection subscription is non-active we should remove it
+  #   # from the registry, so the process will not receive connection
+  #   # messages when the connection is reestablished.
+  #   active? = Keyword.get(opts, :active, false)
+  #   unless active?, do: Events.unregister(client_id, :connection)
+  # end
 
   # Callbacks
   @impl true
@@ -467,8 +474,6 @@ defmodule Tortoise.Connection do
     case Handler.execute_handle_connack(handler, connack) do
       {:ok, %Handler{} = updated_handler, next_actions} when connection_result == :success ->
         :ok = Tortoise.Registry.put_meta(via_name(client_id), data.connection)
-        # todo, get rid of the connection event
-        :ok = Events.dispatch(client_id, :connection, data.connection)
         :ok = Inflight.update_connection(client_id, data.connection)
 
         data = %State{

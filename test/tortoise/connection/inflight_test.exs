@@ -14,7 +14,6 @@ defmodule Tortoise.Connection.InflightTest do
     connection = {Tortoise.Transport.Tcp, client_socket}
     key = Tortoise.Registry.via_name(Tortoise.Connection, context.client_id)
     Tortoise.Registry.put_meta(key, connection)
-    Tortoise.Events.dispatch(context.client_id, :connection, connection)
 
     {:ok,
      Map.merge(context, %{client: client_socket, server: server_socket, connection: connection})}
