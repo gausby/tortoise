@@ -105,7 +105,7 @@ defmodule Tortoise.ConnectionTest do
                 capabilities: %Connection.Info.Capabilities{
                   server_keep_alive: nil
                 }
-              }} = Connection.info(client_id)
+              }} = Connection.info(pid)
 
       send(context.scripted_mqtt_server, :continue)
       assert_receive {ScriptedMqttServer, :completed}
@@ -383,8 +383,6 @@ defmodule Tortoise.ConnectionTest do
     # @todo unsuccessful subscribe
 
     test "successful unsubscribe", %{connection_pid: connection} = context do
-      client_id = context.client_id
-
       unsubscribe_foo = %Package.Unsubscribe{identifier: 2, topics: ["foo"]}
       unsuback_foo = %Package.Unsuback{results: [:success], identifier: 2}
 
@@ -436,13 +434,13 @@ defmodule Tortoise.ConnectionTest do
       # handle_unsuback should get called on the callback handler
       assert_receive {{TestHandler, :handle_unsuback}, {^unsubscribe_foo, ^unsuback_foo}}
 
-      refute Map.has_key?(Tortoise.Connection.subscriptions(client_id), "foo")
+      refute Map.has_key?(Tortoise.Connection.subscriptions(connection), "foo")
       # should still have bar in active subscriptions
-      assert Map.has_key?(Tortoise.Connection.subscriptions(client_id), "bar")
+      assert Map.has_key?(Tortoise.Connection.subscriptions(connection), "bar")
 
       # and unsubscribe from bar
       assert {:ok, ref} =
-               Tortoise.Connection.unsubscribe(client_id, "bar",
+               Tortoise.Connection.unsubscribe(connection, "bar",
                  identifier: 3,
                  user_property: {"foo", "bar"}
                )
@@ -800,9 +798,8 @@ defmodule Tortoise.ConnectionTest do
       # with `{:error, :econnrefused}`, and then it will finally start
       # accepting connections
       Process.flag(:trap_exit, true)
-      client_id = context.client_id
 
-      connect = %Package.Connect{client_id: client_id, clean_start: true}
+      connect = %Package.Connect{client_id: context.client_id, clean_start: true}
       expected_connack = %Package.Connack{reason: :success, session_present: false}
       refusal = {:error, :econnrefused}
 
@@ -825,7 +822,7 @@ defmodule Tortoise.ConnectionTest do
 
       assert {:ok, _pid} =
                Tortoise.Connection.start_link(
-                 client_id: client_id,
+                 client_id: context.client_id,
                  server: {ScriptedTransport, host: 'localhost', port: 1883},
                  backoff: [min_interval: 0],
                  handler: {Tortoise.Handler.Logger, []}

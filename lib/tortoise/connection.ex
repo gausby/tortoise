@@ -79,15 +79,7 @@ defmodule Tortoise.Connection do
       handler: handler
     }
 
-    opts = Keyword.merge(opts, name: via_name(client_id))
     GenStateMachine.start_link(__MODULE__, initial, opts)
-  end
-
-  @doc false
-  @spec via_name(Tortoise.client_id()) ::
-          pid() | {:via, Registry, {Tortoise.Registry, {atom(), Tortoise.client_id()}}}
-  def via_name(client_id) do
-    Tortoise.Registry.via_name(__MODULE__, client_id)
   end
 
   @spec child_spec(Keyword.t()) :: %{
@@ -112,7 +104,7 @@ defmodule Tortoise.Connection do
   inflight messages and send the proper disconnect message to the
   broker. The session will get terminated on the server.
   """
-  @spec disconnect(Tortoise.client_id(), reason, properties) :: :ok
+  @spec disconnect(pid(), reason, properties) :: :ok
         when reason: Tortoise.Package.Disconnect.reason(),
              properties: [property],
              property:
@@ -121,9 +113,9 @@ defmodule Tortoise.Connection do
                | {:session_expiry_interval, 0..0xFFFFFFFF}
                | {:user_property, {String.t(), String.t()}}
 
-  def disconnect(client_id, reason \\ :normal_disconnection, properties \\ []) do
+  def disconnect(pid, reason \\ :normal_disconnection, properties \\ []) do
     disconnect = %Package.Disconnect{reason: reason, properties: properties}
-    GenStateMachine.call(via_name(client_id), {:disconnect, disconnect})
+    GenStateMachine.call(pid, {:disconnect, disconnect})
   end
 
   @doc """
@@ -132,9 +124,9 @@ defmodule Tortoise.Connection do
   Given the `client_id` of a running connection return its current
   subscriptions. This is helpful in a debugging situation.
   """
-  @spec subscriptions(Tortoise.client_id()) :: Tortoise.Package.Subscribe.t()
-  def subscriptions(client_id) do
-    GenStateMachine.call(via_name(client_id), :subscriptions)
+  @spec subscriptions(pid()) :: Tortoise.Package.Subscribe.t()
+  def subscriptions(pid) do
+    GenStateMachine.call(pid, :subscriptions)
   end
 
   @doc """
@@ -178,7 +170,7 @@ defmodule Tortoise.Connection do
         properties: properties
       })
 
-    GenStateMachine.cast(via_name(pid), {:subscribe, caller, subscribe, opts})
+    GenStateMachine.cast(pid, {:subscribe, caller, subscribe, opts})
     {:ok, ref}
   end
 
@@ -272,7 +264,7 @@ defmodule Tortoise.Connection do
       properties: properties
     }
 
-    GenStateMachine.cast(via_name(pid), {:unsubscribe, caller, unsubscribe, opts})
+    GenStateMachine.cast(pid, {:unsubscribe, caller, unsubscribe, opts})
     {:ok, ref}
   end
 
@@ -339,7 +331,7 @@ defmodule Tortoise.Connection do
   @doc """
   Ping the server and await the ping latency reply.
 
-  Takes a `client_id` and an optional `timeout`.
+  Takes a `pid` and an optional `timeout`.
 
   Like `ping/1` but will block the caller process until a response is
   received from the server. The response will contain the ping latency
@@ -347,12 +339,12 @@ defmodule Tortoise.Connection do
   advisable to specify a reasonable time one is willing to wait for a
   response.
   """
-  @spec ping_sync(Tortoise.client_id(), timeout()) :: {:ok, reference()} | {:error, :timeout}
-  def ping_sync(client_id, timeout \\ :infinity) do
-    {:ok, ref} = ping(client_id)
+  @spec ping_sync(pid(), timeout()) :: {:ok, reference()} | {:error, :timeout}
+  def ping_sync(pid, timeout \\ :infinity) do
+    {:ok, ref} = ping(pid)
 
     receive do
-      {{Tortoise, ^client_id}, {Package.Pingreq, ^ref}, round_trip_time} ->
+      {{Tortoise, ^pid}, {Package.Pingreq, ^ref}, round_trip_time} ->
         {:ok, round_trip_time}
     after
       timeout ->
@@ -363,12 +355,12 @@ defmodule Tortoise.Connection do
   @doc """
   Get the info on the current connection configuration
   """
-  def info(client_id) do
-    GenStateMachine.call(via_name(client_id), :get_info)
+  def info(pid) do
+    GenStateMachine.call(pid, :get_info)
   end
 
   @doc false
-  @spec connection(Tortoise.client_id() | pid(), [opts]) ::
+  @spec connection(pid(), [opts]) ::
           {:ok, {module(), term()}} | {:error, :unknown_connection} | {:error, :timeout}
         when opts: {:timeout, timeout()} | {:active, boolean()}
   def connection(pid, _opts \\ [active: false])
@@ -473,7 +465,6 @@ defmodule Tortoise.Connection do
       ) do
     case Handler.execute_handle_connack(handler, connack) do
       {:ok, %Handler{} = updated_handler, next_actions} when connection_result == :success ->
-        :ok = Tortoise.Registry.put_meta(via_name(client_id), data.connection)
         :ok = Inflight.update_connection(client_id, data.connection)
 
         data = %State{
@@ -952,8 +943,6 @@ defmodule Tortoise.Connection do
 
   # connection logic ===================================================
   def handle_event(:internal, :connect, :connecting, %State{} = data) do
-    :ok = Tortoise.Registry.put_meta(via_name(data.client_id), :connecting)
-
     case await_and_monitor_receiver(data) do
       {:ok, data} ->
         {timeout, updated_data} = Map.get_and_update(data, :backoff, &Backoff.next/1)
@@ -1028,8 +1017,8 @@ defmodule Tortoise.Connection do
   end
 
   # not connected yet
-  def handle_event(:cast, {:ping, {caller_pid, ref}}, _, %State{client_id: client_id}) do
-    send(caller_pid, {{Tortoise, client_id}, {Package.Pingreq, ref}, :not_connected})
+  def handle_event(:cast, {:ping, {caller_pid, ref}}, _, %State{}) do
+    send(caller_pid, {{Tortoise, self()}, {Package.Pingreq, ref}, :not_connected})
     :keep_state_and_data
   end
 
