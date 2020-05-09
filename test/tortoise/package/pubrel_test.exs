@@ -1,20 +1,22 @@
 defmodule Tortoise.Package.PubrelTest do
   use ExUnit.Case
-  use EQC.ExUnit
+  # use EQC.ExUnit
   doctest Tortoise.Package.Pubrel
 
-  alias Tortoise.Package
+  # alias Tortoise.Package
 
-  import Tortoise.TestGenerators, only: [gen_pubrel: 0]
+  # import Tortoise.TestGenerators, only: [gen_pubrel: 0]
 
-  property "encoding and decoding pubrel messages" do
-    forall pubrel <- gen_pubrel() do
-      ensure(
-        pubrel ==
-          pubrel
-          |> Package.encode()
-          |> Package.decode()
-      )
-    end
-  end
+  # property "encoding and decoding pubrel messages" do
+  #   forall pubrel <- gen_pubrel() do
+  #     ensure(
+  #       pubrel ==
+  #         pubrel
+  #         |> Package.encode()
+  #         |> Package.decode()
+  #     )
+  #   end
+  # end
+  @tag :skip
+  test "encoding and decoding pubrel messages"
 end

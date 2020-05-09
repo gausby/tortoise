@@ -46,7 +46,7 @@ defmodule Tortoise.MixProject do
     [
       {:gen_state_machine, "~> 2.0"},
       {:dialyxir, "~> 1.0.0-rc.3", only: [:dev], runtime: false},
-      {:eqc_ex, "~> 1.4", only: :test},
+      {:stream_data, "~> 0.5", only: [:test, :dev]},
       {:excoveralls, "~> 0.10", only: :test},
       {:ex_doc, "~> 0.19", only: :docs},
       {:ct_helper, github: "ninenines/ct_helper", only: :test}
