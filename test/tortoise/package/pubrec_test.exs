@@ -1,23 +1,19 @@
 defmodule Tortoise.Package.PubrecTest do
   use ExUnit.Case
-  # use EQC.ExUnit
+  use ExUnitProperties
+
   doctest Tortoise.Package.Pubrec
 
-  # alias Tortoise.Package
+  alias Tortoise.Package
 
-  # import Tortoise.TestGenerators, only: [gen_pubrec: 0]
+  property "encoding and decoding pubrec messages" do
+    config = %Package.Pubrec{identifier: nil, reason: nil, properties: nil}
 
-  # property "encoding and decoding pubrec messages" do
-  #   forall pubrec <- gen_pubrec() do
-  #     ensure(
-  #       pubrec ==
-  #         pubrec
-  #         |> Package.encode()
-  #         |> Package.decode()
-  #     )
-  #   end
-  # end
-
-  @tag :skip
-  test "encoding and decoding pubrec messages"
+    check all pubrec <- Package.generate(config) do
+      assert pubrec ==
+               pubrec
+               |> Package.encode()
+               |> Package.decode()
+    end
+  end
 end
