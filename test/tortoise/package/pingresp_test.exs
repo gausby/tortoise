@@ -1,15 +1,21 @@
 defmodule Tortoise.Package.PingrespTest do
   use ExUnit.Case
+  use ExUnitProperties
+
   doctest Tortoise.Package.Pingresp
 
   alias Tortoise.Package
 
-  test "encoding and decoding ping responses" do
-    pingresp = %Package.Pingresp{}
+  property "encoding and decoding pingresp messages" do
+    # I know, data will always be the same, having a property for this
+    # is kind of silly...
+    config = %Package.Pingresp{}
 
-    assert ^pingresp =
-             pingresp
-             |> Package.encode()
-             |> Package.decode()
+    check all pingresp <- Package.generate(config) do
+      assert pingresp ==
+               pingresp
+               |> Package.encode()
+               |> Package.decode()
+    end
   end
 end

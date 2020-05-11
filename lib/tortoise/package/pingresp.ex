@@ -21,4 +21,22 @@ defmodule Tortoise.Package.Pingresp do
       [Package.Meta.encode(t.__META__), 0]
     end
   end
+
+  if Code.ensure_loaded?(StreamData) do
+    defimpl Tortoise.Generatable do
+      import StreamData
+
+      def generate(%type{__META__: _meta} = package) do
+        values = package |> Map.from_struct()
+
+        fixed_list(Enum.map(values, &constant(&1)))
+        |> bind(fn data ->
+          fixed_map([
+            {:__struct__, type}
+            | for({k, v} <- data, do: {k, constant(v)})
+          ])
+        end)
+      end
+    end
+  end
 end
