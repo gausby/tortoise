@@ -13,7 +13,7 @@ defmodule Tortoise.Package.Puback do
           | :unspecified_error
           | :implementation_specific_error
           | :not_authorized
-          | :topic_Name_invalid
+          | :topic_name_invalid
           | :packet_identifier_in_use
           | :quota_exceeded
           | :payload_format_invalid
@@ -57,7 +57,7 @@ defmodule Tortoise.Package.Puback do
       0x80 -> {:refused, :unspecified_error}
       0x83 -> {:refused, :implementation_specific_error}
       0x87 -> {:refused, :not_authorized}
-      0x90 -> {:refused, :topic_Name_invalid}
+      0x90 -> {:refused, :topic_name_invalid}
       0x91 -> {:refused, :packet_identifier_in_use}
       0x97 -> {:refused, :quota_exceeded}
       0x99 -> {:refused, :payload_format_invalid}
@@ -98,11 +98,113 @@ defmodule Tortoise.Package.Puback do
         :unspecified_error -> 0x80
         :implementation_specific_error -> 0x83
         :not_authorized -> 0x87
-        :topic_Name_invalid -> 0x90
+        :topic_name_invalid -> 0x90
         :packet_identifier_in_use -> 0x91
         :quota_exceeded -> 0x97
         :payload_format_invalid -> 0x99
       end
+    end
+  end
+
+  if Code.ensure_loaded?(StreamData) do
+    defimpl Tortoise.Generatable do
+      import StreamData
+
+      def generate(%type{__META__: _meta} = package) do
+        values = package |> Map.from_struct()
+
+        fixed_list(Enum.map(values, &constant(&1)))
+        |> bind(&gen_identifier/1)
+        |> bind(&gen_reason/1)
+        |> bind(&gen_properties/1)
+        |> bind(fn data ->
+          fixed_map([
+            {:__struct__, type}
+            | for({k, v} <- data, do: {k, constant(v)})
+          ])
+        end)
+      end
+
+      defp gen_identifier(values) do
+        case Keyword.pop(values, :identifier) do
+          {nil, values} ->
+            fixed_list([
+              {constant(:identifier), integer(1..0xFFFF)}
+              | Enum.map(values, &constant(&1))
+            ])
+
+          {id, _} when is_integer(id) and id in 1..0xFFFF ->
+            constant(values)
+        end
+      end
+
+      @refusals [
+        :no_matching_subscribers,
+        :unspecified_error,
+        :implementation_specific_error,
+        :not_authorized,
+        :topic_name_invalid,
+        :packet_identifier_in_use,
+        :quota_exceeded,
+        :payload_format_invalid
+      ]
+
+      defp gen_reason(values) do
+        case Keyword.pop(values, :reason) do
+          {nil, values} ->
+            fixed_list([
+              {
+                constant(:reason),
+                StreamData.frequency([
+                  {60, constant(:success)},
+                  {40, tuple({constant(:refused), one_of(@refusals)})}
+                ])
+              }
+              | Enum.map(values, &constant(&1))
+            ])
+
+          {{:refused, nil}, values} ->
+            fixed_list([
+              {:reason, tuple({constant(:refused), one_of(@refusals)})}
+              | Enum.map(values, &constant(&1))
+            ])
+
+          {:success, _} ->
+            constant(values)
+
+          {{:refused, refusal_reason}, _} when refusal_reason in @refusals ->
+            constant(values)
+        end
+      end
+
+      defp gen_properties(values) do
+        case Keyword.pop(values, :properties) do
+          {nil, values} ->
+            properties =
+              uniq_list_of(
+                one_of([
+                  # here we allow stings with a byte size of zero; don't
+                  # know if that is a problem according to the spec. Let's
+                  # handle that situation just in case:
+                  {constant(:user_property), {string(:printable), string(:printable)}},
+                  {constant(:reason_string), string(:printable)}
+                ]),
+                uniq_fun: &uniq/1,
+                max_length: 5
+              )
+
+            fixed_list([
+              {constant(:properties), properties}
+              | Enum.map(values, &constant(&1))
+            ])
+
+          {_passthrough, _} ->
+            constant(values)
+        end
+      end
+
+      defp uniq({:user_property, _v}), do: :crypto.strong_rand_bytes(2)
+      defp uniq({k, _v}), do: k
     end
   end
 end
