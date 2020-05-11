@@ -157,4 +157,100 @@ defmodule Tortoise.Package.Disconnect do
       end
     end
   end
+
+  if Code.ensure_loaded?(StreamData) do
+    defimpl Tortoise.Generatable do
+      import StreamData
+
+      def generate(%type{__META__: _meta} = package) do
+        values = package |> Map.from_struct()
+
+        fixed_list(Enum.map(values, &constant(&1)))
+        |> bind(&gen_reason/1)
+        |> bind(&gen_properties/1)
+        |> bind(fn data ->
+          fixed_map([
+            {:__struct__, type}
+            | for({k, v} <- data, do: {k, constant(v)})
+          ])
+        end)
+      end
+
+      @reasons [
+        :normal_disconnection,
+        :disconnect_with_will_message,
+        :unspecified_error,
+        :malformed_packet,
+        :protocol_error,
+        :implementation_specific_error,
+        :not_authorized,
+        :server_busy,
+        :server_shutting_down,
+        :keep_alive_timeout,
+        :session_taken_over,
+        :topic_filter_invalid,
+        :topic_name_invalid,
+        :receive_maximum_exceeded,
+        :topic_alias_invalid,
+        :packet_too_large,
+        :message_rate_too_high,
+        :quota_exceeded,
+        :administrative_action,
+        :payload_format_invalid,
+        :retain_not_supported,
+        :qos_not_supported,
+        :use_another_server,
+        :server_moved,
+        :shared_subscriptions_not_supported,
+        :connection_rate_exceeded,
+        :maximum_connect_time,
+        :subscription_identifiers_not_supported,
+        :wildcard_subscriptions_not_supported
+      ]
+
+      defp gen_reason(values) do
+        case Keyword.pop(values, :reason) do
+          {nil, values} ->
+            fixed_list([
+              {constant(:reason), one_of(@reasons)}
+              | Enum.map(values, &constant(&1))
+            ])
+
+          {reason, _} when reason in @reasons ->
+            constant(values)
+        end
+      end
+
+      defp gen_properties(values) do
+        case Keyword.pop(values, :properties) do
+          {nil, values} ->
+            properties =
+              uniq_list_of(
+                one_of([
+                  # here we allow stings with a byte size of zero; don't
+                  # know if that is a problem according to the spec. Let's
+                  # handle that situation just in case:
+                  {constant(:user_property), {string(:printable), string(:printable)}},
+                  {constant(:reason_string), string(:printable)},
+                  {constant(:session_expiry_interval), integer(0..0xFFFFFFFF)}
+                  # TODO generate valid :server_reference,
+                ]),
+                uniq_fun: &uniq/1,
+                max_length: 5
+              )
+
+            fixed_list([
+              {constant(:properties), properties}
+              | Enum.map(values, &constant(&1))
+            ])
+
+          {_passthrough, _} ->
+            constant(values)
+        end
+      end
+
+      defp uniq({:user_property, _v}), do: :crypto.strong_rand_bytes(2)
+      defp uniq({k, _v}), do: k
+    end
+  end
 end

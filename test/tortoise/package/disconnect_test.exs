@@ -1,22 +1,19 @@
 defmodule Tortoise.Package.DisconnectTest do
   use ExUnit.Case
-  # use EQC.ExUnit
+  use ExUnitProperties
+
   doctest Tortoise.Package.Disconnect
 
-  # alias Tortoise.Package
+  alias Tortoise.Package
 
-  # import Tortoise.TestGenerators, only: [gen_disconnect: 0]
+  property "encoding and decoding disconnect messages" do
+    config = %Package.Disconnect{reason: nil, properties: nil}
 
-  # property "encoding and decoding disconnect messages" do
-  #   forall disconnect <- gen_disconnect() do
-  #     ensure(
-  #       disconnect ==
-  #         disconnect
-  #         |> Package.encode()
-  #         |> Package.decode()
-  #     )
-  #   end
-  # end
-  @tag :skip
-  test "encoding and decoding disconnect messages"
+    check all disconnect <- Package.generate(config) do
+      assert disconnect ==
+               disconnect
+               |> Package.encode()
+               |> Package.decode()
+    end
+  end
 end
