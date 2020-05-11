@@ -1,22 +1,19 @@
 defmodule Tortoise.Package.PubcompTest do
   use ExUnit.Case
-  # use EQC.ExUnit
+  use ExUnitProperties
+
   doctest Tortoise.Package.Pubcomp
 
-  # alias Tortoise.Package
+  alias Tortoise.Package
 
-  # import Tortoise.TestGenerators, only: [gen_pubcomp: 0]
+  property "encoding and decoding pubcomp messages" do
+    config = %Package.Pubcomp{identifier: nil, reason: nil, properties: nil}
 
-  # property "encoding and decoding pubcomp messages" do
-  #   forall pubcomp <- gen_pubcomp() do
-  #     ensure(
-  #       pubcomp ==
-  #         pubcomp
-  #         |> Package.encode()
-  #         |> Package.decode()
-  #     )
-  #   end
-  # end
-  @tag :skip
-  test "encoding and decoding pubcomp messages"
+    check all pubcomp <- Package.generate(config) do
+      assert pubcomp ==
+               pubcomp
+               |> Package.encode()
+               |> Package.decode()
+    end
+  end
 end
