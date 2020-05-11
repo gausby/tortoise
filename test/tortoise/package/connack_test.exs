@@ -1,22 +1,19 @@
 defmodule Tortoise.Package.ConnackTest do
   use ExUnit.Case
-  # use EQC.ExUnit
+  use ExUnitProperties
+
   doctest Tortoise.Package.Connack
 
-  # import Tortoise.TestGenerators, only: [gen_connack: 0]
+  alias Tortoise.Package
 
-  # alias Tortoise.Package
+  property "encoding and decoding connack messages" do
+    config = %Package.Connack{reason: nil, session_present: nil, properties: nil}
 
-  # property "encoding and decoding connack messages" do
-  #   forall connack <- gen_connack() do
-  #     ensure(
-  #       connack ==
-  #         connack
-  #         |> Package.encode()
-  #         |> Package.decode()
-  #     )
-  #   end
-  # end
-  @tag :skip
-  test "encoding and decoding connack messages"
+    check all connack <- Package.generate(config) do
+      assert connack ==
+               connack
+               |> Package.encode()
+               |> Package.decode()
+    end
+  end
 end

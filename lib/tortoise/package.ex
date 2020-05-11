@@ -22,6 +22,7 @@ defmodule Tortoise.Package do
 
   defdelegate encode(data), to: Tortoise.Encodable
   defdelegate decode(data), to: Tortoise.Decodable
+  defdelegate generate(package), to: Tortoise.Generatable
 
   @doc false
   def length_encode(data) do

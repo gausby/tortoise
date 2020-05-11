@@ -124,4 +124,147 @@ defmodule Tortoise.Package.Connack do
     defp flag(f) when f in [0, nil, false], do: 0
     defp flag(_), do: 1
   end
+
+  if Code.ensure_loaded?(StreamData) do
+    defimpl Tortoise.Generatable do
+      import StreamData
+
+      def generate(%type{__META__: _meta} = package) do
+        values = package |> Map.from_struct()
+
+        fixed_list(Enum.map(values, &constant(&1)))
+        |> bind(&gen_reason/1)
+        |> bind(&gen_session_present/1)
+        |> bind(&gen_properties/1)
+        |> bind(fn data ->
+          fixed_map([
+            {:__struct__, type}
+            | for({k, v} <- data, do: {k, constant(v)})
+          ])
+        end)
+      end
+
+      @refusals [
+        :unspecified_error,
+        :malformed_packet,
+        :protocol_error,
+        :implementation_specific_error,
+        :unsupported_protocol_version,
+        :client_identifier_not_valid,
+        :bad_user_name_or_password,
+        :not_authorized,
+        :server_unavailable,
+        :server_busy,
+        :banned,
+        :bad_authentication_method,
+        :topic_name_invalid,
+        :packet_too_large,
+        :quota_exceeded,
+        :payload_format_invalid,
+        :retain_not_supported,
+        :qos_not_supported,
+        :use_another_server,
+        :server_moved,
+        :connection_rate_exceeded
+      ]
+
+      defp gen_reason(values) do
+        case Keyword.pop(values, :reason) do
+          {nil, values} ->
+            fixed_list([
+              {
+                constant(:reason),
+                StreamData.frequency([
+                  {60, constant(:success)},
+                  {40, tuple({constant(:refused), one_of(@refusals)})}
+                ])
+              }
+              | Enum.map(values, &constant(&1))
+            ])
+
+          {{:refused, nil}, values} ->
+            fixed_list([
+              {:reason, tuple({constant(:refused), one_of(@refusals)})}
+              | Enum.map(values, &constant(&1))
+            ])
+
+          {:success, _} ->
+            constant(values)
+
+          {{:refused, refusal_reason}, _} when refusal_reason in @refusals ->
+            constant(values)
+        end
+      end
+
+      defp gen_session_present(values) do
+        case Keyword.get(values, :reason) do
+          :success ->
+            case Keyword.pop(values, :session_present) do
+              {nil, values} ->
+                fixed_list([
+                  {constant(:session_present), boolean()}
+                  | Enum.map(values, &constant(&1))
+                ])
+
+              {_passthrough, _} ->
+                constant(values)
+            end
+
+          {:refused, _refusal_reason} ->
+            # There will not be a session if the connection is refused
+            constant(Keyword.put(values, :session_present, false))
+        end
+      end
+
+      defp gen_properties(values) do
+        case Keyword.pop(values, :properties) do
+          {nil, values} ->
+            properties =
+              uniq_list_of(
+                one_of([
+                  # here we allow stings with a byte size of zero; don't
+                  # know if that is a problem according to the spec. Let's
+                  # handle that situation just in case:
+                  {constant(:user_property), {string(:printable), string(:printable)}},
+                  {constant(:assigned_client_identifier),
+                   string(:printable, min_length: 1, max_length: 23)},
+                  {constant(:maximum_packet_size), integer(1..0xFFFFFFFF)},
+                  {constant(:maximum_qos), integer(0..1)},
+                  {constant(:reason_string), string(:printable)},
+                  {constant(:receive_maximum), integer(0..0xFFFF)},
+                  {constant(:retain_available), boolean()},
+                  # TODO don't know if zero is a valid keep alive
+                  {constant(:server_keep_alive), integer(0..0xFFFF)},
+                  {constant(:session_expiry_interval), integer(0..0xFFFF)},
+                  {constant(:shared_subscription_available), boolean()},
+                  {constant(:subscription_identifiers_available), boolean()},
+                  {constant(:topic_alias_maximum), integer(0..0xFFFF)},
+                  {constant(:wildcard_subscription_available), boolean()}
+
+                  # TODO, generator that generate valid server references
+                  # {constant(:server_reference), boolean()},
+                  # TODO, generator that generate valid response info
+                  # {constant(:response_information), boolean()},
+                  # TODO, generate auth data and methods
+                  # {constant(:authentication_data), boolean()},
+                  # {constant(:authentication_method), boolean()}
+                ]),
+                uniq_fun: &uniq/1,
+                max_length: 5
+              )
+
+            fixed_list([
+              {constant(:properties), properties}
+              | Enum.map(values, &constant(&1))
+            ])
+
+          {_passthrough, _} ->
+            constant(values)
+        end
+      end
+
+      defp uniq({:user_property, _v}), do: :crypto.strong_rand_bytes(2)
+      defp uniq({k, _v}), do: k
+    end
+  end
 end
