@@ -226,17 +226,23 @@ defmodule Tortoise.Package.Disconnect do
           {nil, values} ->
             properties =
               uniq_list_of(
-                one_of([
+                # Use frequency to make it more likely to pick a user
+                # property as we are allowed to have multiple of them;
+                # the remaining properties may only occur once,
+                # without the weights we could end up in situations
+                # where StreamData gives up because it cannot find any
+                # candidates that hasn't been chosen before
+                frequency([
                   # here we allow stings with a byte size of zero; don't
                   # know if that is a problem according to the spec. Let's
                   # handle that situation just in case:
-                  {constant(:user_property), {string(:printable), string(:printable)}},
-                  {constant(:reason_string), string(:printable)},
-                  {constant(:session_expiry_interval), integer(0..0xFFFFFFFF)}
+                  {5, {constant(:user_property), {string(:printable), string(:printable)}}},
+                  {1, {constant(:reason_string), string(:printable)}},
+                  {1, {constant(:session_expiry_interval), integer(0..0xFFFFFFFF)}}
                   # TODO generate valid :server_reference,
                 ]),
                 uniq_fun: &uniq/1,
-                max_length: 5
+                max_length: 10
               )
 
             fixed_list([
