@@ -124,4 +124,113 @@ defmodule Tortoise.Package.Suback do
     defp encode_ack({:error, :subscription_identifiers_not_supported}), do: 0xA1
     defp encode_ack({:error, :wildcard_subscriptions_not_supported}), do: 0xA2
   end
+
+  if Code.ensure_loaded?(StreamData) do
+    defimpl Tortoise.Generatable do
+      import StreamData
+
+      def generate(%type{__META__: _meta} = package) do
+        values = package |> Map.from_struct()
+
+        fixed_list(Enum.map(values, &constant(&1)))
+        |> bind(&gen_identifier/1)
+        |> bind(&gen_acks/1)
+        |> bind(&gen_properties/1)
+        |> bind(&fixed_map([{:__struct__, type} | for({k, v} <- &1, do: {k, constant(v)})]))
+      end
+
+      defp gen_identifier(values) do
+        case Keyword.pop(values, :identifier) do
+          {nil, values} ->
+            fixed_list([
+              {constant(:identifier), integer(1..0xFFFF)}
+              | Enum.map(values, &constant(&1))
+            ])
+
+          {id, _} when is_integer(id) and id in 1..0xFFFF ->
+            constant(values)
+        end
+      end
+
+      @refusals [
+        :unspecified_error,
+        :implementation_specific_error,
+        :not_authorized,
+        :topic_filter_invalid,
+        :packet_identifier_in_use,
+        :quota_exceeded,
+        :shared_subscriptions_not_supported,
+        :subscription_identifiers_not_supported,
+        :wildcard_subscriptions_not_supported
+      ]
+
+      defp gen_acks(values) do
+        # Rule: An empty ack list is not allowed; it is a protocol
+        # error to not acknowledge or rejct at least one subscription
+        case Keyword.pop(values, :acks) do
+          {nil, values} ->
+            fixed_list([
+              {constant(:acks), nonempty(list_of(do_gen_ack()))}
+              | Enum.map(values, &constant(&1))
+            ])
+
+          # Generate the acks list based on a list containing either
+          # valid ok/error tuples, or nils, where nils will get
+          # replaced with an ack generator. This allow us to generate
+          # lists with a fixed length and with specific spots filled
+          # with particular values
+          {[_ | _] = acks, values} ->
+            fixed_list([
+              {constant(:acks),
+               fixed_list(
+                 Enum.map(acks, fn
+                   nil -> do_gen_ack()
+                   {:ok, n} = value when n in 0..2 -> constant(value)
+                   {:ok, nil} -> {constant(:ok), integer(0..2)}
+                   {:error, e} = value when e in @refusals -> constant(value)
+                   {:error, nil} -> {constant(:error), one_of(@refusals)}
+                 end)
+               )}
+              | Enum.map(values, &constant(&1))
+            ])
+        end
+      end
+
+      defp do_gen_ack() do
+        frequency([
+          {60, tuple({constant(:ok), integer(0..2)})},
+          {40, tuple({constant(:error), one_of(@refusals)})}
+        ])
+      end
+
+      defp gen_properties(values) do
+        case Keyword.pop(values, :properties) do
+          {nil, values} ->
+            properties =
+              uniq_list_of(
+                frequency([
+                  # here we allow stings with a byte size of zero; don't
+                  # know if that is a problem according to the spec. Let's
+                  # handle that situation just in case:
+                  {4, {constant(:user_property), {string(:printable), string(:printable)}}},
+                  {1, {constant(:reason_string), string(:printable)}}
+                ]),
+                uniq_fun: &uniq/1,
+                max_length: 20
+              )
+
+            fixed_list([
+              {constant(:properties), properties}
+              | Enum.map(values, &constant(&1))
+            ])
+
+          {_passthrough, _} ->
+            constant(values)
+        end
+      end
+
+      defp uniq({:user_property, _v}), do: :crypto.strong_rand_bytes(2)
+      defp uniq({k, _v}), do: k
+    end
+  end
 end
