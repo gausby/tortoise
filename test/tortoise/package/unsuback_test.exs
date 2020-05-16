@@ -1,22 +1,19 @@
 defmodule Tortoise.Package.UnsubackTest do
   use ExUnit.Case
-  # use EQC.ExUnit
+  use ExUnitProperties
+
   doctest Tortoise.Package.Unsuback
 
-  # import Tortoise.TestGenerators, only: [gen_unsuback: 0]
+  alias Tortoise.Package
 
-  # alias Tortoise.Package
+  property "encoding and decoding unsuback messages" do
+    config = %Package.Unsuback{identifier: nil, results: nil, properties: nil}
 
-  # property "encoding and decoding unsuback messages" do
-  #   forall unsuback <- gen_unsuback() do
-  #     ensure(
-  #       unsuback ==
-  #         unsuback
-  #         |> Package.encode()
-  #         |> Package.decode()
-  #     )
-  #   end
-  # end
-  @tag :skip
-  test "encoding and decoding unsuback messages"
+    check all unsuback <- Package.generate(config) do
+      assert unsuback ==
+               unsuback
+               |> Package.encode()
+               |> Package.decode()
+    end
+  end
 end
