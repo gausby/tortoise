@@ -167,4 +167,162 @@ defmodule Tortoise.Package.Subscribe do
        end}
     end
   end
+
+  if Code.ensure_loaded?(StreamData) do
+    defimpl Tortoise.Generatable do
+      import StreamData
+
+      alias Tortoise.Generatable.Topic
+
+      def generate(%type{__META__: _meta} = package) do
+        values = package |> Map.from_struct()
+
+        fixed_list(Enum.map(values, &constant(&1)))
+        |> bind(&gen_identifier/1)
+        |> bind(&gen_topics/1)
+        |> bind(&gen_topic_opts/1)
+        |> bind(&gen_properties/1)
+        |> bind(&fixed_map([{:__struct__, type} | for({k, v} <- &1, do: {k, constant(v)})]))
+      end
+
+      defp gen_identifier(values) do
+        case Keyword.pop(values, :identifier) do
+          {nil, values} ->
+            fixed_list([
+              {constant(:identifier), integer(1..0xFFFF)}
+              | Enum.map(values, &constant(&1))
+            ])
+
+          {id, _} when is_integer(id) and id in 1..0xFFFF ->
+            constant(values)
+        end
+      end
+
+      defp gen_topics(values) do
+        case Keyword.pop(values, :topics) do
+          {nil, values} ->
+            fixed_list([
+              {
+                :topics,
+                list_of(
+                  {gen_topic_filter(), constant(nil)},
+                  max_length: 5,
+                  min_length: 1
+                )
+              }
+              | Enum.map(values, &constant(&1))
+            ])
+
+          {[_ | _] = topics, values} ->
+            [
+              {:topics,
+               fixed_list(
+                 Enum.map(topics, fn
+                   nil ->
+                     {gen_topic_filter(), constant([])}
+
+                   {nil, opts} ->
+                     {gen_topic_filter(), constant(opts)}
+
+                   %StreamData{} = generator ->
+                     bind(generator, fn
+                       {<<_::binary>>, opts} = result when is_list(opts) or is_nil(opts) ->
+                         # result seems fine, pass it on
+                         constant(result)
+
+                       faulty_return ->
+                         raise ArgumentError, """
+                         Faulty result from user specified topic generator #{inspect(generator)}
+
+                         The generator should return a tuple with two elements, where the first is a binary, and the second is a `nil` or a list. Instead the generator returned:
+
+                           #{inspect(faulty_return)}
+
+                         """
+                     end)
+
+                   {%StreamData{} = generator, opts} ->
+                     {generator, constant(opts)}
+
+                   {<<_::binary>>, _} = otherwise ->
+                     constant(otherwise)
+                 end)
+               )}
+              | Enum.map(values, &constant(&1))
+            ]
+            |> fixed_list()
+        end
+      end
+
+      defp gen_topic_filter() do
+        bind(Topic.gen_filter(), &constant(Enum.join(&1, "/")))
+      end
+
+      # create random options for the topics in the topic list
+      defp gen_topic_opts(values) do
+        # at this point in time we should have a list of topics!
+        {[{_, _} | _] = topics, values} = Keyword.pop(values, :topics)
+
+        topics_with_opts =
+          Enum.map(topics, fn {topic_filter, opts} ->
+            opts = opts || []
+
+            {
+              constant(topic_filter),
+              # notice that while the order of options shouldn't
+              # matter, it kind of does in the context of the prop
+              # tests for encoding and decoding the subscribe
+              # packages, as the keyword lists will get compared for
+              # equality
+              fixed_list([
+                do_get_opts(opts, :qos, integer(0..2)),
+                do_get_opts(opts, :no_local, boolean()),
+                do_get_opts(opts, :retain_as_published, boolean()),
+                do_get_opts(opts, :retain_handling, integer(0..2))
+              ])
+            }
+          end)
+          |> fixed_list()
+
+        fixed_list([{:topics, topics_with_opts} | Enum.map(values, &constant(&1))])
+      end
+
+      defp do_get_opts(opts, key, default) do
+        generator =
+          case Keyword.get(opts, key) do
+            nil -> default
+            %StreamData{} = generator -> generator
+            otherwise -> constant(otherwise)
+          end
+
+        {key, generator}
+      end
+
+      defp gen_properties(values) do
+        case Keyword.pop(values, :properties) do
+          {nil, values} ->
+            properties =
+              uniq_list_of(
+                frequency([
+                  # here we allow stings with a byte size of zero; don't
+                  # know if that is a problem according to the spec. Let's
+                  # handle that situation just in case:
+                  {4, {:user_property, {string(:printable), string(:printable)}}},
+                  {1, {:subscription_identifier, integer(1..268_435_455)}}
+                ]),
+                uniq_fun: &uniq/1,
+                max_length: 5
+              )
+
+            fixed_list([{:properties, properties} | Enum.map(values, &constant(&1))])
+
+          {_passthrough, _} ->
+            constant(values)
+        end
+      end
+
+      defp uniq({:user_property, _v}), do: :crypto.strong_rand_bytes(2)
+      defp uniq({k, _v}), do: k
+    end
+  end
 end

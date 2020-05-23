@@ -1,26 +1,21 @@
 defmodule Tortoise.Package.SubscribeTest do
   use ExUnit.Case
-  # use EQC.ExUnit
+  use ExUnitProperties
+
   doctest Tortoise.Package.Subscribe
 
-  # import Tortoise.TestGenerators, only: [gen_subscribe: 0]
+  alias Tortoise.Package
 
-  # alias Tortoise.Package
-  # alias Tortoise.Package.Subscribe
+  property "encoding and decoding subscribe messages" do
+    config = %Package.Subscribe{identifier: nil, topics: nil, properties: nil}
 
-  @tag :skip
-  test "encoding and decoding subscribe messages"
-
-  # property "encoding and decoding subscribe messages" do
-  #   forall subscribe <- gen_subscribe() do
-  #     ensure(
-  #       subscribe ==
-  #         subscribe
-  #         |> Package.encode()
-  #         |> Package.decode()
-  #     )
-  #   end
-  # end
+    check all subscribe <- Package.generate(config) do
+      assert subscribe ==
+               subscribe
+               |> Package.encode()
+               |> Package.decode()
+    end
+  end
 
   # describe "Collectable" do
   #   test "Accept tuples of {binary(), opts()} as input" do
