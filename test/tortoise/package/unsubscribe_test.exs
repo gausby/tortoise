@@ -1,22 +1,19 @@
 defmodule Tortoise.Package.UnsubscribeTest do
   use ExUnit.Case
-  # use EQC.ExUnit
+  use ExUnitProperties
+
   doctest Tortoise.Package.Unsubscribe
 
-  # import Tortoise.TestGenerators, only: [gen_unsubscribe: 0]
+  alias Tortoise.Package
 
-  # alias Tortoise.Package
+  property "encoding and decoding unsubscribe messages" do
+    config = %Package.Unsubscribe{identifier: nil, topics: nil, properties: nil}
 
-  # property "encoding and decoding unsubscribe messages" do
-  #   forall unsubscribe <- gen_unsubscribe() do
-  #     ensure(
-  #       unsubscribe ==
-  #         unsubscribe
-  #         |> Package.encode()
-  #         |> Package.decode()
-  #     )
-  #   end
-  # end
-  @tag :skip
-  test "encoding and decoding unsubscribe messages"
+    check all unsubscribe <- Package.generate(config) do
+      assert unsubscribe ==
+               unsubscribe
+               |> Package.encode()
+               |> Package.decode()
+    end
+  end
 end
