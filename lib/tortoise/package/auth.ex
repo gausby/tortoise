@@ -65,4 +65,69 @@ defmodule Tortoise.Package.Auth do
       end
     end
   end
+
+  if Code.ensure_loaded?(StreamData) do
+    defimpl Tortoise.Generatable do
+      import StreamData
+
+      def generate(%type{__META__: _meta} = package) do
+        values = package |> Map.from_struct()
+
+        fixed_list(Enum.map(values, &constant(&1)))
+        |> bind(&gen_reason/1)
+        |> bind(&gen_properties/1)
+        |> bind(&fixed_map([{:__struct__, type} | for({k, v} <- &1, do: {k, constant(v)})]))
+      end
+
+      @reasons [
+        :success,
+        :continue_authentication,
+        :re_authenticate
+      ]
+
+      defp gen_reason(values) do
+        case Keyword.pop(values, :reason) do
+          {nil, values} ->
+            fixed_list([{:reason, one_of(@reasons)} | Enum.map(values, &constant(&1))])
+
+          {reason, _} when reason in @reasons ->
+            constant(values)
+        end
+      end
+
+      # If the initial CONNECT packet included an Authentication
+      # Method property then all AUTH packets, and any successful
+      # CONNACK packet MUST include an Authentication Method Property
+      # with the same value as in the CONNECT packet [MQTT-4.12.0-5].
+
+      defp gen_properties(values) do
+        case Keyword.pop(values, :properties) do
+          {nil, values} ->
+            properties =
+              uniq_list_of(
+                frequency([
+                  # here we allow stings with a byte size of zero; don't
+                  # know if that is a problem according to the spec. Let's
+                  # handle that situation just in case:
+                  {4, {:user_property, {string(:printable), string(:printable)}}},
+                  # TODO authentication method should always be present
+                  {1, {:authentication_method, string(:printable)}},
+                  {1, {:authentication_data, string(:printable)}},
+                  {1, {:reason_string, string(:printable)}}
+                ]),
+                uniq_fun: &uniq/1,
+                max_length: 5
+              )
+
+            fixed_list([{:properties, properties} | Enum.map(values, &constant(&1))])
+
+          {_passthrough, _} ->
+            constant(values)
+        end
+      end
+
+      defp uniq({:user_property, _v}), do: :crypto.strong_rand_bytes(2)
+      defp uniq({k, _v}), do: k
+    end
+  end
 end
