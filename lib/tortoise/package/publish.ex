@@ -256,7 +256,7 @@ defmodule Tortoise.Package.Publish do
         case Keyword.pop(values, :payload) do
           {nil, values} ->
             fixed_list([
-              {:payload, binary(min_length: 1)}
+              {:payload, frequency([{1, nil}, {5, binary(min_length: 1)}])}
               | Enum.map(values, &constant(&1))
             ])
 
