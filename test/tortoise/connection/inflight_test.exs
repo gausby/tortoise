@@ -59,7 +59,10 @@ defmodule Tortoise.Connection.InflightTest do
     end
 
     test "outgoing publish QoS=1", %{client_id: client_id} = context do
-      publish = %Package.Publish{identifier: 1, topic: "foo", qos: 1}
+      publish =
+        %Package.Publish{identifier: 1, topic: "foo", qos: 1}
+        |> Package.Meta.infer()
+
       {:ok, ref} = Inflight.track(client_id, {:outgoing, publish})
       assert {:ok, package} = :gen_tcp.recv(context.server, 0, 500)
       assert ^publish = Package.decode(package)
@@ -71,7 +74,7 @@ defmodule Tortoise.Connection.InflightTest do
 
       # the inflight process should now re-transmit the publish
       assert {:ok, package} = :gen_tcp.recv(context.server, 0, 500)
-      publish = %Package.Publish{publish | dup: true}
+      publish = %Package.Publish{publish | dup: true} |> Package.Meta.infer()
       assert ^publish = Package.decode(package)
 
       # simulate that we receive a puback from the server
@@ -115,7 +118,10 @@ defmodule Tortoise.Connection.InflightTest do
     end
 
     test "outgoing publish QoS=2", %{client_id: client_id} = context do
-      publish = %Package.Publish{identifier: 1, topic: "foo", qos: 2}
+      publish =
+        %Package.Publish{identifier: 1, topic: "foo", qos: 2}
+        |> Package.Meta.infer()
+
       {:ok, ref} = Inflight.track(client_id, {:outgoing, publish})
 
       # we should transmit the publish
@@ -126,7 +132,7 @@ defmodule Tortoise.Connection.InflightTest do
       {:ok, context} = setup_connection(context)
       {:ok, context} = setup_inflight(context)
       # the publish should get re-transmitted
-      publish = %Package.Publish{publish | dup: true}
+      publish = %Package.Publish{publish | dup: true} |> Package.Meta.infer()
       assert {:ok, package} = :gen_tcp.recv(context.server, 0, 500)
       assert ^publish = Package.decode(package)
 

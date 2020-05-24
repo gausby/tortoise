@@ -1250,7 +1250,11 @@ defmodule Tortoise.ConnectionTest do
 
     test "incoming publish with QoS=1", context do
       Process.flag(:trap_exit, true)
-      publish = %Package.Publish{identifier: 1, topic: "foo/bar", qos: 1}
+
+      publish =
+        %Package.Publish{identifier: 1, topic: "foo/bar", qos: 1}
+        |> Package.Meta.infer()
+
       expected_puback = %Package.Puback{identifier: 1}
 
       script = [
@@ -1267,7 +1271,11 @@ defmodule Tortoise.ConnectionTest do
 
     test "outgoing publish with QoS=1", context do
       Process.flag(:trap_exit, true)
-      publish = %Package.Publish{identifier: 1, topic: "foo/bar", qos: 1}
+
+      publish =
+        %Package.Publish{identifier: 1, topic: "foo/bar", qos: 1}
+        |> Package.Meta.infer()
+
       puback = %Package.Puback{identifier: 1}
 
       script = [
@@ -1290,7 +1298,11 @@ defmodule Tortoise.ConnectionTest do
 
     test "outgoing publish with QoS=1 (sync call)", %{client_id: client_id} = context do
       Process.flag(:trap_exit, true)
-      publish = %Package.Publish{identifier: 1, topic: "foo/bar", qos: 1}
+
+      publish =
+        %Package.Publish{identifier: 1, topic: "foo/bar", qos: 1}
+        |> Package.Meta.infer()
+
       puback = %Package.Puback{identifier: 1}
 
       script = [
@@ -1350,7 +1362,10 @@ defmodule Tortoise.ConnectionTest do
       assert_receive {ScriptedMqttServer, {:received, %Package.Connect{}}}
       assert_receive {ScriptedMqttServer, :completed}
 
-      publish = %Package.Publish{identifier: 1, topic: "foo/bar", qos: 1}
+      publish =
+        %Package.Publish{identifier: 1, topic: "foo/bar", qos: 1}
+        |> Package.Meta.infer()
+
       puback = %Package.Puback{identifier: 1}
 
       default_subscription_opts = [
@@ -1433,7 +1448,10 @@ defmodule Tortoise.ConnectionTest do
       assert_receive {ScriptedMqttServer, {:received, %Package.Connect{}}}
       assert_receive {ScriptedMqttServer, :completed}
 
-      publish = %Package.Publish{identifier: 1, topic: "foo/bar", qos: 2}
+      publish =
+        %Package.Publish{identifier: 1, topic: "foo/bar", qos: 2}
+        |> Package.Meta.infer()
+
       pubrec = %Package.Pubrec{identifier: 1}
       pubrel = %Package.Pubrel{identifier: 1}
       pubcomp = %Package.Pubcomp{identifier: 1}
@@ -1464,7 +1482,11 @@ defmodule Tortoise.ConnectionTest do
 
     test "incoming publish with QoS=2", context do
       Process.flag(:trap_exit, true)
-      publish = %Package.Publish{identifier: 1, topic: "foo/bar", qos: 2}
+
+      publish =
+        %Package.Publish{identifier: 1, topic: "foo/bar", qos: 2}
+        |> Package.Meta.infer()
+
       expected_pubrec = %Package.Pubrec{identifier: 1}
       pubrel = %Package.Pubrel{identifier: 1}
       expected_pubcomp = %Package.Pubcomp{identifier: 1}
@@ -1489,7 +1511,11 @@ defmodule Tortoise.ConnectionTest do
 
     test "incoming publish with QoS=2 with duplicate", context do
       Process.flag(:trap_exit, true)
-      publish = %Package.Publish{identifier: 1, topic: "foo/bar", qos: 2}
+
+      publish =
+        %Package.Publish{identifier: 1, topic: "foo/bar", qos: 2}
+        |> Package.Meta.infer()
+
       dup_publish = %Package.Publish{publish | dup: true}
       expected_pubrec = %Package.Pubrec{identifier: 1}
       pubrel = %Package.Pubrel{identifier: 1}
@@ -1520,7 +1546,11 @@ defmodule Tortoise.ConnectionTest do
 
     test "incoming publish with QoS=2 with first message marked as duplicate", context do
       Process.flag(:trap_exit, true)
-      publish = %Package.Publish{identifier: 1, topic: "foo/bar", qos: 2, dup: true}
+
+      publish =
+        %Package.Publish{identifier: 1, topic: "foo/bar", qos: 2, dup: true}
+        |> Package.Meta.infer()
+
       expected_pubrec = %Package.Pubrec{identifier: 1}
       pubrel = %Package.Pubrel{identifier: 1}
       expected_pubcomp = %Package.Pubcomp{identifier: 1}
@@ -1548,7 +1578,11 @@ defmodule Tortoise.ConnectionTest do
 
     test "outgoing publish with QoS=2", context do
       Process.flag(:trap_exit, true)
-      publish = %Package.Publish{identifier: 1, topic: "foo/bar", qos: 2}
+
+      publish =
+        %Package.Publish{identifier: 1, topic: "foo/bar", qos: 2}
+        |> Package.Meta.infer()
+
       pubrec = %Package.Pubrec{identifier: 1}
       pubrel = %Package.Pubrel{identifier: 1}
       pubcomp = %Package.Pubcomp{identifier: 1}
