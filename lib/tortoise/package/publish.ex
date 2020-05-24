@@ -285,14 +285,21 @@ defmodule Tortoise.Package.Publish do
           {nil, values} ->
             properties =
               uniq_list_of(
-                one_of([
+                frequency([
                   # here we allow stings with a byte size of zero; don't
                   # know if that is a problem according to the spec. Let's
                   # handle that situation just in case:
-                  {constant(:user_property), {string(:printable), string(:printable)}}
+                  {8, {:user_property, {string(:printable), string(:printable)}}},
+                  {1, {:payload_format_indicator, integer(0..1)}},
+                  {1, {:message_expiry_interval, integer(0..0xFFFFFFFF)}},
+                  {1, {:topic_alias, integer(1..0xFFFF)}},
+                  {1, {:response_topic, bind(Topic.gen_topic(), &constant(Enum.join(&1, "/")))}},
+                  {1, {:correlation_data, binary()}},
+                  {1, {:subscription_identifier, integer(1..268_435_455)}},
+                  {1, {:content_type, string(:printable)}}
                 ]),
                 uniq_fun: &uniq/1,
-                max_length: 5
+                max_length: 10
               )
 
             fixed_list([
