@@ -258,6 +258,8 @@ defmodule Tortoise.Package.Publish do
 
           {<<_::binary>>, _values} ->
             constant(values)
+
+            # TODO support a user specified generator for topic
         end
       end
 
