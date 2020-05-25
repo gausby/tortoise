@@ -224,6 +224,25 @@ defmodule Tortoise.Package.Publish do
 
           {id, _} when qos > 0 and is_integer(id) and id in 1..0xFFFF ->
             constant(values)
+
+          {%StreamData{} = generator, values} ->
+            fixed_list([
+              {:identifier,
+               bind(generator, fn
+                 id when is_integer(id) and id in 1..0xFFFF ->
+                   constant(id)
+
+                 nil ->
+                   nil
+
+                 _otherwise ->
+                   raise ArgumentError,
+                         """
+                         User specified identifier generator should return a nil or an integer between 1 and 65535
+                         """
+               end)}
+              | Enum.map(values, &constant(&1))
+            ])
         end
       end
 
@@ -306,6 +325,14 @@ defmodule Tortoise.Package.Publish do
               {constant(:properties), properties}
               | Enum.map(values, &constant(&1))
             ])
+
+          {%StreamData{} = generator, values} ->
+            bind(generator, fn properties when is_list(properties) ->
+              fixed_list([
+                {constant(:properties), constant(properties)}
+                | Enum.map(values, &constant(&1))
+              ])
+            end)
 
           {_passthrough, _} ->
             constant(values)
