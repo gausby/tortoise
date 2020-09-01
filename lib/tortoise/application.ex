@@ -10,7 +10,6 @@ defmodule Tortoise.Application do
 
     children = [
       {Registry, [keys: :unique, name: Tortoise.Registry]},
-      {Registry, [keys: :duplicate, name: Tortoise.Events]},
       {Tortoise.Supervisor, [strategy: :one_for_one]}
     ]
 
