@@ -26,14 +26,14 @@ defmodule Tortoise.Session do
 
   """
   def track(
-        %Session{client_id: client_id} = session,
+        %Session{} = session,
         {:incoming, %Package.Publish{identifier: id, qos: qos, dup: _} = package}
       )
       when not is_nil(id) and qos in 1..2 do
     {backend, ref} = session.backend
 
-    case backend.create(ref, client_id, {:incoming, package}) do
-      {:ok, %Package.Publish{identifier: ^id} = package} ->
+    case backend.create(ref, session, {:incoming, package}) do
+      {:ok, %Package.Publish{identifier: ^id} = package, session} ->
         {{:cont, package}, session}
 
       {:error, _reason} = error ->
@@ -42,22 +42,22 @@ defmodule Tortoise.Session do
   end
 
   def track(
-        %Session{client_id: client_id} = session,
+        %Session{} = session,
         {:outgoing, %type{identifier: _hopefully_nil} = package}
       )
       when type in [Package.Publish, Package.Subscribe, Package.Unsubscribe] do
     {backend, ref} = session.backend
 
-    case backend.create(ref, client_id, {:outgoing, package}) do
-      {:ok, %Package.Publish{qos: qos} = package} when qos in 1..2 ->
+    case backend.create(ref, session, {:outgoing, package}) do
+      {:ok, %Package.Publish{qos: qos} = package, session} when qos in 1..2 ->
         # By passing back the package we can allow the backend to
         # monkey with the user defined properties, and set a unique id
         {{:cont, package}, session}
 
-      {:ok, %Package.Subscribe{} = package} ->
+      {:ok, %Package.Subscribe{} = package, session} ->
         {{:cont, package}, session}
 
-      {:ok, %Package.Unsubscribe{} = package} ->
+      {:ok, %Package.Unsubscribe{} = package, session} ->
         {{:cont, package}, session}
     end
   end
@@ -66,14 +66,14 @@ defmodule Tortoise.Session do
 
   """
   def progress(
-        %Session{client_id: client_id} = session,
+        %Session{} = session,
         {direction, %_type{identifier: id} = package}
       )
       when direction in [:incoming, :outgoing] and id in 0x0001..0xFFFF do
     {backend, ref} = session.backend
 
-    case backend.update(ref, client_id, {direction, package}) do
-      {:ok, package} ->
+    case backend.update(ref, session, {direction, package}) do
+      {:ok, package, session} ->
         {{:cont, package}, session}
 
       {:error, :not_found} = error ->
@@ -85,11 +85,10 @@ defmodule Tortoise.Session do
 
   """
   def release(
-        %Session{backend: {backend, ref}, client_id: client_id} = session,
+        %Session{backend: {backend, ref}} = session,
         id
       )
       when id in 0x0001..0xFFFF do
-    :ok = backend.release(ref, client_id, id)
-    {:ok, session}
+    {:ok, %Session{}} = backend.release(ref, session, id)
   end
 end
