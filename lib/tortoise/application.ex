@@ -10,6 +10,7 @@ defmodule Tortoise.Application do
 
     children = [
       {Registry, [keys: :unique, name: Tortoise.Registry]},
+      {Tortoise.Session, [backend: Tortoise.Session.Ets]},
       {Tortoise.Supervisor, [strategy: :one_for_one]}
     ]
 

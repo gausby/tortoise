@@ -11,6 +11,7 @@ defmodule Tortoise.Connection do
 
   defstruct session_ref: nil,
             client_id: nil,
+            session: nil,
             connect: nil,
             server: nil,
             backoff: nil,
@@ -24,8 +25,8 @@ defmodule Tortoise.Connection do
 
   alias __MODULE__, as: State
 
-  alias Tortoise.{Handler, Transport, Package}
-  alias Tortoise.Connection.{Info, Receiver, Inflight, Backoff}
+  alias Tortoise.{Handler, Transport, Package, Session}
+  alias Tortoise.Connection.{Info, Receiver, Backoff}
   alias Tortoise.Package.Connect
 
   @doc """
@@ -72,6 +73,7 @@ defmodule Tortoise.Connection do
     initial = %State{
       session_ref: make_ref(),
       client_id: connect.client_id,
+      session: %Session{client_id: connect.client_id},
       server: server,
       connect: connect,
       backoff: Backoff.new(backoff),
@@ -308,6 +310,28 @@ defmodule Tortoise.Connection do
   end
 
   @doc """
+  Publish a message, but go through the connection
+
+  In most circumstances it would be preferable to go through the
+  publish function on the Tortoise module instead.
+  """
+  def publish(pid, %Package.Publish{} = publish) do
+    GenStateMachine.call(pid, {:publish, publish})
+  end
+
+  def publish_sync(pid, %Package.Publish{} = publish, timeout \\ 5000) do
+    {:ok, ref} = publish(pid, publish)
+
+    receive do
+      {{Tortoise, ^pid}, {Package.Publish, ^ref}, result} ->
+        result
+    after
+      timeout ->
+        {:error, :timeout}
+    end
+  end
+
+  @doc """
   Ping the broker.
 
   When the round-trip is complete a message with the time taken in
@@ -458,15 +482,12 @@ defmodule Tortoise.Connection do
         {:received, %Package.Connack{reason: connection_result} = connack},
         :connecting,
         %State{
-          client_id: client_id,
           connect: %Package.Connect{} = connect,
           handler: handler
         } = data
       ) do
     case Handler.execute_handle_connack(handler, connack) do
       {:ok, %Handler{} = updated_handler, next_actions} when connection_result == :success ->
-        :ok = Inflight.update_connection(client_id, data.connection)
-
         data = %State{
           data
           | backoff: Backoff.reset(data.backoff),
@@ -541,58 +562,130 @@ defmodule Tortoise.Connection do
     end
   end
 
-  # incoming publish QoS>0 ---------------------------------------------
+  # incoming publish QoS=1 ---------------------------------------------
   def handle_event(
         :internal,
-        {:received, %Package.Publish{qos: qos} = publish},
+        {:received, %Package.Publish{identifier: id, qos: 1} = publish},
         _,
-        %State{client_id: client_id}
-      )
-      when qos in 1..2 do
-    :ok = Inflight.track(client_id, {:incoming, publish})
-    :keep_state_and_data
+        %State{
+          connection: {transport, socket},
+          handler: handler,
+          session: session
+        } = data
+      ) do
+    case Session.track(session, {:incoming, publish}) do
+      {{:cont, publish}, session} ->
+        case Handler.execute_handle_publish(handler, publish) do
+          {:ok, %Package.Puback{identifier: ^id} = puback, %Handler{} = updated_handler,
+           next_actions} ->
+            # respond with a puback
+            Session.progress(session, {:outgoing, puback})
+            :ok = transport.send(socket, Package.encode(puback))
+            {:ok, session} = Session.release(session, id)
+            # - - -
+            updated_data = %State{data | handler: updated_handler, session: session}
+            {:keep_state, updated_data, wrap_next_actions(next_actions)}
+
+            # handle stop
+        end
+    end
   end
 
   # outgoing publish QoS=1 ---------------------------------------------
   def handle_event(
-        :internal,
-        {:received, %Package.Puback{} = puback},
+        {:call, {_caller_pid, ref} = from},
+        {:publish, %Package.Publish{qos: 1} = publish},
         _,
-        %State{client_id: client_id, handler: handler} = data
+        %State{
+          connection: {transport, socket},
+          session: session,
+          pending_refs: pending
+        } = data
       ) do
-    :ok = Inflight.update(client_id, {:received, puback})
+    case Session.track(session, {:outgoing, publish}) do
+      {{:cont, %Package.Publish{identifier: id} = publish}, session} ->
+        :ok = transport.send(socket, Package.encode(publish))
+        next_actions = [{:reply, from, {:ok, ref}}]
+        data = %State{data | session: session, pending_refs: Map.put_new(pending, id, from)}
+        {:keep_state, data, next_actions}
+    end
+  end
 
-    if function_exported?(handler.module, :handle_puback, 2) do
-      case Handler.execute_handle_puback(handler, puback) do
-        {:ok, %Handler{} = updated_handler, next_actions} ->
-          updated_data = %State{data | handler: updated_handler}
-          {:keep_state, updated_data, wrap_next_actions(next_actions)}
+  def handle_event(
+        :internal,
+        {:received, %Package.Puback{identifier: id} = puback},
+        _,
+        %State{session: session, handler: handler, pending_refs: pending} = data
+      ) do
+    case Map.pop(pending, id) do
+      {caller, pending} ->
+        {{:cont, puback}, session} = Session.progress(session, {:incoming, puback})
+        data = %State{data | pending_refs: pending, session: session}
 
-        {:error, reason} ->
-          # todo
-          {:stop, reason, data}
-      end
-    else
-      :keep_state_and_data
+        if function_exported?(handler.module, :handle_puback, 2) do
+          case Handler.execute_handle_puback(handler, puback) do
+            {:ok, %Handler{} = updated_handler, next_actions} ->
+              next_actions = [
+                {:next_event, :internal, {:reply, caller, Package.Publish, :ok}}
+                | wrap_next_actions(next_actions)
+              ]
+
+              {:ok, session} = Session.release(session, id)
+              updated_data = %State{data | handler: updated_handler, session: session}
+              {:keep_state, updated_data, next_actions}
+
+            {:error, reason} ->
+              # todo
+              updated_data = %State{data | session: session}
+              {:stop, reason, updated_data}
+          end
+        else
+          {:ok, session} = Session.release(session, id)
+          next_actions = [{:next_event, :internal, {:reply, caller, Package.Publish, :ok}}]
+          {:keep_state, %State{data | session: session}, next_actions}
+        end
     end
   end
 
   # incoming publish QoS=2 ---------------------------------------------
+  # TODO handle duplicate messages
+  def handle_event(
+        :internal,
+        {:received, %Package.Publish{qos: 2, identifier: id} = publish},
+        _,
+        %State{connection: {transport, socket}, handler: handler, session: session} = data
+      ) do
+    case Session.track(session, {:incoming, publish}) do
+      {{:cont, publish}, session} ->
+        case Handler.execute_handle_publish(handler, publish) do
+          {:ok, %Package.Pubrec{identifier: ^id} = pubrec, %Handler{} = updated_handler,
+           next_actions} ->
+            # respond with pubrec
+            {{:cont, pubrec}, session} = Session.progress(session, {:outgoing, pubrec})
+            :ok = transport.send(socket, Package.encode(pubrec))
+            # - - -
+            updated_data = %State{data | handler: updated_handler, session: session}
+            {:keep_state, updated_data, wrap_next_actions(next_actions)}
+        end
+    end
+  end
+
   def handle_event(
         :internal,
         {:received, %Package.Pubrel{identifier: id} = pubrel},
         _,
-        %State{client_id: client_id, handler: handler} = data
+        %State{connection: {transport, socket}, handler: handler, session: session} = data
       ) do
-    :ok = Inflight.update(client_id, {:received, pubrel})
+    {{:cont, pubrel}, session} = Session.progress(session, {:incoming, pubrel})
 
     if function_exported?(handler.module, :handle_pubrel, 2) do
       case Handler.execute_handle_pubrel(handler, pubrel) do
         {:ok, %Package.Pubcomp{identifier: ^id} = pubcomp, %Handler{} = updated_handler,
          next_actions} ->
           # dispatch the pubcomp
-          :ok = Inflight.update(client_id, {:dispatch, pubcomp})
-          updated_data = %State{data | handler: updated_handler}
+          {{:cont, pubcomp}, session} = Session.progress(session, {:outgoing, pubcomp})
+          :ok = transport.send(socket, Package.encode(pubcomp))
+          updated_data = %State{data | handler: updated_handler, session: session}
           {:keep_state, updated_data, wrap_next_actions(next_actions)}
 
         {:error, reason} ->
@@ -601,64 +694,50 @@ defmodule Tortoise.Connection do
       end
     else
       pubcomp = %Package.Pubcomp{identifier: id}
-      :ok = Inflight.update(client_id, {:dispatch, pubcomp})
-      :keep_state_and_data
-    end
-  end
-
-  # an incoming publish with QoS>0 will get parked in the inflight
-  # manager process, which will onward it to the controller, making
-  # sure we will only dispatch it once to the publish-handler.
-  def handle_event(
-        :info,
-        {{Inflight, client_id}, %Package.Publish{identifier: id, qos: 1} = publish},
-        _,
-        %State{client_id: client_id, handler: handler} = data
-      ) do
-    case Handler.execute_handle_publish(handler, publish) do
-      {:ok, %Package.Puback{identifier: ^id} = puback, %Handler{} = updated_handler, next_actions} ->
-        # respond with a puback
-        :ok = Inflight.update(client_id, {:dispatch, puback})
-        # - - -
-        updated_data = %State{data | handler: updated_handler}
-        {:keep_state, updated_data, wrap_next_actions(next_actions)}
-
-        # handle stop
-    end
-  end
-
-  def handle_event(
-        :info,
-        {{Inflight, client_id}, %Package.Publish{identifier: id, qos: 2} = publish},
-        _,
-        %State{client_id: client_id, handler: handler} = data
-      ) do
-    case Handler.execute_handle_publish(handler, publish) do
-      {:ok, %Package.Pubrec{identifier: ^id} = pubrec, %Handler{} = updated_handler, next_actions} ->
-        # respond with pubrec
-        :ok = Inflight.update(client_id, {:dispatch, pubrec})
-        # - - -
-        updated_data = %State{data | handler: updated_handler}
-        {:keep_state, updated_data, wrap_next_actions(next_actions)}
+      {{:cont, pubcomp}, session} = Session.progress(session, {:outgoing, pubcomp})
+      :ok = transport.send(socket, Package.encode(pubcomp))
+      updated_data = %State{data | session: session}
+      {:keep_state, updated_data}
     end
   end
 
   # outgoing publish QoS=2 ---------------------------------------------
   def handle_event(
+        {:call, {_caller_pid, ref} = from},
+        {:publish, %Package.Publish{qos: 2, dup: false} = publish},
+        _,
+        %State{
+          connection: {transport, socket},
+          session: session,
+          pending_refs: pending
+        } = data
+      ) do
+    case Session.track(session, {:outgoing, publish}) do
+      {{:cont, %Package.Publish{identifier: id} = publish}, session} ->
+        :ok = transport.send(socket, Package.encode(publish))
+        next_actions = [{:reply, from, {:ok, ref}}]
+        data = %State{data | session: session, pending_refs: Map.put_new(pending, id, from)}
+        {:keep_state, data, next_actions}
+    end
+  end
+
+  def handle_event(
         :internal,
         {:received, %Package.Pubrec{identifier: id} = pubrec},
         _,
-        %State{client_id: client_id, handler: handler} = data
+        %State{connection: {transport, socket}, session: session, handler: handler} = data
       ) do
-    :ok = Inflight.update(client_id, {:received, pubrec})
+    {{:cont, pubrec}, session} = Session.progress(session, {:incoming, pubrec})
+    data = %State{data | session: session}
 
     if function_exported?(handler.module, :handle_pubrec, 2) do
       case Handler.execute_handle_pubrec(handler, pubrec) do
         {:ok, %Package.Pubrel{identifier: ^id} = pubrel, %Handler{} = updated_handler,
          next_actions} ->
-          updated_data = %State{data | handler: updated_handler}
-          :ok = Inflight.update(client_id, {:dispatch, pubrel})
-          {:keep_state, updated_data, wrap_next_actions(next_actions)}
+          {{:cont, pubrel}, session} = Session.progress(session, {:outgoing, pubrel})
+          :ok = transport.send(socket, Package.encode(pubrel))
+          data = %State{data | session: session, handler: updated_handler}
+          {:keep_state, data, wrap_next_actions(next_actions)}
 
         {:error, reason} ->
           # todo
@@ -666,31 +745,48 @@ defmodule Tortoise.Connection do
       end
     else
       pubrel = %Package.Pubrel{identifier: id}
-      :ok = Inflight.update(client_id, {:dispatch, pubrel})
-      :keep_state_and_data
+      {{:cont, pubrel}, session} = Session.progress(session, {:outgoing, pubrel})
+      :ok = transport.send(socket, Package.encode(pubrel))
+      data = %State{data | session: session}
+      {:keep_state, data}
     end
   end
 
   def handle_event(
         :internal,
-        {:received, %Package.Pubcomp{} = pubcomp},
+        {:received, %Package.Pubcomp{identifier: id} = pubcomp},
         :connected,
-        %State{client_id: client_id, handler: handler} = data
+        %State{session: session, pending_refs: pending, handler: handler} = data
       ) do
-    :ok = Inflight.update(client_id, {:received, pubcomp})
+    case Map.pop(pending, id) do
+      {caller, pending} ->
+        {{:cont, pubcomp}, session} = Session.progress(session, {:incoming, pubcomp})
+        data = %State{data | pending_refs: pending, session: session}
 
-    if function_exported?(handler.module, :handle_pubcomp, 2) do
-      case Handler.execute_handle_pubcomp(handler, pubcomp) do
-        {:ok, %Handler{} = updated_handler, next_actions} ->
-          updated_data = %State{data | handler: updated_handler}
-          {:keep_state, updated_data, wrap_next_actions(next_actions)}
+        if function_exported?(handler.module, :handle_pubcomp, 2) do
+          case Handler.execute_handle_pubcomp(handler, pubcomp) do
+            {:ok, %Handler{} = updated_handler, next_actions} ->
+              {:ok, session} = Session.release(session, id)
 
-        {:error, reason} ->
-          # todo
-          {:stop, reason, data}
-      end
-    else
-      :keep_state_and_data
+              data = %State{data | session: session, handler: updated_handler}
+
+              next_actions = [
+                {:next_event, :internal, {:reply, caller, Package.Publish, :ok}}
+                | wrap_next_actions(next_actions)
+              ]
+
+              {:keep_state, data, next_actions}
+
+            {:error, reason} ->
+              # todo
+              {:stop, reason, data}
+          end
+        else
+          {:ok, session} = Session.release(session, id)
+          data = %State{data | session: session}
+          next_actions = [{:next_event, :internal, {:reply, caller, Package.Publish, :ok}}]
+          {:keep_state, data, next_actions}
+        end
     end
   end
 
@@ -711,16 +807,21 @@ defmodule Tortoise.Connection do
 
   def handle_event(
         :cast,
-        {:subscribe, caller, subscribe, _opts},
+        {:subscribe, caller, %Package.Subscribe{} = subscribe, _opts},
         :connected,
-        %State{client_id: client_id} = data
+        %State{
+          connection: {transport, socket},
+          session: session
+        } = data
       ) do
     case Info.Capabilities.validate(data.info.capabilities, subscribe) do
       :valid ->
-        {:ok, ref} = Inflight.track(client_id, {:outgoing, subscribe})
-        pending = Map.put_new(data.pending_refs, ref, caller)
-
-        {:keep_state, %State{data | pending_refs: pending}}
+        case Session.track(session, {:outgoing, subscribe}) do
+          {{:cont, %Package.Subscribe{identifier: id} = subscribe}, session} ->
+            :ok = transport.send(socket, Package.encode(subscribe))
+            pending = Map.put_new(data.pending_refs, id, {caller, subscribe})
+            {:keep_state, %State{data | pending_refs: pending, session: session}}
+        end
 
       {:invalid, reasons} ->
         reply = {:error, {:subscription_failure, reasons}}
@@ -735,54 +836,124 @@ defmodule Tortoise.Connection do
 
   def handle_event(
         :internal,
-        {:received, %Package.Suback{} = suback},
+        {:received, %Package.Suback{identifier: id} = suback},
         :connected,
-        data
+        %State{session: session, handler: handler, pending_refs: pending, info: info} = data
       ) do
-    :ok = Inflight.update(data.client_id, {:received, suback})
+    case Map.pop(pending, id) do
+      {{caller, %Package.Subscribe{identifier: ^id} = subscribe}, pending} ->
+        {pid, msg_ref} = caller
 
-    :keep_state_and_data
+        {{:cont, suback}, session} = Session.progress(session, {:incoming, suback})
+
+        data = %State{data | pending_refs: pending, session: session}
+
+        updated_subscriptions =
+          subscribe.topics
+          |> Enum.zip(suback.acks)
+          |> Enum.reduce(data.info.subscriptions, fn
+            {{topic, opts}, {:ok, accepted_qos}}, acc ->
+              Map.put(acc, topic, Keyword.replace!(opts, :qos, accepted_qos))
+
+            {_, {:error, _}}, acc ->
+              acc
+          end)
+
+        case Handler.execute_handle_suback(handler, subscribe, suback) do
+          {:ok, %Handler{} = updated_handler, next_actions} ->
+            data = %State{
+              data
+              | handler: updated_handler,
+                info: put_in(info.subscriptions, updated_subscriptions)
+            }
+
+            next_actions = [
+              {:next_event, :internal, {:reply, {pid, msg_ref}, Package.Suback, :ok}}
+              | wrap_next_actions(next_actions)
+            ]
+
+            {:ok, session} = Session.release(session, id)
+
+            {:keep_state, %State{data | session: session}, next_actions}
+
+          {:error, reason} ->
+            # todo
+            {:stop, reason, data}
+        end
+    end
   end
 
   def handle_event(
-        :info,
-        {{Tortoise, client_id}, {Package.Subscribe, ref}, {subscribe, suback}},
-        _current_state,
-        %State{client_id: client_id, handler: handler, pending_refs: %{} = pending, info: info} =
-          data
+        :cast,
+        {:unsubscribe, caller, unsubscribe, opts},
+        :connected,
+        %State{
+          session: session,
+          connection: {transport, socket},
+          pending_refs: pending
+        } = data
       ) do
-    {{pid, msg_ref}, updated_pending} = Map.pop(pending, ref)
-    data = %State{data | pending_refs: updated_pending}
+    _timeout = Keyword.get(opts, :timeout, 5000)
 
-    updated_subscriptions =
-      subscribe.topics
-      |> Enum.zip(suback.acks)
-      |> Enum.reduce(data.info.subscriptions, fn
-        {{topic, opts}, {:ok, accepted_qos}}, acc ->
-          Map.put(acc, topic, Keyword.replace!(opts, :qos, accepted_qos))
+    case Session.track(session, {:outgoing, unsubscribe}) do
+      {{:cont, %Package.Unsubscribe{identifier: id} = unsubscribe}, session} ->
+        :ok = transport.send(socket, Package.encode(unsubscribe))
+        pending = Map.put_new(pending, id, {caller, unsubscribe})
+        {:keep_state, %State{data | pending_refs: pending, session: session}}
+    end
+  end
 
-        {_, {:error, _}}, acc ->
-          acc
-      end)
+  def handle_event(
+        :internal,
+        {:received, %Package.Unsuback{identifier: id, results: [_ | _]} = unsuback},
+        :connected,
+        %State{session: session, handler: handler, pending_refs: pending, info: info} = data
+      ) do
+    case Map.pop(pending, id) do
+      {{caller, %Package.Unsubscribe{identifier: ^id} = unsubscribe}, pending} ->
+        {pid, msg_ref} = caller
+        {{:cont, unsuback}, session} = Session.progress(session, {:incoming, unsuback})
+        data = %State{data | pending_refs: pending, session: session}
 
-    case Handler.execute_handle_suback(handler, subscribe, suback) do
-      {:ok, %Handler{} = updated_handler, next_actions} ->
-        data = %State{
-          data
-          | handler: updated_handler,
-            info: put_in(info.subscriptions, updated_subscriptions)
-        }
+        # When updating the internal subscription state tracker we will
+        # disregard the unsuccessful unsubacks, as we can assume it wasn't
+        # in the subscription list to begin with, or that we are still
+        # subscribed as we are not autorized to unsubscribe for the given
+        # topic; one exception is when the server report no subscription
+        # existed; then we will update the client state
+        to_remove =
+          for {topic, result} <- Enum.zip(unsubscribe.topics, unsuback.results),
+              match?(
+                reason when reason == :success or reason == {:error, :no_subscription_existed},
+                result
+              ),
+              do: topic
 
-        next_actions = [
-          {:next_event, :internal, {:reply, {pid, msg_ref}, Package.Suback, :ok}}
-          | wrap_next_actions(next_actions)
-        ]
+        # TODO handle the unsuback error cases !
+        subscriptions = Map.drop(data.info.subscriptions, to_remove)
 
-        {:keep_state, data, next_actions}
+        case Handler.execute_handle_unsuback(handler, unsubscribe, unsuback) do
+          {:ok, %Handler{} = updated_handler, next_actions} ->
+            {:ok, session} = Session.release(session, id)
 
-      {:error, reason} ->
-        # todo
-        {:stop, reason, data}
+            data = %State{
+              data
+              | handler: updated_handler,
+                session: session,
+                info: put_in(info.subscriptions, subscriptions)
+            }
+
+            next_actions = [
+              {:next_event, :internal, {:reply, {pid, msg_ref}, Package.Unsuback, :ok}}
+              | wrap_next_actions(next_actions)
+            ]
+
+            {:keep_state, data, next_actions}
+
+          {:error, reason} ->
+            # todo
+            {:stop, reason, data}
+        end
     end
   end
 
@@ -791,90 +962,17 @@ defmodule Tortoise.Connection do
   # topic, or unsubscribe, etc.
   def handle_event(
         :internal,
-        {:reply, {pid, _msg_ref}, _topic, _payload},
+        {:reply, caller, topic, payload},
         _current_state,
         %State{}
-      )
-      when pid == self() do
-    :keep_state_and_data
-  end
-
-  def handle_event(
-        :internal,
-        {:reply, {caller, ref}, topic, payload},
-        _current_state,
-        %State{}
-      )
-      when caller != self() do
-    _ = send_reply({caller, ref}, topic, payload)
-    :keep_state_and_data
-  end
-
-  def handle_event(:cast, {:unsubscribe, caller, unsubscribe, opts}, :connected, data) do
-    client_id = data.client_id
-    _timeout = Keyword.get(opts, :timeout, 5000)
-
-    {:ok, ref} = Inflight.track(client_id, {:outgoing, unsubscribe})
-    pending = Map.put_new(data.pending_refs, ref, caller)
-
-    {:keep_state, %State{data | pending_refs: pending}}
-  end
-
-  def handle_event(
-        :internal,
-        {:received, %Package.Unsuback{results: [_ | _]} = unsuback},
-        :connected,
-        data
       ) do
-    :ok = Inflight.update(data.client_id, {:received, unsuback})
-    :keep_state_and_data
-  end
+    case caller do
+      {pid, _ref} when pid != self() ->
+        _ = send_reply(caller, topic, payload)
+        :keep_state_and_data
 
-  # todo; handle the unsuback error cases !
-  def handle_event(
-        :info,
-        {{Tortoise, client_id}, {Package.Unsubscribe, ref}, {unsubscribe, unsuback}},
-        _current_state,
-        %State{client_id: client_id, handler: handler, pending_refs: %{} = pending, info: info} =
-          data
-      ) do
-    {{pid, msg_ref}, updated_pending} = Map.pop(pending, ref)
-    data = %State{data | pending_refs: updated_pending}
-
-    # When updating the internal subscription state tracker we will
-    # disregard the unsuccessful unsubacks, as we can assume it wasn't
-    # in the subscription list to begin with, or that we are still
-    # subscribed as we are not autorized to unsubscribe for the given
-    # topic; one exception is when the server report no subscription
-    # existed; then we will update the client state
-    to_remove =
-      for {topic, result} <- Enum.zip(unsubscribe.topics, unsuback.results),
-          match?(
-            reason when reason == :success or reason == {:error, :no_subscription_existed},
-            result
-          ),
-          do: topic
-
-    subscriptions = Map.drop(data.info.subscriptions, to_remove)
-
-    case Handler.execute_handle_unsuback(handler, unsubscribe, unsuback) do
-      {:ok, %Handler{} = updated_handler, next_actions} ->
-        data = %State{
-          data
-          | handler: updated_handler,
-            info: put_in(info.subscriptions, subscriptions)
-        }
-
-        next_actions = [
-          {:next_event, :internal, {:reply, {pid, msg_ref}, Package.Unsuback, :ok}}
-          | wrap_next_actions(next_actions)
-        ]
-
-        {:keep_state, data, next_actions}
-
-      {:error, reason} ->
-        # todo
-        {:stop, reason, data}
+      _otherwise ->
+        :keep_state_and_data
     end
   end
 
@@ -889,7 +987,12 @@ defmodule Tortoise.Connection do
   # They inform the connection to perform an action, such as
   # subscribing to a topic, and they are validated by the handler
   # module, so there is no need to coerce here
-  def handle_event(:internal, {:user_action, action}, _, %State{client_id: client_id} = state) do
+  def handle_event(
+        :internal,
+        {:user_action, action},
+        _,
+        %State{connection: {transport, socket}} = state
+      ) do
     case action do
       {:subscribe, topic, opts} when is_binary(topic) ->
         caller = {self(), make_ref()}
@@ -907,7 +1010,8 @@ defmodule Tortoise.Connection do
 
       :disconnect ->
         disconnect = %Package.Disconnect{reason: :normal_disconnection}
-        :ok = Inflight.drain(client_id, disconnect)
+        # TODO consider draining messages with qos
+        :ok = transport.send(socket, Package.encode(disconnect))
         {:stop, :normal}
 
       {:eval, fun} when is_function(fun, 1) ->
@@ -988,9 +1092,10 @@ defmodule Tortoise.Connection do
         {:call, from},
         {:disconnect, %Package.Disconnect{} = disconnect},
         :connected,
-        %State{client_id: client_id} = data
+        %State{connection: {transport, socket}} = data
       ) do
-    :ok = Inflight.drain(client_id, disconnect)
+    # TODO consider draining messages with QoS
+    :ok = transport.send(socket, Package.encode(disconnect))
 
     {:stop_and_reply, :shutdown, [{:reply, from, :ok}], data}
   end
