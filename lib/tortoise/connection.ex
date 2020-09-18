@@ -685,6 +685,7 @@ defmodule Tortoise.Connection do
           # dispatch the pubcomp
           {{:cont, pubcomp}, session} = Session.progress(session, {:outgoing, pubcomp})
           :ok = transport.send(socket, Package.encode(pubcomp))
+          {:ok, session} = Session.release(session, id)
           updated_data = %State{data | handler: updated_handler, session: session}
           {:keep_state, updated_data, wrap_next_actions(next_actions)}
 
@@ -696,6 +697,7 @@ defmodule Tortoise.Connection do
       pubcomp = %Package.Pubcomp{identifier: id}
       {{:cont, pubcomp}, session} = Session.progress(session, {:outgoing, pubcomp})
       :ok = transport.send(socket, Package.encode(pubcomp))
+      {:ok, session} = Session.release(session, id)
       updated_data = %State{data | session: session}
       {:keep_state, updated_data}
     end
