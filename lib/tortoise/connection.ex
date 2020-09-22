@@ -389,12 +389,12 @@ defmodule Tortoise.Connection do
         when opts: {:timeout, timeout()} | {:active, boolean()}
   def connection(pid, _opts \\ [active: false])
 
-  def connection(pid, opts) when is_pid(pid) do
+  def connection(name_or_pid, opts) do
     timeout = Keyword.get(opts, :timeout, :infinity)
 
-    # make it possible to subscribe to a connection using "active"!
-    if Process.alive?(pid) do
-      GenStateMachine.call(pid, :get_connection, timeout)
+    # TODO make it possible to subscribe to a connection using "active"!
+    if GenServer.whereis(name_or_pid) |> Process.alive?() do
+      GenStateMachine.call(name_or_pid, :get_connection, timeout)
     else
       {:error, :unknown_connection}
     end

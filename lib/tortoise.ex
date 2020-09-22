@@ -252,7 +252,7 @@ defmodule Tortoise do
   with `Tortoise` so it is easy to see where the message originated
   from.
   """
-  @spec publish(client_id(), topic_or_topic_alias(), payload, [options]) ::
+  @spec publish(Process.dest(), topic_or_topic_alias(), payload, [options]) ::
           :ok | {:ok, reference()} | {:error, reason}
         when payload: binary() | nil,
              options:
@@ -260,9 +260,9 @@ defmodule Tortoise do
                | {:retain, boolean()}
                | {:identifier, package_identifier()},
              reason: :unknown_connection | :topic_alias_specified_twice
-  def publish(client_id, topic, payload \\ nil, opts \\ [])
+  def publish(name_or_pid, topic, payload \\ nil, opts \\ [])
 
-  def publish(client_id, topic, payload, opts) when is_binary(topic) do
+  def publish(name_or_pid, topic, payload, opts) when is_binary(topic) do
     {opts, properties} = Keyword.split(opts, [:retain, :qos, :transforms])
     qos = Keyword.get(opts, :qos, 0)
 
@@ -274,19 +274,19 @@ defmodule Tortoise do
       properties: properties
     }
 
-    with {:ok, {transport, socket}} <- Connection.connection(client_id) do
-      case publish do
-        %Package.Publish{qos: 0} ->
+    case publish do
+      %Package.Publish{qos: 0} ->
+        with {:ok, {transport, socket}} <- Connection.connection(name_or_pid) do
           encoded_publish = Package.encode(publish)
           apply(transport, :send, [socket, encoded_publish])
+        else
+          {:error, :unknown_connection} ->
+            {:error, :unknown_connection}
+        end
 
-        %Package.Publish{qos: qos} when qos in [1, 2] ->
-          transforms = Keyword.get(opts, :transforms, {[], nil})
-          Inflight.track(client_id, {:outgoing, publish, transforms})
-      end
-    else
-      {:error, :unknown_connection} ->
-        {:error, :unknown_connection}
+      %Package.Publish{qos: qos} when qos in [1, 2] ->
+        # transforms = Keyword.get(opts, :transforms, {[], nil})
+        Connection.publish(name_or_pid, publish)
     end
   end
 
