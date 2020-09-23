@@ -349,7 +349,7 @@ defmodule Tortoise.Connection do
   """
   @spec ping(pid(), timeout()) :: {:ok, reference()}
   def ping(pid, timeout \\ :infinity) do
-    {:ok, {_client_id, _ref}} = GenStateMachine.call(pid, :ping, timeout)
+    GenStateMachine.call(pid, :ping, timeout)
   end
 
   @doc """
@@ -365,14 +365,18 @@ defmodule Tortoise.Connection do
   """
   @spec ping_sync(pid(), timeout()) :: {:ok, reference()} | {:error, :timeout}
   def ping_sync(pid, timeout \\ :infinity) do
-    {:ok, {client_id, ref}} = ping(pid, timeout)
+    case ping(pid, timeout) do
+      {:ok, {client_id, ref}} ->
+        receive do
+          {{Tortoise, ^client_id}, {Package.Pingreq, ^ref}, round_trip_time} ->
+            {:ok, round_trip_time}
+        after
+          timeout ->
+            {:error, :timeout}
+        end
 
-    receive do
-      {{Tortoise, ^client_id}, {Package.Pingreq, ^ref}, round_trip_time} ->
-        {:ok, round_trip_time}
-    after
-      timeout ->
-        {:error, :timeout}
+      {:error, _reason} = error ->
+        error
     end
   end
 
@@ -1181,9 +1185,9 @@ defmodule Tortoise.Connection do
   end
 
   # not connected yet
-  def handle_event({:call, {caller_pid, ref} = _from}, :ping, _, %State{}) do
-    send(caller_pid, {{Tortoise, self()}, {Package.Pingreq, ref}, :not_connected})
-    :keep_state_and_data
+  def handle_event({:call, from}, :ping, _, %State{}) do
+    next_actions = [{:reply, from, {:error, :not_connected}}]
+    {:keep_state_and_data, next_actions}
   end
 
   # keep alive ---------------------------------------------------------
