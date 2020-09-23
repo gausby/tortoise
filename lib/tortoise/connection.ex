@@ -580,10 +580,9 @@ defmodule Tortoise.Connection do
     case Session.track(session, {:incoming, publish}) do
       {{:cont, publish}, session} ->
         case Handler.execute_handle_publish(handler, publish) do
-          {:ok, %Package.Puback{identifier: ^id} = puback, %Handler{} = updated_handler,
-           next_actions} ->
+          {:ok, %Package.Puback{identifier: ^id} = puback, updated_handler, next_actions} ->
             # respond with a puback
-            Session.progress(session, {:outgoing, puback})
+            {{:cont, _puback}, session} = Session.progress(session, {:outgoing, puback})
             :ok = transport.send(socket, Package.encode(puback))
             {:ok, session} = Session.release(session, id)
             # - - -
