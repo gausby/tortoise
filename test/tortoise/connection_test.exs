@@ -298,6 +298,8 @@ defmodule Tortoise.ConnectionTest do
     setup [:setup_scripted_mqtt_server, :setup_connection_and_perform_handshake]
 
     test "successful subscription", %{connection_pid: connection} = context do
+      client_id = context.client_id
+
       default_subscription_opts = [
         no_local: false,
         retain_as_published: false,
@@ -349,22 +351,22 @@ defmodule Tortoise.ConnectionTest do
       assert_receive {{TestHandler, :handle_suback}, {%Package.Subscribe{}, ^suback_foo}}
 
       # subscribe to a bar
-      assert {:ok, ref} =
+      assert {:ok, {^client_id, ref}} =
                Tortoise.Connection.subscribe(connection, {"bar", qos: 1}, identifier: 2)
 
-      assert_receive {{Tortoise, ^connection}, {Package.Suback, ^ref}, :ok}
+      assert_receive {{Tortoise, ^client_id}, {Package.Suback, ^ref}, :ok}
       assert_receive {ScriptedMqttServer, {:received, ^subscription_bar}}
       assert_receive {{TestHandler, :handle_suback}, {%Package.Subscribe{}, ^suback_bar}}
 
       # subscribe to a baz
-      assert {:ok, ref} =
+      assert {:ok, {^client_id, ref}} =
                Tortoise.Connection.subscribe(connection, "baz",
                  qos: 2,
                  identifier: 3,
                  user_property: {"foo", "bar"}
                )
 
-      assert_receive {{Tortoise, ^connection}, {Package.Suback, ^ref}, :ok}
+      assert_receive {{Tortoise, ^client_id}, {Package.Suback, ^ref}, :ok}
       assert_receive {ScriptedMqttServer, {:received, ^subscription_baz}}
       assert_receive {{TestHandler, :handle_suback}, {%Package.Subscribe{}, ^suback_baz}}
 
@@ -382,6 +384,7 @@ defmodule Tortoise.ConnectionTest do
     # @todo unsuccessful subscribe
 
     test "successful unsubscribe", %{connection_pid: connection} = context do
+      client_id = context.client_id
       unsubscribe_foo = %Package.Unsubscribe{identifier: 2, topics: ["foo"]}
       unsuback_foo = %Package.Unsuback{results: [:success], identifier: 2}
 
@@ -421,7 +424,8 @@ defmodule Tortoise.ConnectionTest do
         identifier: 1
       }
 
-      {:ok, sub_ref} = Tortoise.Connection.subscribe(connection, subscribe.topics, identifier: 1)
+      {:ok, {^client_id, sub_ref}} =
+        Tortoise.Connection.subscribe(connection, subscribe.topics, identifier: 1)
 
       assert_receive {ScriptedMqttServer, {:received, ^subscribe}}
 
@@ -438,13 +442,13 @@ defmodule Tortoise.ConnectionTest do
       assert Map.has_key?(Tortoise.Connection.subscriptions(connection), "bar")
 
       # and unsubscribe from bar
-      assert {:ok, ref} =
+      assert {:ok, {^client_id, ref}} =
                Tortoise.Connection.unsubscribe(connection, "bar",
                  identifier: 3,
                  user_property: {"foo", "bar"}
                )
 
-      assert_receive {{Tortoise, ^connection}, {Package.Unsuback, ^ref}, :ok}
+      assert_receive {{Tortoise, ^client_id}, {Package.Unsuback, ^ref}, :ok}
       assert_receive {ScriptedMqttServer, {:received, ^unsubscribe_bar}}
       # handle_unsuback should get called on the callback handler
       assert_receive {{TestHandler, :handle_unsuback}, {^unsubscribe_bar, ^unsuback_bar}}
@@ -456,10 +460,11 @@ defmodule Tortoise.ConnectionTest do
 
       # the process calling the async subscribe should receive the
       # result of the subscribe as a message (suback)
-      assert_receive {{Tortoise, ^connection}, {Package.Suback, ^sub_ref}, :ok}, 0
+      assert_receive {{Tortoise, ^client_id}, {Package.Suback, ^sub_ref}, :ok}, 0
     end
 
     test "unsuccessful unsubscribe: not authorized", %{connection_pid: connection} = context do
+      client_id = context.client_id
       unsubscribe_foo = %Package.Unsubscribe{identifier: 2, topics: ["foo"]}
       unsuback_foo = %Package.Unsuback{results: [error: :not_authorized], identifier: 2}
 
@@ -486,19 +491,25 @@ defmodule Tortoise.ConnectionTest do
         identifier: 1
       }
 
-      {:ok, _sub_ref} = Tortoise.Connection.subscribe(connection, subscribe.topics, identifier: 1)
+      {:ok, {^client_id, _sub_ref}} =
+        Tortoise.Connection.subscribe(connection, subscribe.topics, identifier: 1)
+
       assert_receive {ScriptedMqttServer, {:received, ^subscribe}}
       assert_receive {{TestHandler, :handle_suback}, {_, %Package.Suback{identifier: 1}}}
 
       subscriptions = Tortoise.Connection.subscriptions(connection)
-      {:ok, unsub_ref} = Tortoise.Connection.unsubscribe(connection, "foo", identifier: 2)
-      assert_receive {{Tortoise, ^connection}, {Package.Unsuback, ^unsub_ref}, :ok}
+
+      {:ok, {^client_id, unsub_ref}} =
+        Tortoise.Connection.unsubscribe(connection, "foo", identifier: 2)
+
+      assert_receive {{Tortoise, ^client_id}, {Package.Unsuback, ^unsub_ref}, :ok}
       assert_receive {Tortoise.Integration.ScriptedMqttServer, :completed}
       assert ^subscriptions = Tortoise.Connection.subscriptions(connection)
     end
 
     test "unsuccessful unsubscribe: no subscription existed",
          %{connection_pid: connection} = context do
+      client_id = context.client_id
       unsubscribe_foo = %Package.Unsubscribe{identifier: 2, topics: ["foo"]}
       unsuback_foo = %Package.Unsuback{results: [error: :no_subscription_existed], identifier: 2}
 
@@ -525,13 +536,18 @@ defmodule Tortoise.ConnectionTest do
         identifier: 1
       }
 
-      {:ok, _sub_ref} = Tortoise.Connection.subscribe(connection, subscribe.topics, identifier: 1)
+      {:ok, {^client_id, _sub_ref}} =
+        Tortoise.Connection.subscribe(connection, subscribe.topics, identifier: 1)
+
       assert_receive {ScriptedMqttServer, {:received, ^subscribe}}
       assert_receive {{TestHandler, :handle_suback}, {_, %Package.Suback{identifier: 1}}}
 
       assert Tortoise.Connection.subscriptions(connection) |> Map.has_key?("foo")
-      {:ok, unsub_ref} = Tortoise.Connection.unsubscribe(connection, "foo", identifier: 2)
-      assert_receive {{Tortoise, ^connection}, {Package.Unsuback, ^unsub_ref}, :ok}
+
+      {:ok, {^client_id, unsub_ref}} =
+        Tortoise.Connection.unsubscribe(connection, "foo", identifier: 2)
+
+      assert_receive {{Tortoise, ^client_id}, {Package.Unsuback, ^unsub_ref}, :ok}
       assert_receive {Tortoise.Integration.ScriptedMqttServer, :completed}
       # the client should update it state to not include the foo topic
       # as the server told us that it is not subscribed
@@ -1002,7 +1018,8 @@ defmodule Tortoise.ConnectionTest do
 
     test "user next actions", context do
       Process.flag(:trap_exit, true)
-      connect = %Package.Connect{client_id: context.client_id}
+      client_id = context.client_id
+      connect = %Package.Connect{client_id: client_id}
       expected_connack = %Package.Connack{reason: :success, session_present: false}
 
       subscribe = %Package.Subscribe{
@@ -1058,7 +1075,7 @@ defmodule Tortoise.ConnectionTest do
          ]}
 
       opts = [
-        client_id: context.client_id,
+        client_id: client_id,
         server: {Tortoise.Transport.Tcp, [host: ip, port: port]},
         handler: handler
       ]
@@ -1085,7 +1102,8 @@ defmodule Tortoise.ConnectionTest do
   describe "ping" do
     setup [:setup_scripted_mqtt_server, :setup_connection_and_perform_handshake]
 
-    test "send pingreq and receive a pingresp", %{connection_pid: connection_pid} = context do
+    test "send pingreq and receive a pingresp", context do
+      client_id = context.client_id
       ping_request = %Package.Pingreq{}
       expected_pingresp = %Package.Pingresp{}
       script = [{:receive, ping_request}, {:send, expected_pingresp}]
@@ -1093,9 +1111,9 @@ defmodule Tortoise.ConnectionTest do
       {:ok, _} = ScriptedMqttServer.enact(context.scripted_mqtt_server, script)
       assert_receive {{TestHandler, :handle_connack}, %Tortoise.Package.Connack{}}
 
-      {:ok, ref} = Connection.ping(context.connection_pid)
+      {:ok, {^client_id, ref}} = Connection.ping(context.connection_pid)
       assert_receive {ScriptedMqttServer, {:received, ^ping_request}}
-      assert_receive {{Tortoise, ^connection_pid}, {Package.Pingreq, ^ref}, _}
+      assert_receive {{Tortoise, ^client_id}, {Package.Pingreq, ^ref}, _}
       assert_receive {ScriptedMqttServer, :completed}
     end
 
@@ -1266,7 +1284,7 @@ defmodule Tortoise.ConnectionTest do
       assert_receive {{TestHandler, :handle_publish}, ^publish}
     end
 
-    test "outgoing publish with QoS=1", context do
+    test "outgoing publish with QoS=1", %{client_id: client_id} = context do
       Process.flag(:trap_exit, true)
 
       publish =
@@ -1283,13 +1301,13 @@ defmodule Tortoise.ConnectionTest do
       {:ok, _} = ScriptedMqttServer.enact(context.scripted_mqtt_server, script)
       pid = context.connection_pid
 
-      assert {:ok, ref} = Tortoise.Connection.publish(pid, publish)
+      assert {:ok, {^client_id, ref}} = Tortoise.Connection.publish(pid, publish)
 
       refute_receive {:EXIT, ^pid, {:protocol_violation, {:unexpected_package, _}}}
       assert_receive {ScriptedMqttServer, {:received, ^publish}}
       assert_receive {ScriptedMqttServer, :completed}
       # the caller should receive an :ok for the ref when it is published
-      assert_receive {{Tortoise, ^pid}, {Package.Publish, ^ref}, :ok}
+      assert_receive {{Tortoise, ^client_id}, {Package.Publish, ^ref}, :ok}
     end
 
     test "outgoing publish with QoS=1 (sync call)", context do
@@ -1388,14 +1406,14 @@ defmodule Tortoise.ConnectionTest do
       {:ok, _} = ScriptedMqttServer.enact(context.scripted_mqtt_server, script)
       pid = connection_pid
 
-      assert {:ok, ref} = Tortoise.Connection.publish(pid, publish)
+      assert {:ok, {^client_id, ref}} = Tortoise.Connection.publish(pid, publish)
 
       refute_receive {:EXIT, ^pid, {:protocol_violation, {:unexpected_package, _}}}
       assert_receive {ScriptedMqttServer, {:received, ^publish}}
       assert_receive {ScriptedMqttServer, {:received, ^subscribe}}
       assert_receive {ScriptedMqttServer, :completed}
       # the caller should receive an :ok for the ref when it is published
-      assert_receive {{Tortoise, ^pid}, {Package.Publish, ^ref}, :ok}
+      assert_receive {{Tortoise, ^client_id}, {Package.Publish, ^ref}, :ok}
       assert_receive {{TestHandler, :handle_suback}, {_subscribe, _suback}}
     end
 
@@ -1573,7 +1591,7 @@ defmodule Tortoise.ConnectionTest do
       assert_receive {{TestHandler, :handle_publish}, ^non_dup_publish}
     end
 
-    test "outgoing publish with QoS=2", context do
+    test "outgoing publish with QoS=2", %{client_id: client_id} = context do
       Process.flag(:trap_exit, true)
 
       publish =
@@ -1594,13 +1612,13 @@ defmodule Tortoise.ConnectionTest do
       {:ok, _} = ScriptedMqttServer.enact(context.scripted_mqtt_server, script)
       pid = context.connection_pid
 
-      assert {:ok, ref} = Tortoise.Connection.publish(pid, publish)
+      assert {:ok, {^client_id, ref}} = Tortoise.Connection.publish(pid, publish)
 
       refute_receive {:EXIT, ^pid, {:protocol_violation, {:unexpected_package, _}}}
       assert_receive {ScriptedMqttServer, {:received, ^publish}}
       assert_receive {ScriptedMqttServer, {:received, ^pubrel}}
       assert_receive {ScriptedMqttServer, :completed}
-      assert_receive {{Tortoise, ^pid}, {Package.Publish, ^ref}, :ok}
+      assert_receive {{Tortoise, ^client_id}, {Package.Publish, ^ref}, :ok}
 
       # the handle_pubrec callback should have been called
       assert_receive {{TestHandler, :handle_pubrec}, ^pubrec}

@@ -102,9 +102,9 @@ defmodule Tortoise.Connection do
   @doc """
   Close the connection to the broker.
 
-  Given the `client_id` of a running connection it will cancel the
-  inflight messages and send the proper disconnect message to the
-  broker. The session will get terminated on the server.
+  Given the `pid` of a running connection it will cancel the inflight
+  messages and send the proper disconnect message to the broker. The
+  session will get terminated on the server.
   """
   @spec disconnect(pid(), reason, properties) :: :ok
         when reason: Tortoise.Package.Disconnect.reason(),
@@ -152,7 +152,7 @@ defmodule Tortoise.Connection do
   Read the documentation for `Tortoise.Connection.subscribe_sync/3`
   for a blocking version of this call.
   """
-  @spec subscribe(pid(), topic | topics, [options]) :: {:ok, reference()}
+  @spec subscribe(pid(), topic | topics, [options]) :: {:ok, {Tortoise.client_id(), reference()}}
         when topics: [topic],
              topic: {Tortoise.topic_filter(), Tortoise.qos()},
              options:
@@ -161,7 +161,6 @@ defmodule Tortoise.Connection do
   def subscribe(pid, topics, opts \\ [])
 
   def subscribe(pid, [{_, topic_opts} | _] = topics, opts) when is_list(topic_opts) do
-    caller = {_, ref} = {self(), make_ref()}
     # todo, do something with timeout, or remove it
     {opts, properties} = Keyword.split(opts, [:identifier, :timeout])
     {identifier, opts} = Keyword.pop_first(opts, :identifier, nil)
@@ -172,8 +171,7 @@ defmodule Tortoise.Connection do
         properties: properties
       })
 
-    GenStateMachine.cast(pid, {:subscribe, caller, subscribe, opts})
-    {:ok, ref}
+    GenStateMachine.call(pid, {:subscribe, subscribe, opts})
   end
 
   def subscribe(pid, {_, topic_opts} = topic, opts) when is_list(topic_opts) do
@@ -212,14 +210,19 @@ defmodule Tortoise.Connection do
   def subscribe_sync(pid, topics, opts \\ [])
 
   def subscribe_sync(pid, [{_, topic_opts} | _] = topics, opts) when is_list(topic_opts) do
-    timeout = Keyword.get(opts, :timeout, 5000)
-    {:ok, ref} = subscribe(pid, topics, opts)
+    case subscribe(pid, topics, opts) do
+      {:ok, {client_id, ref}} ->
+        timeout = Keyword.get(opts, :timeout, 5000)
 
-    receive do
-      {{Tortoise, ^pid}, {Package.Suback, ^ref}, result} -> result
-    after
-      timeout ->
-        {:error, :timeout}
+        receive do
+          {{Tortoise, ^client_id}, {Package.Suback, ^ref}, result} -> result
+        after
+          timeout ->
+            {:error, :timeout}
+        end
+
+      {:error, _reason} = error ->
+        error
     end
   end
 
@@ -247,7 +250,8 @@ defmodule Tortoise.Connection do
   This operation is asynchronous. When the operation is done a message
   will be received in mailbox of the originating process.
   """
-  @spec unsubscribe(pid(), topic | topics, [options]) :: {:ok, reference()}
+  @spec unsubscribe(pid(), topic | topics, [options]) ::
+          {:ok, {Tortoise.client_id(), reference()}}
         when topics: [topic],
              topic: Tortoise.topic_filter(),
              options:
@@ -256,7 +260,6 @@ defmodule Tortoise.Connection do
   def unsubscribe(pid, topics, opts \\ [])
 
   def unsubscribe(pid, [topic | _] = topics, opts) when is_binary(topic) do
-    caller = {_, ref} = {self(), make_ref()}
     {opts, properties} = Keyword.split(opts, [:identifier, :timeout])
     {identifier, opts} = Keyword.pop_first(opts, :identifier, nil)
 
@@ -266,8 +269,7 @@ defmodule Tortoise.Connection do
       properties: properties
     }
 
-    GenStateMachine.cast(pid, {:unsubscribe, caller, unsubscribe, opts})
-    {:ok, ref}
+    GenStateMachine.call(pid, {:unsubscribe, unsubscribe, opts})
   end
 
   def unsubscribe(pid, topic, opts) when is_binary(topic) do
@@ -294,10 +296,10 @@ defmodule Tortoise.Connection do
 
   def unsubscribe_sync(pid, topics, opts) when is_list(topics) do
     timeout = Keyword.get(opts, :timeout, 5000)
-    {:ok, ref} = unsubscribe(pid, topics, opts)
+    {:ok, {client_id, ref}} = unsubscribe(pid, topics, opts)
 
     receive do
-      {{Tortoise, ^pid}, {Package.Unsuback, ^ref}, result} ->
+      {{Tortoise, ^client_id}, {Package.Unsuback, ^ref}, result} ->
         result
     after
       timeout ->
@@ -319,11 +321,11 @@ defmodule Tortoise.Connection do
     GenStateMachine.call(pid, {:publish, publish})
   end
 
-  def publish_sync(pid, %Package.Publish{} = publish, timeout \\ 5000) do
-    {:ok, ref} = publish(pid, publish)
+  def publish_sync(pid, %Package.Publish{} = publish, timeout \\ :infinity) do
+    {:ok, {client_id, ref}} = publish(pid, publish)
 
     receive do
-      {{Tortoise, ^pid}, {Package.Publish, ^ref}, result} ->
+      {{Tortoise, ^client_id}, {Package.Publish, ^ref}, result} ->
         result
     after
       timeout ->
@@ -345,11 +347,9 @@ defmodule Tortoise.Connection do
   better to listen on `:ping_response` using the `Tortoise.Events`
   PubSub.
   """
-  @spec ping(pid()) :: {:ok, reference()}
-  def ping(pid) do
-    ref = make_ref()
-    :ok = GenStateMachine.cast(pid, {:ping, {self(), ref}})
-    {:ok, ref}
+  @spec ping(pid(), timeout()) :: {:ok, reference()}
+  def ping(pid, timeout \\ :infinity) do
+    {:ok, {_client_id, _ref}} = GenStateMachine.call(pid, :ping, timeout)
   end
 
   @doc """
@@ -365,10 +365,10 @@ defmodule Tortoise.Connection do
   """
   @spec ping_sync(pid(), timeout()) :: {:ok, reference()} | {:error, :timeout}
   def ping_sync(pid, timeout \\ :infinity) do
-    {:ok, ref} = ping(pid)
+    {:ok, {client_id, ref}} = ping(pid, timeout)
 
     receive do
-      {{Tortoise, ^pid}, {Package.Pingreq, ^ref}, round_trip_time} ->
+      {{Tortoise, ^client_id}, {Package.Pingreq, ^ref}, round_trip_time} ->
         {:ok, round_trip_time}
     after
       timeout ->
@@ -605,7 +605,7 @@ defmodule Tortoise.Connection do
     case Session.track(session, {:outgoing, publish}) do
       {{:cont, %Package.Publish{identifier: id} = publish}, session} ->
         :ok = transport.send(socket, Package.encode(publish))
-        next_actions = [{:reply, from, {:ok, ref}}]
+        next_actions = [{:reply, from, {:ok, {session.client_id, ref}}}]
         data = %State{data | session: session, pending_refs: Map.put_new(pending, id, from)}
         {:keep_state, data, next_actions}
     end
@@ -717,7 +717,7 @@ defmodule Tortoise.Connection do
     case Session.track(session, {:outgoing, publish}) do
       {{:cont, %Package.Publish{identifier: id} = publish}, session} ->
         :ok = transport.send(socket, Package.encode(publish))
-        next_actions = [{:reply, from, {:ok, ref}}]
+        next_actions = [{:reply, from, {:ok, {session.client_id, ref}}}]
         data = %State{data | session: session, pending_refs: Map.put_new(pending, id, from)}
         {:keep_state, data, next_actions}
     end
@@ -794,22 +794,21 @@ defmodule Tortoise.Connection do
 
   # subscription logic
   def handle_event(
-        :cast,
-        {:subscribe, caller, %Package.Subscribe{topics: []}, _opts},
+        {:call, from},
+        {:subscribe, %Package.Subscribe{topics: []}, _opts},
         :connected,
         _data
       ) do
     # This should not really be able to happen as the API will not
     # allow the user to specify an empty list, but this is added for
     # good measure
-    reply = {:error, :empty_topic_filter_list}
-    next_actions = [{:next_event, :internal, {:reply, caller, reply}}]
+    next_actions = [{:reply, from, {:error, :empty_topic_filter_list}}]
     {:keep_state_and_data, next_actions}
   end
 
   def handle_event(
-        :cast,
-        {:subscribe, caller, %Package.Subscribe{} = subscribe, _opts},
+        {:call, {_, ref} = from},
+        {:subscribe, %Package.Subscribe{} = subscribe, _opts},
         :connected,
         %State{
           connection: {transport, socket},
@@ -821,18 +820,49 @@ defmodule Tortoise.Connection do
         case Session.track(session, {:outgoing, subscribe}) do
           {{:cont, %Package.Subscribe{identifier: id} = subscribe}, session} ->
             :ok = transport.send(socket, Package.encode(subscribe))
+            pending = Map.put_new(data.pending_refs, id, {from, subscribe})
+            state = %State{data | pending_refs: pending, session: session}
+            next_actions = [{:reply, from, {:ok, {session.client_id, ref}}}]
+            {:keep_state, state, next_actions}
+        end
+
+      {:invalid, reasons} ->
+        reply = {:error, {:subscription_failure, reasons}}
+        next_actions = [{:reply, from, reply}]
+        {:keep_state_and_data, next_actions}
+    end
+  end
+
+  def handle_event({:call, _}, {:subscribe, _, _}, _state_name, _data) do
+    {:keep_state_and_data, [:postpone]}
+  end
+
+  def handle_event(
+        :internal,
+        {:subscribe, %Package.Subscribe{} = subscribe, _opts},
+        :connected,
+        %State{
+          connection: {transport, socket},
+          session: session
+        } = data
+      ) do
+    case Info.Capabilities.validate(data.info.capabilities, subscribe) do
+      :valid ->
+        case Session.track(session, {:outgoing, subscribe}) do
+          {{:cont, %Package.Subscribe{identifier: id} = subscribe}, session} ->
+            caller = {self(), make_ref()}
+            :ok = transport.send(socket, Package.encode(subscribe))
             pending = Map.put_new(data.pending_refs, id, {caller, subscribe})
             {:keep_state, %State{data | pending_refs: pending, session: session}}
         end
 
       {:invalid, reasons} ->
-        reply = {:error, {:subscription_failure, reasons}}
-        next_actions = [{:next_event, :internal, {:reply, caller, Package.Suback, reply}}]
+        next_actions = [{:error, {:subscription_failure, reasons}}]
         {:keep_state_and_data, next_actions}
     end
   end
 
-  def handle_event(:cast, {:subscribe, _, _, _}, _state_name, _data) do
+  def handle_event(:internal, {:subscribe, _, _}, _state_name, _data) do
     {:keep_state_and_data, [:postpone]}
   end
 
@@ -886,8 +916,8 @@ defmodule Tortoise.Connection do
   end
 
   def handle_event(
-        :cast,
-        {:unsubscribe, caller, unsubscribe, opts},
+        {:call, {_pid, ref} = from},
+        {:unsubscribe, unsubscribe, opts},
         :connected,
         %State{
           session: session,
@@ -900,6 +930,28 @@ defmodule Tortoise.Connection do
     case Session.track(session, {:outgoing, unsubscribe}) do
       {{:cont, %Package.Unsubscribe{identifier: id} = unsubscribe}, session} ->
         :ok = transport.send(socket, Package.encode(unsubscribe))
+        pending = Map.put_new(pending, id, {from, unsubscribe})
+        next_actions = [{:reply, from, {:ok, {session.client_id, ref}}}]
+        {:keep_state, %State{data | pending_refs: pending, session: session}, next_actions}
+    end
+  end
+
+  def handle_event(
+        :internal,
+        {:unsubscribe, unsubscribe, opts},
+        :connected,
+        %State{
+          session: session,
+          connection: {transport, socket},
+          pending_refs: pending
+        } = data
+      ) do
+    _timeout = Keyword.get(opts, :timeout, 5000)
+
+    case Session.track(session, {:outgoing, unsubscribe}) do
+      {{:cont, %Package.Unsubscribe{identifier: id} = unsubscribe}, session} ->
+        :ok = transport.send(socket, Package.encode(unsubscribe))
+        caller = {self(), make_ref()}
         pending = Map.put_new(pending, id, {caller, unsubscribe})
         {:keep_state, %State{data | pending_refs: pending, session: session}}
     end
@@ -966,11 +1018,11 @@ defmodule Tortoise.Connection do
         :internal,
         {:reply, caller, topic, payload},
         _current_state,
-        %State{}
+        %State{session: session}
       ) do
     case caller do
       {pid, _ref} when pid != self() ->
-        _ = send_reply(caller, topic, payload)
+        _ = send_reply(session.client_id, caller, topic, payload)
         :keep_state_and_data
 
       _otherwise ->
@@ -997,17 +1049,15 @@ defmodule Tortoise.Connection do
       ) do
     case action do
       {:subscribe, topic, opts} when is_binary(topic) ->
-        caller = {self(), make_ref()}
         {identifier, opts} = Keyword.pop_first(opts, :identifier, nil)
         subscribe = %Package.Subscribe{identifier: identifier, topics: [{topic, opts}]}
-        next_actions = [{:next_event, :cast, {:subscribe, caller, subscribe, opts}}]
+        next_actions = [{:next_event, :internal, {:subscribe, subscribe, opts}}]
         {:keep_state_and_data, next_actions}
 
       {:unsubscribe, topic, opts} when is_binary(topic) ->
-        caller = {self(), make_ref()}
         {identifier, opts} = Keyword.pop_first(opts, :identifier, nil)
         subscribe = %Package.Unsubscribe{identifier: identifier, topics: [topic]}
-        next_actions = [{:next_event, :cast, {:unsubscribe, caller, subscribe, opts}}]
+        next_actions = [{:next_event, :internal, {:unsubscribe, subscribe, opts}}]
         {:keep_state_and_data, next_actions}
 
       :disconnect ->
@@ -1112,19 +1162,26 @@ defmodule Tortoise.Connection do
   end
 
   # ping handling ------------------------------------------------------
-  def handle_event(:cast, {:ping, caller}, :connected, %State{} = data) do
+  def handle_event({:call, {_, ref} = from}, :ping, :connected, %State{session: session} = data) do
+    next_actions = [{:reply, from, {:ok, {session.client_id, ref}}}]
+
     case data.ping do
       {:idle, awaiting} ->
-        next_actions = [{:next_event, :internal, :trigger_keep_alive}]
-        {:keep_state, %State{data | ping: {:idle, [caller | awaiting]}}, next_actions}
+        next_actions = [
+          {:next_event, :internal, :trigger_keep_alive}
+          | next_actions
+        ]
+
+        {:keep_state, %State{data | ping: {:idle, [from | awaiting]}}, next_actions}
 
       {{:pinging, start_time}, awaiting} ->
-        {:keep_state, %State{data | ping: {{:pinging, start_time}, [caller | awaiting]}}}
+        {:keep_state, %State{data | ping: {{:pinging, start_time}, [from | awaiting]}},
+         next_actions}
     end
   end
 
   # not connected yet
-  def handle_event(:cast, {:ping, {caller_pid, ref}}, _, %State{}) do
+  def handle_event({:call, {caller_pid, ref} = _from}, :ping, _, %State{}) do
     send(caller_pid, {{Tortoise, self()}, {Package.Pingreq, ref}, :not_connected})
     :keep_state_and_data
   end
@@ -1171,14 +1228,14 @@ defmodule Tortoise.Connection do
         :internal,
         {:received, %Package.Pingresp{}},
         :connected,
-        %State{ping: {{:pinging, start_time}, awaiting}} = data
+        %State{ping: {{:pinging, start_time}, awaiting}, session: session} = data
       ) do
     round_trip_time =
       (System.monotonic_time() - start_time)
       |> System.convert_time_unit(:native, :microsecond)
 
     # reply to the clients
-    Enum.each(awaiting, &send_reply(&1, Package.Pingreq, round_trip_time))
+    Enum.each(awaiting, &send_reply(session.client_id, &1, Package.Pingreq, round_trip_time))
 
     next_actions = [{:next_event, :internal, :setup_keep_alive_timer}]
 
@@ -1257,9 +1314,10 @@ defmodule Tortoise.Connection do
     end
   end
 
-  defp send_reply({caller, ref}, topic, payload) when is_pid(caller) and is_reference(ref) do
-    send(caller, {{Tortoise, self()}, {topic, ref}, payload})
+  defp send_reply(client_id, {caller, ref}, topic, payload)
+       when is_pid(caller) and is_reference(ref) do
+    send(caller, {{Tortoise, client_id}, {topic, ref}, payload})
   end
 
-  @compile {:inline, wrap_next_actions: 1, send_reply: 3}
+  @compile {:inline, wrap_next_actions: 1, send_reply: 4}
 end

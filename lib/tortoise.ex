@@ -62,7 +62,6 @@ defmodule Tortoise do
 
   alias Tortoise.Package
   alias Tortoise.Connection
-  alias Tortoise.Connection.Inflight
 
   @typedoc """
   An identifier used to identify the client on the server.
@@ -334,7 +333,7 @@ defmodule Tortoise do
 
   See the documentation for `Tortoise.publish/4` for configuration.
   """
-  @spec publish_sync(client_id(), topic_or_topic_alias(), payload, [options]) ::
+  @spec publish_sync(Process.dest(), topic_or_topic_alias(), payload, [options]) ::
           :ok | {:error, reason}
         when payload: binary() | nil,
              options:
@@ -343,12 +342,11 @@ defmodule Tortoise do
                | {:identifier, package_identifier()}
                | {:timeout, timeout()},
              reason: :unknown_connection | :topic_alias_specified_twice
-  def publish_sync(client_id, topic, payload \\ nil, opts \\ [])
+  def publish_sync(pid_or_name, topic, payload \\ nil, opts \\ [])
 
-  def publish_sync(client_id, topic, payload, opts) when is_binary(topic) do
-    {opts, properties} = Keyword.split(opts, [:retain, :qos, :transforms])
+  def publish_sync(pid_or_name, topic, payload, opts) when is_binary(topic) do
+    {opts, properties} = Keyword.split(opts, [:retain, :qos, :transforms, :timeout])
     qos = Keyword.get(opts, :qos, 0)
-    timeout = Keyword.get(opts, :timeout, :infinity)
 
     publish = %Package.Publish{
       topic: topic,
@@ -358,19 +356,20 @@ defmodule Tortoise do
       properties: properties
     }
 
-    with {:ok, {transport, socket}} <- Connection.connection(client_id) do
-      case publish do
-        %Package.Publish{qos: 0} ->
-          encoded_publish = Package.encode(publish)
-          apply(transport, :send, [socket, encoded_publish])
+    case publish do
+      # %Package.Publish{qos: 0} ->
+      # with {:ok, {transport, socket}} <- Connection.connection(client_id) do
+      #   encoded_publish = Package.encode(publish)
+      #   apply(transport, :send, [socket, encoded_publish])
+      # else
+      #   {:error, :unknown_connection} ->
+      #     {:error, :unknown_connection}
+      # end
 
-        %Package.Publish{qos: qos} when qos in [1, 2] ->
-          transforms = Keyword.get(opts, :transforms, {[], nil})
-          Inflight.track_sync(client_id, {:outgoing, publish, transforms}, timeout)
-      end
-    else
-      {:error, :unknown_connection} ->
-        {:error, :unknown_connection}
+      %Package.Publish{qos: qos} when qos in [1, 2] ->
+        # transforms = Keyword.get(opts, :transforms, {[], nil})
+        timeout = Keyword.get(opts, :timeout, :infinity)
+        Tortoise.Connection.publish_sync(pid_or_name, publish, timeout)
     end
   end
 
