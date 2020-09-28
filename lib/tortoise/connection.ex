@@ -761,11 +761,21 @@ defmodule Tortoise.Connection do
           {:stop, reason, data}
       end
     else
-      pubrel = %Package.Pubrel{identifier: id}
-      {{:cont, pubrel}, session} = Session.progress(session, {:outgoing, pubrel})
-      :ok = transport.send(socket, Package.encode(pubrel))
-      data = %State{data | session: session}
-      {:keep_state, data}
+      if reason in [:success, {:refused, :no_matching_subscribers}] do
+        pubrel = %Package.Pubrel{identifier: id}
+        {{:cont, pubrel}, session} = Session.progress(session, {:outgoing, pubrel})
+        :ok = transport.send(socket, Package.encode(pubrel))
+        data = %State{data | session: session}
+        {:keep_state, data}
+      else
+        # "The Packet Identifier becomes available for reuse once the
+        # sender has received the PUBCOMP packet *or a PUBREC with a
+        # Reason Code of 0x80 or greater.*"
+        {:ok, session} = Session.release(session, id)
+        data = %State{data | session: session}
+        # TODO; Reply an error-tuple to the caller
+        {:keep_state, data}
+      end
     end
   end
 
