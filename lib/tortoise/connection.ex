@@ -728,7 +728,7 @@ defmodule Tortoise.Connection do
 
   def handle_event(
         :internal,
-        {:received, %Package.Pubrec{identifier: id} = pubrec},
+        {:received, %Package.Pubrec{identifier: id, reason: reason} = pubrec},
         _,
         %State{connection: {transport, socket}, session: session, handler: handler} = data
       ) do
@@ -738,11 +738,23 @@ defmodule Tortoise.Connection do
     if function_exported?(handler.module, :handle_pubrec, 2) do
       case Handler.execute_handle_pubrec(handler, pubrec) do
         {:ok, %Package.Pubrel{identifier: ^id} = pubrel, %Handler{} = updated_handler,
-         next_actions} ->
+         next_actions}
+        when reason == :success or reason == {:refused, :no_matching_subscribers} ->
+          # NOTICE that we do allow the "no matching subscribers"
+          # reason as a success; "...in the case of QoS 2 PUBLISH it
+          # is PUBCOMP or a PUBREC with a Reason Code of 128 or
+          # greater"
           {{:cont, pubrel}, session} = Session.progress(session, {:outgoing, pubrel})
           :ok = transport.send(socket, Package.encode(pubrel))
           data = %State{data | session: session, handler: updated_handler}
           {:keep_state, data, wrap_next_actions(next_actions)}
+
+        {:ok, %Package.Pubrel{}, _updated_handler, _} ->
+          # user error; should not respond with pubrel if the publish failed
+          # TODO add a test case returning ok-pubrel on rejected pubrec
+          {:ok, session} = Session.release(session, id)
+          data = %State{data | session: session}
+          {:stop, reason, data}
 
         {:error, reason} ->
           # todo
