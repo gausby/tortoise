@@ -739,7 +739,7 @@ defmodule Tortoise.Connection do
       case Handler.execute_handle_pubrec(handler, pubrec) do
         {:ok, %Package.Pubrel{identifier: ^id} = pubrel, %Handler{} = updated_handler,
          next_actions}
-        when reason == :success or reason == {:refused, :no_matching_subscribers} ->
+        when reason in [:success, {:refused, :no_matching_subscribers}] ->
           # NOTICE that we do allow the "no matching subscribers"
           # reason as a success; "...in the case of QoS 2 PUBLISH it
           # is PUBCOMP or a PUBREC with a Reason Code of 128 or
