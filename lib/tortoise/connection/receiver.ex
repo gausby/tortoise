@@ -5,17 +5,16 @@ defmodule Tortoise.Connection.Receiver do
 
   alias Tortoise.Transport
 
-  defstruct session_ref: nil,
-            transport: nil,
+  defstruct transport: nil,
             socket: nil,
             buffer: <<>>,
-            parent: nil
+            parent: nil,
+            parent_mon: nil
 
   alias __MODULE__, as: State
 
   def start_link(opts) do
     data = %State{
-      session_ref: Keyword.fetch!(opts, :session_ref),
       transport: Keyword.fetch!(opts, :transport),
       parent: Keyword.fetch!(opts, :parent)
     }
@@ -28,7 +27,9 @@ defmodule Tortoise.Connection.Receiver do
       id: __MODULE__,
       start: {__MODULE__, :start_link, [opts]},
       type: :worker,
-      restart: :permanent,
+      # We will let the connection process monitor and start a new
+      # receiver process if the current one should crash
+      restart: :temporary,
       shutdown: 500
     }
   end
@@ -39,8 +40,8 @@ defmodule Tortoise.Connection.Receiver do
 
   @impl true
   def init(%State{} = data) do
-    send(data.parent, {{Tortoise, data.session_ref}, __MODULE__, {:ready, self()}})
-    {:ok, :disconnected, data}
+    parent_mon = Process.monitor(data.parent)
+    {:ok, :disconnected, %State{data | parent_mon: parent_mon}}
   end
 
   @impl true
@@ -59,6 +60,19 @@ defmodule Tortoise.Connection.Receiver do
 
     new_data = %{data | buffer: <<data.buffer::binary, tcp_data::binary>>}
     {:keep_state, new_data, next_actions}
+  end
+
+  def handle_event(
+        :info,
+        {:DOWN, ref, :process, pid, reason},
+        _,
+        %State{parent: pid, parent_mon: ref} = data
+      ) do
+    # our parent process is shutting down
+    case reason do
+      :shutdown ->
+        {:stop, :normal, data}
+    end
   end
 
   def handle_event(:info, unknown_info, _, data) do

@@ -9,8 +9,7 @@ defmodule Tortoise.Connection do
 
   require Logger
 
-  defstruct session_ref: nil,
-            client_id: nil,
+  defstruct client_id: nil,
             session: nil,
             connect: nil,
             server: nil,
@@ -26,7 +25,7 @@ defmodule Tortoise.Connection do
   alias __MODULE__, as: State
 
   alias Tortoise.{Handler, Transport, Package, Session}
-  alias Tortoise.Connection.{Info, Receiver, Backoff}
+  alias Tortoise.Connection.{Info, Backoff}
   alias Tortoise.Package.Connect
 
   @doc """
@@ -71,7 +70,6 @@ defmodule Tortoise.Connection do
     ]
 
     initial = %State{
-      session_ref: make_ref(),
       client_id: connect.client_id,
       session: %Session{client_id: connect.client_id},
       server: server,
@@ -445,12 +443,6 @@ defmodule Tortoise.Connection do
     case Handler.execute_init(state.handler) do
       {:ok, %Handler{} = updated_handler} ->
         updated_state = %State{state | handler: updated_handler}
-        # TODO, perhaps the supervision should get reconsidered
-        :ok =
-          start_connection_supervisor([
-            {:session_ref, updated_state.session_ref},
-            {:parent, self()} | updated_state.opts
-          ])
 
         transition_actions = [
           {:next_event, :internal, :connect}
@@ -1124,12 +1116,24 @@ defmodule Tortoise.Connection do
 
   # connection logic ===================================================
   def handle_event(:internal, :connect, :connecting, %State{} = data) do
-    case await_and_monitor_receiver(data) do
-      {:ok, data} ->
-        {timeout, updated_data} = Map.get_and_update(data, :backoff, &Backoff.next/1)
-        next_actions = [{:state_timeout, timeout, :attempt_connection}]
-        {:keep_state, updated_data, next_actions}
-    end
+    transport = Keyword.get(data.opts, :transport)
+    # We cannot use the client_id to identify the connection because
+    # it could be the case that the server assign the client_id
+    {:ok, t_pid} =
+      Tortoise.TransmitterSupervisor.start_transmitter(
+        parent: self(),
+        transport: transport
+      )
+
+    data = %State{data | receiver: {t_pid, Process.monitor(t_pid)}}
+
+    # setup connection loop
+
+    # TODO make backoff a user defined callback with a default
+    {timeout, data} = Map.get_and_update(data, :backoff, &Backoff.next/1)
+    next_actions = [{:state_timeout, timeout, :attempt_connection}]
+
+    {:keep_state, data, next_actions}
   end
 
   def handle_event(
@@ -1141,7 +1145,7 @@ defmodule Tortoise.Connection do
           receiver: {receiver_pid, _mon_ref}
         } = data
       ) do
-    case Receiver.connect(receiver_pid) do
+    case Tortoise.Connection.Receiver.connect(receiver_pid) do
       {:ok, {transport, socket} = connection} ->
         # TODO: send this to the client handler allowing the user to
         # specify a custom connect package
@@ -1276,6 +1280,9 @@ defmodule Tortoise.Connection do
       ) do
     case Handler.execute_handle_disconnect(handler, {:server, disconnect}) do
       {:ok, updated_handler, next_actions} ->
+        # we should close the network connection now (or assume that
+        # the server will shutdown the connection immediately); from
+        # here we could reconnect, or stop
         {:keep_state, %State{data | handler: updated_handler}, wrap_next_actions(next_actions)}
 
       {:stop, reason, updated_handler} ->
@@ -1303,32 +1310,6 @@ defmodule Tortoise.Connection do
     next_actions = [{:next_event, :internal, :connect}]
     updated_data = %State{data | receiver: nil}
     {:next_state, :connecting, updated_data, next_actions}
-  end
-
-  defp await_and_monitor_receiver(%State{receiver: nil} = data) do
-    session_ref = data.session_ref
-
-    receive do
-      {{Tortoise, ^session_ref}, Receiver, {:ready, pid}} ->
-        {:ok, %State{data | receiver: {pid, Process.monitor(pid)}}}
-    after
-      5000 ->
-        {:error, :receiver_timeout}
-    end
-  end
-
-  defp await_and_monitor_receiver(data) do
-    {:ok, data}
-  end
-
-  defp start_connection_supervisor(opts) do
-    case Tortoise.Connection.Supervisor.start_link(opts) do
-      {:ok, _pid} ->
-        :ok
-
-      {:error, {:already_started, _pid}} ->
-        :ok
-    end
   end
 
   # wrapping the user specified next actions in gen_statem next actions;

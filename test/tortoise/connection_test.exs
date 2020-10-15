@@ -982,15 +982,14 @@ defmodule Tortoise.ConnectionTest do
       assert {:ok, connection_pid} = Connection.start_link(opts)
       assert_receive {ScriptedMqttServer, {:received, ^connect}}
 
-      cs_pid = Connection.Supervisor.whereis(client_id)
-      cs_ref = Process.monitor(cs_pid)
-
       {:ok, {Tortoise.Transport.Tcp, _}} = Connection.connection(connection_pid)
 
       {:connected,
        %{
          receiver_pid: receiver_pid
        }} = Connection.info(connection_pid)
+
+      receiver_mon = Process.monitor(receiver_pid)
 
       assert :ok = Tortoise.Connection.disconnect(connection_pid)
 
@@ -999,8 +998,8 @@ defmodule Tortoise.ConnectionTest do
 
       assert_receive {ScriptedMqttServer, :completed}
 
-      assert_receive {:DOWN, ^cs_ref, :process, ^cs_pid, :shutdown}
-      refute Process.alive?(receiver_pid)
+      # make sure the transmitter terminates as well
+      assert_receive {:DOWN, ^receiver_mon, :process, ^receiver_pid, :normal}
 
       # The user defined handler should have the following callbacks
       # triggered during this exchange
