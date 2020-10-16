@@ -3,18 +3,17 @@ defmodule Tortoise.PipeTest do
   doctest Tortoise.Pipe
 
   alias Tortoise.{Pipe, Package}
-  alias Tortoise.Connection.Inflight
 
   setup context do
     {:ok, %{client_id: context.test}}
   end
 
-  def setup_inflight(context) do
-    opts = [client_id: context.client_id, parent: self()]
-    {:ok, inflight_pid} = Inflight.start_link(opts)
-    :ok = Inflight.update_connection(inflight_pid, context.connection)
-    {:ok, %{inflight_pid: inflight_pid}}
-  end
+  # def setup_inflight(context) do
+  #   opts = [client_id: context.client_id, parent: self()]
+  #   {:ok, inflight_pid} = Inflight.start_link(opts)
+  #   :ok = Inflight.update_connection(inflight_pid, context.connection)
+  #   {:ok, %{inflight_pid: inflight_pid}}
+  # end
 
   def setup_registry(context) do
     key = Tortoise.Registry.via_name(Tortoise.Connection, context.client_id)
@@ -128,7 +127,7 @@ defmodule Tortoise.PipeTest do
   end
 
   describe "await/1" do
-    setup [:setup_registry, :setup_connection, :setup_inflight]
+    setup [:setup_registry, :setup_connection]
 
     @tag skip: true
     test "awaiting an empty pending list should complete instantly", context do
@@ -164,14 +163,14 @@ defmodule Tortoise.PipeTest do
       # receive the QoS=1 publish so we can get the id and acknowledge it
       {:ok, package} = :gen_tcp.recv(context.server, 0, 500)
       assert %Package.Publish{identifier: id} = Package.decode(package)
-      Inflight.update(client_id, {:received, %Package.Puback{identifier: id}})
+      # Inflight.update(client_id, {:received, %Package.Puback{identifier: id}})
 
       send(child, :continue)
       # receive and acknowledge the QoS=2 publish
       {:ok, package} = :gen_tcp.recv(context.server, 0, 500)
       assert %Package.Publish{identifier: id} = Package.decode(package)
-      Inflight.update(client_id, {:received, %Package.Pubrec{identifier: id}})
-      Inflight.update(client_id, {:received, %Package.Pubcomp{identifier: id}})
+      # Inflight.update(client_id, {:received, %Package.Pubrec{identifier: id}})
+      # Inflight.update(client_id, {:received, %Package.Pubcomp{identifier: id}})
 
       # both messages should be acknowledged by now
       assert_receive {:result, result}

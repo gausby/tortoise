@@ -3,7 +3,6 @@ defmodule TortoiseTest do
   doctest Tortoise
 
   alias Tortoise.Package
-  alias Tortoise.Connection.Inflight
 
   setup context do
     {:ok, %{client_id: context.test, transport: Tortoise.Transport.Tcp}}
@@ -19,15 +18,8 @@ defmodule TortoiseTest do
     {:ok, %{client: client_socket, server: server_socket, connection: connection}}
   end
 
-  def setup_inflight(context) do
-    opts = [client_id: context.client_id, parent: self()]
-    {:ok, pid} = Inflight.start_link(opts)
-    :ok = Inflight.update_connection(pid, context.connection)
-    {:ok, %{inflight_pid: pid}}
-  end
-
   describe "publish/4" do
-    setup [:setup_connection, :setup_inflight]
+    setup [:setup_connection]
 
     @tag skip: true
     test "publish qos=0", context do
@@ -44,7 +36,7 @@ defmodule TortoiseTest do
     end
 
     @tag skip: true
-    test "publish qos=1 with user defined callbacks", %{client_id: client_id} = context do
+    test "publish qos=1 with user defined callbacks", context do
       parent = self()
 
       transforms = [
@@ -69,7 +61,6 @@ defmodule TortoiseTest do
       assert %Package.Publish{identifier: id, topic: "foo/bar", qos: 1, payload: nil} =
                Package.decode(data)
 
-      :ok = Inflight.update(client_id, {:received, %Package.Puback{identifier: id}})
       # check the internal transform state
       assert_receive {:callback, {Package.Publish, []}, [:init]}
       assert_receive {:callback, {Package.Puback, []}, [Package.Publish, :init]}
@@ -122,10 +113,7 @@ defmodule TortoiseTest do
                properties: [user_property: {"foo", "bar"}]
              } = Package.decode(data)
 
-      :ok = Inflight.update(context.client_id, {:received, %Package.Pubrec{identifier: id}})
-
       pubrel = %Package.Pubrel{identifier: id}
-      :ok = Inflight.update(client_id, {:dispatch, pubrel})
 
       assert {:ok, data} = :gen_tcp.recv(context.server, 0, 500)
 
@@ -135,8 +123,6 @@ defmodule TortoiseTest do
       }
 
       assert expected_pubrel == Package.decode(data)
-
-      :ok = Inflight.update(client_id, {:received, %Package.Pubcomp{identifier: id}})
 
       assert_receive {{Tortoise, ^client_id}, {Package.Publish, ^publish_ref}, :ok}
       # check the internal state of the transform; in the test we add
@@ -151,7 +137,7 @@ defmodule TortoiseTest do
   end
 
   describe "publish_sync/4" do
-    setup [:setup_connection, :setup_inflight]
+    setup [:setup_connection]
 
     @tag skip: true
     test "publish qos=0", context do
@@ -162,7 +148,6 @@ defmodule TortoiseTest do
 
     @tag skip: true
     test "publish qos=1", context do
-      client_id = context.client_id
       parent = self()
 
       spawn_link(fn ->
@@ -175,7 +160,6 @@ defmodule TortoiseTest do
       assert %Package.Publish{identifier: id, topic: "foo/bar", qos: 1, payload: nil} =
                Package.decode(data)
 
-      :ok = Inflight.update(client_id, {:received, %Package.Puback{identifier: id}})
       assert_receive :done
     end
 
@@ -194,14 +178,12 @@ defmodule TortoiseTest do
       assert %Package.Publish{identifier: id, topic: "foo/bar", qos: 2, payload: nil} =
                Package.decode(data)
 
-      :ok = Inflight.update(client_id, {:received, %Package.Pubrec{identifier: id}})
       # respond with a pubrel
       pubrel = %Package.Pubrel{identifier: id}
-      :ok = Inflight.update(client_id, {:dispatch, pubrel})
+
       assert {:ok, data} = :gen_tcp.recv(context.server, 0, 500)
       assert ^pubrel = Package.decode(data)
 
-      :ok = Inflight.update(client_id, {:received, %Package.Pubcomp{identifier: id}})
       assert_receive :done
     end
   end
