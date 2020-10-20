@@ -253,6 +253,7 @@ defmodule Tortoise do
                {:qos, qos()}
                | {:retain, boolean()}
                | {:identifier, package_identifier()}
+               | {:timeout, non_neg_integer()}
   def publish(client_id, topic, payload \\ nil, opts \\ []) do
     qos = Keyword.get(opts, :qos, 0)
 
@@ -263,7 +264,9 @@ defmodule Tortoise do
       retain: Keyword.get(opts, :retain, false)
     }
 
-    with {:ok, {transport, socket}} <- Connection.connection(client_id) do
+    timeout = Keyword.get(opts, :timeout, :infinity)
+
+    with {:ok, {transport, socket}} <- Connection.connection(client_id, timeout: timeout) do
       case publish do
         %Package.Publish{qos: 0} ->
           encoded_publish = Package.encode(publish)
@@ -323,7 +326,7 @@ defmodule Tortoise do
       retain: Keyword.get(opts, :retain, false)
     }
 
-    with {:ok, {transport, socket}} <- Connection.connection(client_id) do
+    with {:ok, {transport, socket}} <- Connection.connection(client_id, timeout: timeout) do
       case publish do
         %Package.Publish{qos: 0} ->
           encoded_publish = Package.encode(publish)
