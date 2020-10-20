@@ -47,7 +47,7 @@ defmodule Tortoise.MixProject do
       {:dialyxir, "~> 1.0.0-rc.3", only: [:dev], runtime: false},
       {:eqc_ex, "~> 1.4", only: :test},
       {:excoveralls, "~> 0.10", only: :test},
-      {:ex_doc, "~> 0.19", only: :docs},
+      {:ex_doc, "~> 0.19", only: :dev, runtime: false},
       {:ct_helper, github: "ninenines/ct_helper", only: :test}
     ]
   end
