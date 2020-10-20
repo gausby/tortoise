@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.9.5 - 2020-10-20
+
+### Fixed
+
+- Allow a timeout on async publish; this will allow the user to
+  override the default timeout set when retrieving the connection;
+  Note that this timeout will not work for the publish itself.
+
 ## 0.9.4 - 2018-11-16
 
 ### Fixed
