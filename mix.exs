@@ -1,13 +1,14 @@
 defmodule Tortoise.MixProject do
   use Mix.Project
 
-  @version "0.10.0"
+  @source_url "https://github.com/gausby/tortoise"
+  @version "0.9.5"
 
   def project do
     [
       app: :tortoise,
       version: @version,
-      elixir: "~> 1.6",
+      elixir: "~> 1.7",
       start_permanent: Mix.env() == :prod,
       description: description(),
       package: package(),
@@ -20,8 +21,7 @@ defmodule Tortoise.MixProject do
         "coveralls.detail": :test,
         "coveralls.html": :test,
         "coveralls.json": :test,
-        "coveralls.post": :test,
-        docs: :docs
+        "coveralls.post": :test
       ]
     ]
   end
@@ -32,7 +32,6 @@ defmodule Tortoise.MixProject do
     """
   end
 
-  # Run "mix help compile.app" to learn about applications.
   def application do
     [
       extra_applications: [:logger, :ssl],
@@ -40,7 +39,6 @@ defmodule Tortoise.MixProject do
     ]
   end
 
-  # Run "mix help deps" to learn about dependencies.
   defp deps do
     [
       {:gen_state_machine, "~> 2.0 or ~> 3.0"},
@@ -57,7 +55,7 @@ defmodule Tortoise.MixProject do
       maintainers: ["Martin Gausby"],
       licenses: ["Apache 2.0"],
       files: ["lib", "mix.exs", "README*", "CHANGELOG*", "LICENSE*"],
-      links: %{"GitHub" => "https://github.com/gausby/tortoise"}
+      links: %{"Changelog" => "#{@source_url}/blob/master/CHANGELOG.md", "GitHub" => @source_url}
     ]
   end
 
@@ -67,7 +65,7 @@ defmodule Tortoise.MixProject do
       source_ref: "v#{@version}",
       main: "introduction",
       canonical: "http://hexdocs.pm/tortoise",
-      source_url: "https://github.com/gausby/tortoise",
+      source_url: @source_url,
       extras: [
         "docs/introduction.md",
         "docs/connecting_to_a_mqtt_broker.md",
