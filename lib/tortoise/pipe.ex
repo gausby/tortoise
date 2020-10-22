@@ -99,13 +99,14 @@ defmodule Tortoise.Pipe do
     end
   end
 
-  defp do_publish(%Pipe{client_id: client_id} = pipe, %Package.Publish{qos: qos} = publish)
+  defp do_publish(%Pipe{client_id: _client_id} = _pipe, %Package.Publish{qos: qos} = _publish)
        when qos in 1..2 do
-    case Inflight.track(client_id, {:outgoing, publish}) do
-      {:ok, ref} ->
-        updated_pending = [ref | pipe.pending]
-        %Pipe{pipe | pending: updated_pending}
-    end
+    # case Inflight.track(client_id, {:outgoing, publish}) do
+    #   {:ok, ref} ->
+    #     updated_pending = [ref | pipe.pending]
+    #     %Pipe{pipe | pending: updated_pending}
+    # end
+    nil
   end
 
   defp refresh(%Pipe{active: true, client_id: client_id} = pipe) do
