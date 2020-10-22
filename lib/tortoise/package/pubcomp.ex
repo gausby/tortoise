@@ -52,13 +52,14 @@ defmodule Tortoise.Package.Pubcomp do
             identifier: identifier,
             reason: :success,
             properties: []
-          } = t
+          } = t,
+          _opts
         )
         when identifier in 0x0001..0xFFFF do
       [Package.Meta.encode(t.__META__), <<2, t.identifier::big-integer-size(16)>>]
     end
 
-    def encode(%Package.Pubcomp{identifier: identifier} = t)
+    def encode(%Package.Pubcomp{identifier: identifier} = t, _opts)
         when identifier in 0x0001..0xFFFF do
       [
         Package.Meta.encode(t.__META__),

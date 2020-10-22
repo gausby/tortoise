@@ -83,7 +83,7 @@ defmodule Tortoise.Package.Connack do
   end
 
   defimpl Tortoise.Encodable do
-    def encode(%Package.Connack{} = t) do
+    def encode(%Package.Connack{} = t, _opts) do
       [
         Package.Meta.encode(t.__META__),
         Package.variable_length_encode([

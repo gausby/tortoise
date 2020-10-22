@@ -42,11 +42,11 @@ defmodule Tortoise.Package.Auth do
   end
 
   defimpl Tortoise.Encodable do
-    def encode(%Package.Auth{reason: :success, properties: []} = t) do
+    def encode(%Package.Auth{reason: :success, properties: []} = t, _opts) do
       [Package.Meta.encode(t.__META__), 0]
     end
 
-    def encode(%Package.Auth{reason: reason} = t)
+    def encode(%Package.Auth{reason: reason} = t, _opts)
         when reason in [:success, :continue_authentication, :re_authenticate] do
       [
         Package.Meta.encode(t.__META__),

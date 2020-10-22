@@ -112,7 +112,7 @@ defmodule Tortoise.Package.Publish do
 
   # Protocols ----------------------------------------------------------
   defimpl Tortoise.Encodable do
-    def encode(%Package.Publish{identifier: nil, qos: 0} = t) do
+    def encode(%Package.Publish{identifier: nil, qos: 0} = t, _opts) do
       [
         Package.Meta.encode(%{t.__META__ | flags: encode_flags(t)}),
         Package.variable_length_encode([
@@ -123,7 +123,7 @@ defmodule Tortoise.Package.Publish do
       ]
     end
 
-    def encode(%Package.Publish{identifier: identifier, qos: qos} = t)
+    def encode(%Package.Publish{identifier: identifier, qos: qos} = t, _opts)
         when identifier in 0x0001..0xFFFF and qos in 1..2 do
       [
         Package.Meta.encode(%{t.__META__ | flags: encode_flags(t)}),

@@ -17,7 +17,7 @@ defmodule Tortoise.Package.Pingresp do
 
   # Protocols ----------------------------------------------------------
   defimpl Tortoise.Encodable do
-    def encode(%Package.Pingresp{} = t) do
+    def encode(%Package.Pingresp{} = t, _opts) do
       [Package.Meta.encode(t.__META__), 0]
     end
   end

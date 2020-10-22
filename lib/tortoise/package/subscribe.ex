@@ -84,7 +84,8 @@ defmodule Tortoise.Package.Subscribe do
             identifier: identifier,
             # a valid subscribe package has at least one topic/opts pair
             topics: [{<<_topic_filter::binary>>, opts} | _]
-          } = t
+          } = t,
+          _opts
         )
         when identifier in 0x0001..0xFFFF and is_list(opts) do
       [

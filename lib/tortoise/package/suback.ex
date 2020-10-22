@@ -101,7 +101,7 @@ defmodule Tortoise.Package.Suback do
 
   # Protocols ----------------------------------------------------------
   defimpl Tortoise.Encodable do
-    def encode(%Package.Suback{identifier: identifier} = t)
+    def encode(%Package.Suback{identifier: identifier} = t, _opts)
         when identifier in 0x0001..0xFFFF do
       [
         Package.Meta.encode(t.__META__),

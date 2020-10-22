@@ -17,7 +17,9 @@ defmodule Tortoise.Package.Pingreq do
 
   # Protocols ----------------------------------------------------------
   defimpl Tortoise.Encodable do
-    def encode(%Package.Pingreq{} = t) do
+    # Note: The Pingreq package is the same for both version 3.1.1 and
+    # version 5, no options apply
+    def encode(%Package.Pingreq{} = t, _opts) do
       [Package.Meta.encode(t.__META__), 0]
     end
   end

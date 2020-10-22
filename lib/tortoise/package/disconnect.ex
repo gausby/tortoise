@@ -109,11 +109,11 @@ defmodule Tortoise.Package.Disconnect do
 
   # Protocols ----------------------------------------------------------
   defimpl Tortoise.Encodable do
-    def encode(%Package.Disconnect{reason: :normal_disconnection, properties: []} = t) do
+    def encode(%Package.Disconnect{reason: :normal_disconnection, properties: []} = t, _opts) do
       [Package.Meta.encode(t.__META__), 0]
     end
 
-    def encode(%Package.Disconnect{} = t) do
+    def encode(%Package.Disconnect{} = t, _opts) do
       [
         Package.Meta.encode(t.__META__),
         Package.variable_length_encode([

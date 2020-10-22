@@ -53,7 +53,8 @@ defmodule Tortoise.Package.Pubrel do
             identifier: identifier,
             reason: :success,
             properties: []
-          } = t
+          } = t,
+          _opts
         )
         when identifier in 0x0001..0xFFFF do
       # The Reason Code and Property Length can be omitted if the
@@ -61,7 +62,7 @@ defmodule Tortoise.Package.Pubrel do
       [Package.Meta.encode(t.__META__), <<2, identifier::big-integer-size(16)>>]
     end
 
-    def encode(%Package.Pubrel{identifier: identifier} = t)
+    def encode(%Package.Pubrel{identifier: identifier} = t, _opts)
         when identifier in 0x0001..0xFFFF do
       [
         Package.Meta.encode(t.__META__),

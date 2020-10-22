@@ -20,7 +20,7 @@ defmodule Tortoise.Package do
             | Package.Disconnect.t()
             | Package.Auth.t()
 
-  defdelegate encode(data), to: Tortoise.Encodable
+  defdelegate encode(data, opts \\ []), to: Tortoise.Encodable
   defdelegate decode(data), to: Tortoise.Decodable
   defdelegate generate(package), to: Tortoise.Generatable
 

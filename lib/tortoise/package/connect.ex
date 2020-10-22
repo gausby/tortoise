@@ -133,7 +133,7 @@ defmodule Tortoise.Package.Connect do
   end
 
   defimpl Tortoise.Encodable do
-    def encode(%Package.Connect{client_id: client_id} = t)
+    def encode(%Package.Connect{client_id: client_id} = t, _opts)
         when is_binary(client_id) do
       [
         Package.Meta.encode(t.__META__),
@@ -147,9 +147,9 @@ defmodule Tortoise.Package.Connect do
       ]
     end
 
-    def encode(%Package.Connect{client_id: client_id} = t)
+    def encode(%Package.Connect{client_id: client_id} = t, opts)
         when is_atom(client_id) do
-      encode(%Package.Connect{t | client_id: Atom.to_string(client_id)})
+      encode(%Package.Connect{t | client_id: Atom.to_string(client_id)}, opts)
     end
 
     defp protocol_header(%{protocol: protocol, protocol_version: version}) do
