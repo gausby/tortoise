@@ -35,8 +35,8 @@ defmodule Tortoise.Package.Publish do
             retain: false,
             properties: []
 
-  @spec decode(binary()) :: t
-  def decode(<<@opcode::4, 0::1, 0::2, retain::1, length_prefixed_payload::binary>>) do
+  @spec decode(binary(), opts :: Keyword.t()) :: t
+  def decode(<<@opcode::4, 0::1, 0::2, retain::1, length_prefixed_payload::binary>>, _opts) do
     payload = drop_length_prefix(length_prefixed_payload)
     {topic, properties, payload} = decode_message(payload)
 
@@ -52,7 +52,8 @@ defmodule Tortoise.Package.Publish do
   end
 
   def decode(
-        <<@opcode::4, dup::1, qos::integer-size(2), retain::1, length_prefixed_payload::binary>>
+        <<@opcode::4, dup::1, qos::integer-size(2), retain::1, length_prefixed_payload::binary>>,
+        _opts
       ) do
     payload = drop_length_prefix(length_prefixed_payload)
     {topic, identifier, properties, payload} = decode_message_with_id(payload)

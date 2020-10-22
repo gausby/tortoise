@@ -32,8 +32,8 @@ defmodule Tortoise.Package.Unsuback do
             results: [],
             properties: []
 
-  @spec decode(binary()) :: t | {:error, term()}
-  def decode(<<@opcode::4, 0::4, package::binary>>) do
+  @spec decode(binary(), opts :: Keyword.t()) :: t | {:error, term()}
+  def decode(<<@opcode::4, 0::4, package::binary>>, _opts) do
     with payload <- drop_length(package),
          <<identifier::big-integer-size(16), rest::binary>> <- payload,
          {properties, unsubacks} = Package.parse_variable_length(rest) do

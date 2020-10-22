@@ -10,8 +10,8 @@ defmodule Tortoise.Package.Pingreq do
           }
   defstruct __META__: %Package.Meta{opcode: @opcode, flags: 0}
 
-  @spec decode(<<_::16>>) :: t
-  def decode(<<@opcode::4, 0::4, 0>>) do
+  @spec decode(<<_::16>>, opts :: Keyword.t()) :: t
+  def decode(<<@opcode::4, 0::4, 0>>, _opts) do
     %__MODULE__{}
   end
 

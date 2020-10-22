@@ -43,8 +43,8 @@ defmodule Tortoise.Package.Connack do
             reason: :success,
             properties: []
 
-  @spec decode(binary()) :: t
-  def decode(<<@opcode::4, 0::4, variable_header::binary>>) do
+  @spec decode(binary(), opts :: Keyword.t()) :: t
+  def decode(<<@opcode::4, 0::4, variable_header::binary>>, _opts) do
     <<0::7, session_present::1, reason_code::8, properties::binary>> =
       Package.drop_length_prefix(variable_header)
 

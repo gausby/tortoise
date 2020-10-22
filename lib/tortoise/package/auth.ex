@@ -19,12 +19,12 @@ defmodule Tortoise.Package.Auth do
             reason: nil,
             properties: []
 
-  @spec decode(binary()) :: t
-  def decode(<<@opcode::4, 0::4, 0>>) do
+  @spec decode(binary(), opts :: Keyword.t()) :: t
+  def decode(<<@opcode::4, 0::4, 0>>, _opts) do
     %__MODULE__{reason: coerce_reason_code(0x00)}
   end
 
-  def decode(<<@opcode::4, 0::4, variable_header::binary>>) do
+  def decode(<<@opcode::4, 0::4, variable_header::binary>>, _opts) do
     <<reason_code::8, properties::binary>> = Package.drop_length_prefix(variable_header)
 
     %__MODULE__{

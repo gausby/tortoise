@@ -33,8 +33,8 @@ defmodule Tortoise.Package.Suback do
             acks: [],
             properties: []
 
-  @spec decode(binary()) :: t
-  def decode(<<@opcode::4, 0::4, payload::binary>>) do
+  @spec decode(binary(), opts :: Keyword.t()) :: t
+  def decode(<<@opcode::4, 0::4, payload::binary>>, _opts) do
     with payload <- drop_length(payload),
          <<identifier::big-integer-size(16), rest::binary>> <- payload,
          {properties, acks} = Package.parse_variable_length(rest) do

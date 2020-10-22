@@ -41,8 +41,8 @@ defmodule Tortoise.Package.Connect do
             will: nil,
             properties: []
 
-  @spec decode(binary()) :: t
-  def decode(<<@opcode::4, 0::4, variable::binary>>) do
+  @spec decode(binary(), opts :: Keyword.t()) :: t
+  def decode(<<@opcode::4, 0::4, variable::binary>>, _opts) do
     <<
       4::big-integer-size(16),
       "MQTT",

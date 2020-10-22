@@ -22,13 +22,13 @@ defmodule Tortoise.Package.Pubrel do
             reason: :success,
             properties: []
 
-  @spec decode(<<_::32>>) :: t
-  def decode(<<@opcode::4, 2::4, 2, identifier::big-integer-size(16)>>)
+  @spec decode(<<_::32>>, opts :: Keyword.t()) :: t
+  def decode(<<@opcode::4, 2::4, 2, identifier::big-integer-size(16)>>, _opts)
       when identifier in 0x0001..0xFFFF do
     %__MODULE__{identifier: identifier}
   end
 
-  def decode(<<@opcode::4, 2::4, variable_header::binary>>) do
+  def decode(<<@opcode::4, 2::4, variable_header::binary>>, _opts) do
     <<identifier::big-integer-size(16), reason_code::8, properties::binary>> =
       Package.drop_length_prefix(variable_header)
 

@@ -48,14 +48,14 @@ defmodule Tortoise.Package.Disconnect do
             reason: :normal_disconnection,
             properties: []
 
-  @spec decode(binary()) :: t
-  def decode(<<@opcode::4, 0::4, 0::8>>) do
+  @spec decode(binary(), opts :: Keyword.t()) :: t
+  def decode(<<@opcode::4, 0::4, 0::8>>, _opts) do
     # If the Remaining Length is less than 1 the value of 0x00 (Normal
     # disconnection) is used
     %__MODULE__{reason: coerce_reason_code(0x00)}
   end
 
-  def decode(<<@opcode::4, 0::4, variable_header::binary>>) do
+  def decode(<<@opcode::4, 0::4, variable_header::binary>>, _opts) do
     <<reason_code::8, properties::binary>> = drop_length_prefix(variable_header)
 
     %__MODULE__{
