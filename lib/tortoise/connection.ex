@@ -25,6 +25,7 @@ defmodule Tortoise.Connection do
   @spec start_link(options, GenServer.options()) :: GenServer.on_start()
         when option:
                {:client_id, Tortoise.client_id()}
+               | {:server, {atom(), term()}}
                | {:user_name, String.t()}
                | {:password, String.t()}
                | {:keep_alive, non_neg_integer()}
