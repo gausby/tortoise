@@ -162,12 +162,12 @@ mix test
 To build the documentation run the following command in a terminal emulator:
 
 ``` shell
-MIX_ENV=docs mix docs
+mix docs
 ```
 
 This will build the documentation in place them in the *doc*-folder in
 the root of the project. These docs will also find their way to the
-Hexdocs website when the project is published on Hex.
+HexDocs website when the project is published on Hex.
 
 ## License
 
