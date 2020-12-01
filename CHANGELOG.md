@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.9.6 - 2020-12-01
+
+- Accepted some open PRs that has been waiting for a long while. These
+  include allowing the user to pass in options to connections, and
+  will categorize a connection error as "connectivity", such that
+  tortoise will try to reconnect with back-off.
+
 ## 0.9.5 - 2020-10-20
 
 ### Fixed
