@@ -655,6 +655,10 @@ defmodule Tortoise.Connection do
     :connectivity
   end
 
+  defp categorize_error(:enetunreach) do
+    :connectivity
+  end
+
   defp categorize_error(_other) do
     :other
   end
