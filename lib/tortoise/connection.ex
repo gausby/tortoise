@@ -604,7 +604,7 @@ defmodule Tortoise.Connection do
         {:error, {:nxdomain, host, port}}
 
       {:error, {:options, {:cacertfile, []}}} ->
-        {:error, :no_cacartfile_specified}
+        {:error, :no_cacertfile_specified}
 
       {:error, :closed} ->
         {:error, :server_closed_connection}

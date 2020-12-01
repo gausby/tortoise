@@ -416,7 +416,7 @@ defmodule Tortoise.ConnectionTest do
       # Need to pass :cacerts/:cacerts_file option, or set :verify to
       # :verify_none to opt out of server cert verification
       assert {:ok, pid} = Connection.start_link(opts)
-      assert_receive {:EXIT, ^pid, :no_cacartfile_specified}
+      assert_receive {:EXIT, ^pid, :no_cacertfile_specified}
     end
   end
 
