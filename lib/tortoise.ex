@@ -278,6 +278,9 @@ defmodule Tortoise do
     else
       {:error, :unknown_connection} ->
         {:error, :unknown_connection}
+
+      {:error, :timeout} ->
+        {:error, :timeout}
     end
   end
 
@@ -338,6 +341,9 @@ defmodule Tortoise do
     else
       {:error, :unknown_connection} ->
         {:error, :unknown_connection}
+
+      {:error, :timeout} ->
+        {:error, :timeout}
     end
   end
 end
