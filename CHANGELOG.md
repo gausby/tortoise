@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.9.8 - 2021-03-02
+
+- Ease the requirement on the gen_state_machine dependency such
+  that is accept gen_state_machine 3.0.0
+
 ## 0.9.6 - 2020-12-01
 
 - Accepted some open PRs that has been waiting for a long while. These

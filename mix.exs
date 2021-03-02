@@ -1,7 +1,7 @@
 defmodule Tortoise.MixProject do
   use Mix.Project
 
-  @version "0.9.6"
+  @version "0.9.8"
 
   def project do
     [
