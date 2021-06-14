@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.9.9 - 2021-06-14
+
+- Switch to using `:ssl.handshake` instead of `:ssl.ssl_accept`
+  for OTP 24 compatibility.
+
 ## 0.9.8 - 2021-03-02
 
 - Ease the requirement on the gen_state_machine dependency such
