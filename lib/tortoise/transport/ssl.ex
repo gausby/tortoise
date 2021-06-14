@@ -105,8 +105,11 @@ defmodule Tortoise.Transport.SSL do
 
   @impl true
   def accept_ack(client_socket, timeout) do
-    case :ssl.ssl_accept(client_socket, timeout) do
-      :ok ->
+    case :ssl.handshake(client_socket, timeout) do
+      {:ok, _} ->
+        :ok
+
+      {:ok, _, _} ->
         :ok
 
       # abnormal data sent to socket
