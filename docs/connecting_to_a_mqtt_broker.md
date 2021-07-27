@@ -201,10 +201,11 @@ broker if the client is abruptly disconnected from the broker. This
 message is known as the last will message, and allows for other
 connected clients to act on other clients leaving the broker.
 
-The last will message is specified as part of the connection, and for
+The (default) last will message is specified as part of the connection, and for
 Tortoise it is possible to configure a last will message by passing in
 a `Tortoise.Package.Publish` struct to the *will* connection
-configuration field.
+configuration field. Note that the Tortoise handler can provide a new last will message for 
+each new connection. If the handler chooses not to, the connection's default message will be used.
 
 ``` elixir
 {:ok, pid} =
