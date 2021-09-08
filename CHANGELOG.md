@@ -1,6 +1,6 @@
 # Changelog
 
-## [Unreleased]
+## 0.10.0 - 2021-09-08
 
 - Added an optional handler callback to request a last will message from
   the handler on each connect. If none is provided by the handler, the
