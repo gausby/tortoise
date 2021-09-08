@@ -9,10 +9,21 @@ defmodule Tortoise.Connection do
 
   require Logger
 
-  defstruct [:client_id, :connect, :server, :status, :backoff, :subscriptions, :keep_alive, :opts]
+  defstruct [
+    :client_id,
+    :connect,
+    :server,
+    :status,
+    :backoff,
+    :subscriptions,
+    :keep_alive,
+    :opts,
+    :handler
+  ]
+
   alias __MODULE__, as: State
 
-  alias Tortoise.{Transport, Connection, Package, Events}
+  alias Tortoise.{Transport, Connection, Package, Events, Handler}
   alias Tortoise.Connection.{Inflight, Controller, Receiver, Backoff}
   alias Tortoise.Package.{Connect, Connack}
 
@@ -352,6 +363,11 @@ defmodule Tortoise.Connection do
   def init(
         {transport, %Connect{client_id: client_id} = connect, backoff_opts, subscriptions, opts}
       ) do
+    Handler.new(Keyword.fetch!(opts, :handler))
+
+    {:ok, %Handler{} = handler} =
+      Handler.new(Keyword.fetch!(opts, :handler)) |> Handler.execute(:init)
+
     state = %State{
       client_id: client_id,
       server: transport,
@@ -359,7 +375,8 @@ defmodule Tortoise.Connection do
       backoff: Backoff.new(backoff_opts),
       subscriptions: subscriptions,
       opts: opts,
-      status: :down
+      status: :down,
+      handler: handler
     }
 
     Tortoise.Registry.put_meta(via_name(client_id), :connecting)
@@ -380,7 +397,8 @@ defmodule Tortoise.Connection do
   @impl true
   def handle_info(:connect, state) do
     # make sure we will not fall for a keep alive timeout while we reconnect
-    state = cancel_keep_alive(state)
+    # check if the will needs to be updated for each connection
+    state = cancel_keep_alive(state) |> maybe_update_last_will()
 
     with {%Connack{status: :accepted} = connack, socket} <-
            do_connect(state.server, state.connect),
@@ -566,6 +584,21 @@ defmodule Tortoise.Connection do
   defp cancel_keep_alive(%State{keep_alive: keep_alive_ref} = state) do
     _ = Process.cancel_timer(keep_alive_ref)
     %State{state | keep_alive: nil}
+  end
+
+  defp maybe_update_last_will(%State{connect: connect, handler: handler} = state) do
+    if function_exported?(handler.module, :last_will, 1) do
+      {{:ok, last_will}, _updated_handler} = Handler.execute(handler, :last_will)
+
+      if last_will == nil do
+        state
+      else
+        updated_connect = %Connect{connect | will: last_will}
+        %State{state | connect: updated_connect}
+      end
+    else
+      state
+    end
   end
 
   # dispatch connection status if the connection status change

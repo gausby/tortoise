@@ -1,5 +1,12 @@
 # Changelog
 
+## [Unreleased]
+
+- Added an optional handler callback to request a last will message from
+  the handler on each connect. If none is provided by the handler, the
+  last will message, if any, set when initializing Connection is used
+  as before.
+
 ## 0.9.9 - 2021-06-14
 
 - Switch to using `:ssl.handshake` instead of `:ssl.ssl_accept`

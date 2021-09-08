@@ -15,6 +15,10 @@ defmodule Tortoise.Handler do
       happen when the connection goes offline should be set up using
       the `connection/3` callback.
 
+    - `last_will/1 is called to get a last will message for a
+       new connection. If none is provided (nil), the connection's default
+       last will will be used.
+
     - `connection/3` is called when the connection is `:up` or
       `:down`, allowing for functionality to be run when the
       connection state changes.
@@ -149,6 +153,11 @@ defmodule Tortoise.Handler do
         {:ok, state}
       end
 
+      @impl true
+      def last_will(state) do
+        {{:ok, nil}, state}
+      end
+
       defoverridable Tortoise.Handler
     end
   end
@@ -178,6 +187,13 @@ defmodule Tortoise.Handler do
   """
   @callback init(args :: term()) :: {:ok, state}
             when state: any()
+
+  @doc """
+  Invoked when a new connection is being attempted to set the last will message to one
+  provided by the handler. If the handler returns {{:ok, nil}, state}, the pre-set
+  last will is used.
+  """
+  @callback last_will(state) :: {{:ok, term() | nil}, state} when state: any()
 
   @doc """
   Invoked when the connection status changes.
@@ -293,10 +309,14 @@ defmodule Tortoise.Handler do
             when reason: :normal | :shutdown | {:shutdown, term()},
                  ignored: term()
 
+  @optional_callbacks last_will: 1
+
   @doc false
-  @spec execute(t, action) :: :ok | {:ok, t} | {:error, {:invalid_next_action, term()}}
+  @spec execute(t, action) ::
+          :ok | {:ok, t} | {{:ok, any()}, t} | {:error, {:invalid_next_action, term()}}
         when action:
                :init
+               | :last_will
                | {:subscribe, [term()]}
                | {:unsubscribe, [term()]}
                | {:publish, Tortoise.Package.Publish.t()}
@@ -307,6 +327,12 @@ defmodule Tortoise.Handler do
       {:ok, initial_state} ->
         {:ok, %__MODULE__{handler | state: initial_state}}
     end
+  end
+
+  def execute(handler, :last_will) do
+    handler.module
+    |> apply(:last_will, [handler.state])
+    |> handle_result(handler)
   end
 
   def execute(handler, {:connection, status}) do
@@ -385,6 +411,10 @@ defmodule Tortoise.Handler do
   # handle the user defined return from the callback
   defp handle_result({:ok, updated_state}, handler) do
     {:ok, %__MODULE__{handler | state: updated_state}}
+  end
+
+  defp handle_result({{:ok, answer}, updated_state}, handler) do
+    {{:ok, answer}, %__MODULE__{handler | state: updated_state}}
   end
 
   defp handle_result({:ok, updated_state, next_actions}, handler)
