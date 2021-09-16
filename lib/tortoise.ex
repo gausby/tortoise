@@ -247,7 +247,7 @@ defmodule Tortoise do
   from.
   """
   @spec publish(client_id(), topic(), payload, [options]) ::
-          :ok | {:ok, reference()} | {:error, :unknown_connection}
+          :ok | {:ok, reference()} | {:error, :unknown_connection} | {:error, :timeout}
         when payload: binary() | nil,
              options:
                {:qos, qos()}
@@ -278,6 +278,9 @@ defmodule Tortoise do
     else
       {:error, :unknown_connection} ->
         {:error, :unknown_connection}
+
+      {:error, :timeout} ->
+        {:error, :timeout}
     end
   end
 
@@ -308,7 +311,7 @@ defmodule Tortoise do
   See the documentation for `Tortoise.publish/4` for configuration.
   """
   @spec publish_sync(client_id(), topic(), payload, [options]) ::
-          :ok | {:error, :unknown_connection}
+          :ok | {:error, :unknown_connection} | {:error, :timeout}
         when payload: binary() | nil,
              options:
                {:qos, qos()}
@@ -338,6 +341,9 @@ defmodule Tortoise do
     else
       {:error, :unknown_connection} ->
         {:error, :unknown_connection}
+
+      {:error, :timeout} ->
+        {:error, :timeout}
     end
   end
 end
