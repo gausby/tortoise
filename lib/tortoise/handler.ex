@@ -15,7 +15,7 @@ defmodule Tortoise.Handler do
       happen when the connection goes offline should be set up using
       the `connection/3` callback.
 
-    - `last_will/1 is called to get a last will message for a
+    - `last_will/1` is called to get a last will message for a
        new connection. If none is provided (nil), the connection's default
        last will will be used.
 
