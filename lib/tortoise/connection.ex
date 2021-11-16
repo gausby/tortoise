@@ -420,9 +420,12 @@ defmodule Tortoise.Connection do
       end
     else
       %Connack{status: {:refused, reason}} ->
+        Logger.warn("[Tortoise] Connection refused: #{inspect(reason)}")
         {:stop, {:connection_failed, reason}, state}
 
       {:error, reason} ->
+        Logger.warn("[Tortoise] Connection failed: #{inspect(reason)}")
+
         {timeout, state} = Map.get_and_update(state, :backoff, &Backoff.next/1)
 
         case categorize_error(reason) do
