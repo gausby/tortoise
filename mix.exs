@@ -54,11 +54,11 @@ defmodule Tortoise.MixProject do
 
   defp package() do
     [
+      name: "tortoise311",
       maintainers: ["Jean-Francois Cloutier"],
       licenses: ["Apache 2.0"],
       files: ["lib", "mix.exs", "README*", "CHANGELOG*", "LICENSE*"],
-      links: %{"GitHub" => "https://github.com/smartrent/tortoise311"},
-      organization: "smartrent"
+      links: %{"GitHub" => "https://github.com/smartrent/tortoise311"}
     ]
   end
 
