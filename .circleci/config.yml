@@ -11,7 +11,7 @@ install_system_deps: &install_system_deps
   run:
     name: Install system dependencies
     command: |
-      apk add build-base linux-headers libmnl-dev libnl3-dev curl
+      apk add build-base linux-headers libmnl-dev libnl3-dev curl git
 
 defaults: &defaults
   working_directory: ~/repo
