@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.10.2 - 2021-11-17
+
+- Changed Hex package name to tortoise311
+- Made the package public
+
 ## 0.10.1 - 2021-11-17
 
 - Added logging on connection failing
