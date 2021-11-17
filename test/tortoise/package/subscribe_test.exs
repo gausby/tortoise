@@ -1,23 +1,9 @@
 defmodule Tortoise.Package.SubscribeTest do
   use ExUnit.Case
-  use EQC.ExUnit
   doctest Tortoise.Package.Subscribe
-
-  import Tortoise.TestGenerators, only: [gen_subscribe: 0]
 
   alias Tortoise.Package
   alias Tortoise.Package.Subscribe
-
-  property "encoding and decoding subscribe messages" do
-    forall subscribe <- gen_subscribe() do
-      ensure(
-        subscribe ==
-          subscribe
-          |> Package.encode()
-          |> Package.decode()
-      )
-    end
-  end
 
   describe "Collectable" do
     test "Pick the largest QoS when topic filters repeat in input" do

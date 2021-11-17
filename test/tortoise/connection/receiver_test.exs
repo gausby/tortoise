@@ -1,6 +1,5 @@
 defmodule Tortoise.Connection.ReceiverTest do
   use ExUnit.Case
-  # use EQC.ExUnit
   doctest Tortoise.Connection.Controller
 
   alias Tortoise.Package

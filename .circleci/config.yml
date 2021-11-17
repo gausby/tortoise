@@ -31,7 +31,7 @@ jobs:
       - run: mix hex.organization auth smartrent --key $SMARTRENT_HEX_KEY
       - run: mix deps.get
       - run: mix compile --warnings-as-errors
-      - run: mix test
+      - run: MIX_ENV=test mix test
       - run: mix format --check-formatted
       - run: mix deps.unlock --check-unused
       - run: mix hex.build
@@ -53,7 +53,7 @@ jobs:
       - run: mix hex.organization auth smartrent --key $SMARTRENT_HEX_KEY
       - run: mix deps.get
       - run: mix compile
-      - run: mix test
+      - run: MIX_ENV=test mix test
 
 workflows:
   version: 2
