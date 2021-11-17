@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.10.3 - 2021-11-17
+
+- Named the app :tortoise311
+- Removed property-based tests (:eqc_gen dependency can not be loaded)
+- Temporarily commented out failing connection tests
+
 ## 0.10.2 - 2021-11-17
 
 - Changed Hex package name to tortoise311
