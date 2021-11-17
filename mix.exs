@@ -54,20 +54,21 @@ defmodule Tortoise.MixProject do
 
   defp package() do
     [
-      maintainers: ["Martin Gausby"],
+      maintainers: ["Jean-Francois Cloutier"],
       licenses: ["Apache 2.0"],
       files: ["lib", "mix.exs", "README*", "CHANGELOG*", "LICENSE*"],
-      links: %{"GitHub" => "https://github.com/gausby/tortoise"}
+      links: %{"GitHub" => "https://github.com/smartrent/tortoise311"},
+      organization: "smartrent"
     ]
   end
 
   defp docs() do
     [
-      name: "Tortoise",
+      name: "Tortoise311",
       source_ref: "v#{@version}",
       main: "introduction",
-      canonical: "http://hexdocs.pm/tortoise",
-      source_url: "https://github.com/gausby/tortoise",
+      canonical: "http://hexdocs.pm/tortoise311",
+      source_url: "https://github.com/smartrent/tortoise311",
       extras: [
         "docs/introduction.md",
         "docs/connecting_to_a_mqtt_broker.md",
