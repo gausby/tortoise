@@ -1,0 +1,64 @@
+version: 2
+
+install_hex_rebar: &install_hex_rebar
+  run:
+    name: Install hex and rebar
+    command: |
+      mix local.hex --force
+      mix local.rebar --force
+
+install_system_deps: &install_system_deps
+  run:
+    name: Install system dependencies
+    command: |
+      apk add build-base linux-headers libmnl-dev libnl3-dev curl
+
+defaults: &defaults
+  working_directory: ~/repo
+
+jobs:
+  build_elixir_1_12_otp_24:
+    docker:
+      - image: hexpm/elixir:1.12.1-erlang-24.0.2-alpine-3.13.3
+    <<: *defaults
+    steps:
+      - checkout
+      - <<: *install_system_deps
+      - <<: *install_hex_rebar
+      - restore_cache:
+          keys:
+            - v1-mix-cache-{{ checksum "mix.lock" }}
+      - run: mix hex.organization auth smartrent --key $SMARTRENT_HEX_KEY
+      - run: mix deps.get
+      - run: mix compile --warnings-as-errors
+      - run: mix test
+      - run: mix format --check-formatted
+      - run: mix deps.unlock --check-unused
+      - run: mix hex.build
+      - run: mix dialyzer
+      - save_cache:
+          key: v1-mix-cache-{{ checksum "mix.lock" }}
+          paths:
+            - _build
+            - deps
+
+  build_elixir_1_11_otp_23:
+    docker:
+      - image: hexpm/elixir:1.11.2-erlang-23.1.2-alpine-3.12.1
+    <<: *defaults
+    steps:
+      - checkout
+      - <<: *install_system_deps
+      - <<: *install_hex_rebar
+      - run: mix hex.organization auth smartrent --key $SMARTRENT_HEX_KEY
+      - run: mix deps.get
+      - run: mix compile
+      - run: mix test
+
+workflows:
+  version: 2
+  build_test:
+    jobs:
+      - build_elixir_1_12_otp_24
+      - build_elixir_1_11_otp_23
+
