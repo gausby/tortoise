@@ -114,24 +114,6 @@ defmodule Tortoise.Handler.Example do
 end
 ```
 
-## Upgrade path
-
-### pre-0.9 to 0.9
-
-The `subscribe/3`, `unsubscribe/3`, `subscribe_sync/3`, and
-`unsubscribe_sync/3` is no longer exposed on the `Tortoise`
-module. The functionality has been moved to the `Tortoise.Connection`
-module. The functions has the same arities and functionality, so the
-upgrade path is a simple search and replace:
-
-  - `"Tortoise.subscribe(" -> "Tortoise.Connection.subscribe("`
-  - `"Tortoise.subscribe_sync(" -> "Tortoise.Connection.subscribe_sync("`
-  - `"Tortoise.unsubscribe(" -> "Tortoise.Connection.unsubscribe("`
-  - `"Tortoise.unsubscribe_sync(" -> "Tortoise.Connection.unsubscribe_sync("`
-
-This change is done because the `Tortoise.Connection` module should be
-in charge of changes to the connection life-cycle.
-
 ## Installation
 
 Tortoise can be installed by adding `tortoise` to your list of
