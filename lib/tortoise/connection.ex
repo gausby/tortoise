@@ -421,11 +421,16 @@ defmodule Tortoise.Connection do
       end
     else
       %Connack{status: {:refused, reason}} ->
-        Logger.warn("[Tortoise] Connection refused: #{inspect(reason)}")
+        Logger.warn(
+          "[Tortoise] Connection refused: #{inspect(reason)}, #{inspect(summarize_state(state))}"
+        )
+
         {:stop, {:connection_failed, reason}, state}
 
       {:error, reason} ->
-        Logger.warn("[Tortoise] Connection failed: #{inspect(reason)}")
+        Logger.warn(
+          "[Tortoise] Connection failed: #{inspect(reason)}, #{inspect(summarize_state(state))}"
+        )
 
         {timeout, state} = Map.get_and_update(state, :backoff, &Backoff.next/1)
 
@@ -699,5 +704,20 @@ defmodule Tortoise.Connection do
 
   defp categorize_error(_other) do
     :other
+  end
+
+  defp summarize_state(state) do
+    %{
+      client_id: state.client_id,
+      protocol: state.connect.protocol,
+      protocol_version: state.connect.protocol_version,
+      keep_alive: state.connect.keep_alive,
+      clean_session: state.connect.clean_session,
+      host: state.server.host,
+      port: state.server.port,
+      transport: state.server.type,
+      status: state.status,
+      subscriptions: state.subscriptions
+    }
   end
 end
