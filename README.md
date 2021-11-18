@@ -164,7 +164,7 @@ mix test
 To build the documentation run the following command in a terminal emulator:
 
 ``` shell
-MIX_ENV=docs mix docs
+mix docs
 ```
 
 This will build the documentation in place them in the *doc*-folder in

@@ -21,7 +21,9 @@ defmodule Tortoise.MixProject do
         "coveralls.html": :test,
         "coveralls.json": :test,
         "coveralls.post": :test,
-        docs: :docs
+        docs: :docs,
+        "hex.publish": :docs,
+        "hex.build": :docs
       ]
     ]
   end
@@ -44,9 +46,9 @@ defmodule Tortoise.MixProject do
   defp deps do
     [
       {:gen_state_machine, "~> 2.0 or ~> 3.0"},
-      {:dialyxir, "~> 1.0.0-rc.3", only: [:dev], runtime: false},
+      {:dialyxir, "~> 1.1.0", only: :dev, runtime: false},
       {:excoveralls, "~> 0.10", only: :test},
-      {:ex_doc, "~> 0.19", only: :dev, runtime: false},
+      {:ex_doc, "~> 0.19", only: :docs, runtime: false},
       {:ct_helper, github: "ninenines/ct_helper", only: :test}
     ]
   end

@@ -28,10 +28,10 @@ jobs:
       - restore_cache:
           keys:
             - v1-mix-cache-{{ checksum "mix.lock" }}
-      - run: mix hex.organization auth smartrent --key $SMARTRENT_HEX_KEY
       - run: mix deps.get
       - run: mix compile --warnings-as-errors
-      - run: MIX_ENV=test mix test
+      - run: mix test
+      - run: mix docs
       - run: mix format --check-formatted
       - run: mix deps.unlock --check-unused
       - run: mix hex.build
@@ -50,10 +50,9 @@ jobs:
       - checkout
       - <<: *install_system_deps
       - <<: *install_hex_rebar
-      - run: mix hex.organization auth smartrent --key $SMARTRENT_HEX_KEY
       - run: mix deps.get
       - run: mix compile
-      - run: MIX_ENV=test mix test
+      - run: mix test
 
 workflows:
   version: 2

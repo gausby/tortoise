@@ -2,7 +2,6 @@ defmodule Tortoise.Package.SubscribeTest do
   use ExUnit.Case
   doctest Tortoise.Package.Subscribe
 
-  alias Tortoise.Package
   alias Tortoise.Package.Subscribe
 
   describe "Collectable" do
