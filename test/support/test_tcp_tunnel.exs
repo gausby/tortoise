@@ -1,4 +1,4 @@
-defmodule Tortoise.Integration.TestTCPTunnel do
+defmodule Tortoise311.Integration.TestTCPTunnel do
   @moduledoc """
   Create a TCP-tunnel making it possible to use :gen_tcp.send/2-3 to
   send to the client_socket and assert on the received data on the

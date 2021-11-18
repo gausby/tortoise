@@ -1,12 +1,12 @@
-defmodule Tortoise.EventsTest do
+defmodule Tortoise311.EventsTest do
   use ExUnit.Case, async: true
 
   setup context do
-    {:ok, %{client_id: context.test, transport: Tortoise.Transport.Tcp}}
+    {:ok, %{client_id: context.test, transport: Tortoise311.Transport.Tcp}}
   end
 
   defp via_name(client_id) do
-    Tortoise.Connection.via_name(client_id)
+    Tortoise311.Connection.via_name(client_id)
   end
 
   def run_setup(context, setup) when is_atom(setup) do
@@ -21,9 +21,9 @@ defmodule Tortoise.EventsTest do
   end
 
   def setup_connection(context) do
-    {:ok, client_socket, server_socket} = Tortoise.Integration.TestTCPTunnel.new()
+    {:ok, client_socket, server_socket} = Tortoise311.Integration.TestTCPTunnel.new()
     name = via_name(context.client_id)
-    :ok = Tortoise.Registry.put_meta(name, :connecting)
+    :ok = Tortoise311.Registry.put_meta(name, :connecting)
 
     {:ok, %{client: client_socket, server: server_socket}}
   end
@@ -37,7 +37,7 @@ defmodule Tortoise.EventsTest do
       child =
         spawn_link(fn ->
           send(parent, :ready)
-          {:ok, connection} = Tortoise.Connection.connection(context.client_id)
+          {:ok, connection} = Tortoise311.Connection.connection(context.client_id)
           send(parent, {:received, connection})
           :timer.sleep(:infinity)
         end)
@@ -47,14 +47,14 @@ defmodule Tortoise.EventsTest do
 
       # dispatch the connection
       connection = {context.transport, context.client}
-      :ok = Tortoise.Events.dispatch(context.client_id, :connection, connection)
+      :ok = Tortoise311.Events.dispatch(context.client_id, :connection, connection)
       # have the process registered itself
-      assert [:connection] = Registry.keys(Tortoise.Events, child)
+      assert [:connection] = Registry.keys(Tortoise311.Events, child)
 
       # the subscriber should receive the connection and unregister
       # itself from the connection event
       assert_receive {:received, ^connection}
-      assert [] = Registry.keys(Tortoise.Events, child)
+      assert [] = Registry.keys(Tortoise311.Events, child)
     end
   end
 
@@ -68,11 +68,11 @@ defmodule Tortoise.EventsTest do
       child =
         spawn_link(fn ->
           send(parent, :ready)
-          {:ok, connection} = Tortoise.Connection.connection(context.client_id, active: true)
+          {:ok, connection} = Tortoise311.Connection.connection(context.client_id, active: true)
           send(parent, {:received, connection})
           # later it should receive new sockets
           receive do
-            {{Tortoise, ^client_id}, :connection, connection} ->
+            {{Tortoise311, ^client_id}, :connection, connection} ->
               send(parent, {:received, connection})
               :timer.sleep(:infinity)
           after
@@ -86,18 +86,18 @@ defmodule Tortoise.EventsTest do
 
       # dispatch the connection
       connection = {context.transport, context.client}
-      :ok = Tortoise.Events.dispatch(context.client_id, :connection, connection)
+      :ok = Tortoise311.Events.dispatch(context.client_id, :connection, connection)
 
       # the subscriber should receive the connection and it should
       # still be registered for new connections
       assert_receive {:received, ^connection}
-      assert [:connection] = Registry.keys(Tortoise.Events, child)
+      assert [:connection] = Registry.keys(Tortoise311.Events, child)
 
       context = run_setup(context, :setup_connection)
       new_connection = {context.transport, context.client}
-      :ok = Tortoise.Events.dispatch(context.client_id, :connection, new_connection)
+      :ok = Tortoise311.Events.dispatch(context.client_id, :connection, new_connection)
       assert_receive {:received, ^new_connection}
-      assert [:connection] = Registry.keys(Tortoise.Events, child)
+      assert [:connection] = Registry.keys(Tortoise311.Events, child)
     end
   end
 
@@ -108,28 +108,28 @@ defmodule Tortoise.EventsTest do
       client_id3 = client_id1 <> "3"
 
       # register retrieval of ping requests from 1 and 2
-      assert {:ok, owner} = Tortoise.Events.register(client_id1, :ping_response)
-      assert {:ok, ^owner} = Tortoise.Events.register(client_id2, :ping_response)
+      assert {:ok, owner} = Tortoise311.Events.register(client_id1, :ping_response)
+      assert {:ok, ^owner} = Tortoise311.Events.register(client_id2, :ping_response)
 
       # dispatch ping responses; expect from 1 and 2, but not 3
-      Tortoise.Events.dispatch(client_id1, :ping_response, 500)
-      Tortoise.Events.dispatch(client_id2, :ping_response, 500)
-      Tortoise.Events.dispatch(client_id3, :ping_response, 500)
-      assert_receive {{Tortoise, ^client_id1}, :ping_response, 500}
-      assert_receive {{Tortoise, ^client_id2}, :ping_response, 500}
-      refute_receive {{Tortoise, ^client_id3}, :ping_response, 500}
+      Tortoise311.Events.dispatch(client_id1, :ping_response, 500)
+      Tortoise311.Events.dispatch(client_id2, :ping_response, 500)
+      Tortoise311.Events.dispatch(client_id3, :ping_response, 500)
+      assert_receive {{Tortoise311, ^client_id1}, :ping_response, 500}
+      assert_receive {{Tortoise311, ^client_id2}, :ping_response, 500}
+      refute_receive {{Tortoise311, ^client_id3}, :ping_response, 500}
 
       # unregister 2, and register 3
-      Tortoise.Events.unregister(client_id2, :ping_response)
-      assert {:ok, ^owner} = Tortoise.Events.register(client_id3, :ping_response)
+      Tortoise311.Events.unregister(client_id2, :ping_response)
+      assert {:ok, ^owner} = Tortoise311.Events.register(client_id3, :ping_response)
 
       # dispatch ping responses, and expect from 1 and 3, not 2
-      Tortoise.Events.dispatch(client_id1, :ping_response, 500)
-      Tortoise.Events.dispatch(client_id2, :ping_response, 500)
-      Tortoise.Events.dispatch(client_id3, :ping_response, 500)
-      assert_receive {{Tortoise, ^client_id1}, :ping_response, 500}
-      refute_receive {{Tortoise, ^client_id2}, :ping_response, 500}
-      assert_receive {{Tortoise, ^client_id3}, :ping_response, 500}
+      Tortoise311.Events.dispatch(client_id1, :ping_response, 500)
+      Tortoise311.Events.dispatch(client_id2, :ping_response, 500)
+      Tortoise311.Events.dispatch(client_id3, :ping_response, 500)
+      assert_receive {{Tortoise311, ^client_id1}, :ping_response, 500}
+      refute_receive {{Tortoise311, ^client_id2}, :ping_response, 500}
+      assert_receive {{Tortoise311, ^client_id3}, :ping_response, 500}
     end
 
     test "Subscribing to all clients", context do
@@ -137,13 +137,13 @@ defmodule Tortoise.EventsTest do
       client_id2 = client_id1 <> "2"
 
       # :_ means every client id
-      Tortoise.Events.register(:_, :ping_response)
+      Tortoise311.Events.register(:_, :ping_response)
 
-      Tortoise.Events.dispatch(client_id1, :ping_response, 123)
-      Tortoise.Events.dispatch(client_id2, :ping_response, 234)
+      Tortoise311.Events.dispatch(client_id1, :ping_response, 123)
+      Tortoise311.Events.dispatch(client_id2, :ping_response, 234)
 
-      assert_receive {{Tortoise, ^client_id2}, :ping_response, 234}
-      assert_receive {{Tortoise, ^client_id1}, :ping_response, 123}
+      assert_receive {{Tortoise311, ^client_id2}, :ping_response, 234}
+      assert_receive {{Tortoise311, ^client_id1}, :ping_response, 123}
     end
   end
 end

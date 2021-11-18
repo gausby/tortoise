@@ -1,14 +1,14 @@
-defmodule Tortoise.Connection.ControllerTest do
+defmodule Tortoise311.Connection.ControllerTest do
   use ExUnit.Case
-  doctest Tortoise.Connection.Controller
+  doctest Tortoise311.Connection.Controller
 
-  alias Tortoise.Package
-  alias Tortoise.Connection.{Controller, Inflight}
+  alias Tortoise311.Package
+  alias Tortoise311.Connection.{Controller, Inflight}
 
   import ExUnit.CaptureLog
 
   defmodule TestHandler do
-    use Tortoise.Handler
+    use Tortoise311.Handler
 
     defstruct pid: nil,
               client_id: nil,
@@ -90,7 +90,7 @@ defmodule Tortoise.Connection.ControllerTest do
   end
 
   def setup_controller(context) do
-    handler = %Tortoise.Handler{
+    handler = %Tortoise311.Handler{
       module: __MODULE__.TestHandler,
       initial_args: [context.client_id, self()]
     }
@@ -101,9 +101,9 @@ defmodule Tortoise.Connection.ControllerTest do
   end
 
   def setup_connection(context) do
-    {:ok, client_socket, server_socket} = Tortoise.Integration.TestTCPTunnel.new()
-    name = Tortoise.Connection.via_name(context.client_id)
-    :ok = Tortoise.Registry.put_meta(name, {Tortoise.Transport.Tcp, client_socket})
+    {:ok, client_socket, server_socket} = Tortoise311.Integration.TestTCPTunnel.new()
+    name = Tortoise311.Connection.via_name(context.client_id)
+    :ok = Tortoise311.Registry.put_meta(name, {Tortoise311.Transport.Tcp, client_socket})
     {:ok, %{client: client_socket, server: server_socket}}
   end
 
@@ -115,7 +115,7 @@ defmodule Tortoise.Connection.ControllerTest do
 
   # tests --------------------------------------------------------------
   test "life cycle", context do
-    handler = %Tortoise.Handler{
+    handler = %Tortoise311.Handler{
       module: __MODULE__.TestHandler,
       initial_args: [context.client_id, self()]
     }
@@ -133,13 +133,13 @@ defmodule Tortoise.Connection.ControllerTest do
 
     test "Callback is triggered on connection status change", context do
       # tell the controller that we are up
-      :ok = Tortoise.Events.dispatch(context.client_id, :status, :up)
+      :ok = Tortoise311.Events.dispatch(context.client_id, :status, :up)
       assert_receive(%TestHandler{status: :up})
       # switch to offline
-      :ok = Tortoise.Events.dispatch(context.client_id, :status, :down)
+      :ok = Tortoise311.Events.dispatch(context.client_id, :status, :down)
       assert_receive(%TestHandler{status: :down})
       # ... and back up
-      :ok = Tortoise.Events.dispatch(context.client_id, :status, :up)
+      :ok = Tortoise311.Events.dispatch(context.client_id, :status, :up)
       assert_receive(%TestHandler{status: :up})
     end
   end
@@ -194,7 +194,7 @@ defmodule Tortoise.Connection.ControllerTest do
       assert %Package.Pingreq{} = Package.decode(package)
       # the server will respond with an pingresp (ping response)
       Controller.handle_incoming(context.client_id, %Package.Pingresp{})
-      assert_receive {Tortoise, {:ping_response, ^ping_ref, _ping_time}}
+      assert_receive {Tortoise311, {:ping_response, ^ping_ref, _ping_time}}
     end
 
     test "send a sync ping request", context do
@@ -231,9 +231,9 @@ defmodule Tortoise.Connection.ControllerTest do
 
       # the controller should respond to ping requests in FIFO order
       Controller.handle_incoming(context.client_id, %Package.Pingresp{})
-      assert_receive {Tortoise, {:ping_response, ^first_ping_ref, _}}
+      assert_receive {Tortoise311, {:ping_response, ^first_ping_ref, _}}
       Controller.handle_incoming(context.client_id, %Package.Pingresp{})
-      assert_receive {Tortoise, {:ping_response, ^second_ping_ref, _}}
+      assert_receive {Tortoise311, {:ping_response, ^second_ping_ref, _}}
     end
   end
 
@@ -289,7 +289,7 @@ defmodule Tortoise.Connection.ControllerTest do
       # the server will send back an ack message
       Controller.handle_incoming(client_id, %Package.Puback{identifier: 1})
       # the caller should get a message in its mailbox
-      assert_receive {{Tortoise, ^client_id}, ^ref, :ok}
+      assert_receive {{Tortoise311, ^client_id}, ^ref, :ok}
     end
 
     test "outgoing publish with qos 1 sync call", context do
@@ -383,7 +383,7 @@ defmodule Tortoise.Connection.ControllerTest do
       # receive pubcomp
       Controller.handle_incoming(client_id, %Package.Pubcomp{identifier: 1})
       # the caller should get a message in its mailbox
-      assert_receive {{Tortoise, ^client_id}, ^ref, :ok}
+      assert_receive {{Tortoise311, ^client_id}, ^ref, :ok}
     end
   end
 
@@ -408,7 +408,7 @@ defmodule Tortoise.Connection.ControllerTest do
       # the server will send back a subscription acknowledgement message
       :ok = Controller.handle_incoming(client_id, suback)
 
-      assert_receive {{Tortoise, ^client_id}, ^ref, _}
+      assert_receive {{Tortoise311, ^client_id}, ^ref, _}
       # the client callback module should get the subscribe notifications in order
       assert_receive %TestHandler{subscriptions: [{"foo", :ok}]}
       assert_receive %TestHandler{subscriptions: [{"bar", :ok} | _]}
@@ -421,7 +421,7 @@ defmodule Tortoise.Connection.ControllerTest do
       {:ok, package} = :gen_tcp.recv(context.server, 0, 200)
       assert ^unsubscribe = Package.decode(package)
       :ok = Controller.handle_incoming(client_id, unsuback)
-      assert_receive {{Tortoise, ^client_id}, ^ref, _}
+      assert_receive {{Tortoise311, ^client_id}, ^ref, _}
 
       # the client callback module should remove the subscriptions in order
       assert_receive %TestHandler{subscriptions: [{"baz", :ok}, {"bar", :ok}]}
@@ -446,7 +446,7 @@ defmodule Tortoise.Connection.ControllerTest do
       # the server will send back a subscription acknowledgement message
       :ok = Controller.handle_incoming(client_id, suback)
 
-      assert_receive {{Tortoise, ^client_id}, ^ref, _}
+      assert_receive {{Tortoise311, ^client_id}, ^ref, _}
       # the client callback module should get the subscribe notifications in order
       assert_receive %TestHandler{subscriptions: [{"foo", [requested: 2, accepted: 0]}]}
 
@@ -457,7 +457,7 @@ defmodule Tortoise.Connection.ControllerTest do
       {:ok, package} = :gen_tcp.recv(context.server, 0, 200)
       assert ^unsubscribe = Package.decode(package)
       :ok = Controller.handle_incoming(client_id, unsuback)
-      assert_receive {{Tortoise, ^client_id}, ^ref, _}
+      assert_receive {{Tortoise311, ^client_id}, ^ref, _}
 
       # the client callback module should remove the subscription
       assert_receive %TestHandler{subscriptions: []}
@@ -481,7 +481,7 @@ defmodule Tortoise.Connection.ControllerTest do
       # the server will send back a subscription acknowledgement message
       :ok = Controller.handle_incoming(client_id, suback)
 
-      assert_receive {{Tortoise, ^client_id}, ^ref, _}
+      assert_receive {{Tortoise311, ^client_id}, ^ref, _}
       # the callback module should get the error
       assert_receive {:subscription_error, {"foo", :access_denied}}
     end
@@ -526,7 +526,7 @@ defmodule Tortoise.Connection.ControllerTest do
       send(context.controller_pid, {:next_action, next_action})
       %{awaiting: awaiting} = Controller.info(client_id)
       assert [{ref, ^next_action}] = Map.to_list(awaiting)
-      response = {{Tortoise, client_id}, ref, :ok}
+      response = {{Tortoise311, client_id}, ref, :ok}
       send(context.controller_pid, response)
       %{awaiting: awaiting} = Controller.info(client_id)
       assert [] = Map.to_list(awaiting)
@@ -538,7 +538,7 @@ defmodule Tortoise.Connection.ControllerTest do
       send(context.controller_pid, {:next_action, next_action})
       %{awaiting: awaiting} = Controller.info(client_id)
       assert [{ref, ^next_action}] = Map.to_list(awaiting)
-      response = {{Tortoise, client_id}, ref, :ok}
+      response = {{Tortoise311, client_id}, ref, :ok}
       send(context.controller_pid, response)
       %{awaiting: awaiting} = Controller.info(client_id)
       assert [] = Map.to_list(awaiting)
@@ -549,7 +549,7 @@ defmodule Tortoise.Connection.ControllerTest do
       ref = make_ref()
 
       assert capture_log(fn ->
-               send(context.controller_pid, {{Tortoise, client_id}, ref, :ok})
+               send(context.controller_pid, {{Tortoise311, client_id}, ref, :ok})
                :timer.sleep(100)
              end) =~ "Unexpected"
 

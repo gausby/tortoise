@@ -1,4 +1,4 @@
-defmodule Tortoise.Package.PubcompTest do
+defmodule Tortoise311.Package.PubcompTest do
   use ExUnit.Case
-  doctest Tortoise.Package.Pubcomp
+  doctest Tortoise311.Package.Pubcomp
 end

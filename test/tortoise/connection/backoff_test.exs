@@ -1,8 +1,8 @@
-defmodule Tortoise.Connection.BackoffTest do
+defmodule Tortoise311.Connection.BackoffTest do
   use ExUnit.Case, async: true
-  doctest Tortoise.Connection.Backoff
+  doctest Tortoise311.Connection.Backoff
 
-  alias Tortoise.Connection.Backoff
+  alias Tortoise311.Connection.Backoff
 
   test "should not exceed maximum interval time" do
     min = 100

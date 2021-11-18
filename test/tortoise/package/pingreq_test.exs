@@ -1,8 +1,8 @@
-defmodule Tortoise.Package.PingreqTest do
+defmodule Tortoise311.Package.PingreqTest do
   use ExUnit.Case
-  doctest Tortoise.Package.Pingreq
+  doctest Tortoise311.Package.Pingreq
 
-  alias Tortoise.Package
+  alias Tortoise311.Package
 
   test "encoding and decoding ping requests" do
     pingreq = %Package.Pingreq{}

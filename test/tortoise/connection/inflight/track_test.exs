@@ -1,10 +1,10 @@
-defmodule Tortoise.Connection.Inflight.TrackTest do
+defmodule Tortoise311.Connection.Inflight.TrackTest do
   @moduledoc false
   use ExUnit.Case
-  doctest Tortoise.Connection.Inflight.Track
+  doctest Tortoise311.Connection.Inflight.Track
 
-  alias Tortoise.Connection.Inflight.Track
-  alias Tortoise.Package
+  alias Tortoise311.Connection.Inflight.Track
+  alias Tortoise311.Package
 
   describe "incoming publish" do
     test "progress a qos 1 receive" do

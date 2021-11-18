@@ -1,7 +1,7 @@
-defmodule Tortoise.Integration.ScriptedTransport do
+defmodule Tortoise311.Integration.ScriptedTransport do
   @moduledoc """
   The `ScriptedTransport` is a GenServer that implement the
-  `Tortoise.Transport`-behaviour. It can be given a list of expected
+  `Tortoise311.Transport`-behaviour. It can be given a list of expected
   packages, and the packages it should respond with like this:
 
       script = [
@@ -11,16 +11,16 @@ defmodule Tortoise.Integration.ScriptedTransport do
 
       {:ok, _} = ScriptedTransport.start_link({'localhost', 1883}, script: script)
 
-  This will start a server which `Tortoise.Connection` can connect to
+  This will start a server which `Tortoise311.Connection` can connect to
   like this:
 
-      {:ok, _} = Tortoise.Connection.start_link(
+      {:ok, _} = Tortoise311.Connection.start_link(
         client_id: "Test",
         server: {ScriptedTransport, host: 'localhost', port: 1883},
-        handler: {Tortoise.Handler.Logger, []}
+        handler: {Tortoise311.Handler.Logger, []}
       )
 
-  While the `Tortoise.Transport.Tcp`-transport is recommenced for most
+  While the `Tortoise311.Transport.Tcp`-transport is recommenced for most
   test cases this transport can be used to simulate a network
   connection sending a specific error code at a given time; a test
   case where we need the broker to send back `{:error, :nxdomain}`
@@ -33,15 +33,15 @@ defmodule Tortoise.Integration.ScriptedTransport do
       {:ok, _} = ScriptedTransport.start_link({'localhost', 1883}, script: script)
 
   Which will send a non-existent domain error to the
-  `Tortoise.Connection` when a connection is established.
+  `Tortoise311.Connection` when a connection is established.
 
   The transport will shutdown if it get an unexpected package.
   """
 
   import Kernel, except: [send: 2]
 
-  @behaviour Tortoise.Transport
-  alias Tortoise.Transport
+  @behaviour Tortoise311.Transport
+  alias Tortoise311.Transport
   alias __MODULE__, as: State
 
   @enforce_keys [:script]
@@ -62,7 +62,7 @@ defmodule Tortoise.Integration.ScriptedTransport do
 
   # Client API
   def start_link({host, port}, opts) do
-    name = Tortoise.Registry.via_name(__MODULE__, {host, port})
+    name = Tortoise311.Registry.via_name(__MODULE__, {host, port})
 
     defaults = [
       host: host,
@@ -78,7 +78,7 @@ defmodule Tortoise.Integration.ScriptedTransport do
   end
 
   defp via_name({host, port}) do
-    Tortoise.Registry.via_name(__MODULE__, {host, port})
+    Tortoise311.Registry.via_name(__MODULE__, {host, port})
   end
 
   @impl true
@@ -212,7 +212,7 @@ defmodule Tortoise.Integration.ScriptedTransport do
 
   # receive packages from the MQTT Client
   def handle_call({:send, packet}, _, %State{script: [{:expect, expected} | remaining]} = state) do
-    case Tortoise.Package.decode(packet) do
+    case Tortoise311.Package.decode(packet) do
       ^expected ->
         Kernel.send(state.test_process, {__MODULE__, {:received, expected}})
         {:reply, :ok, setup_next(%State{state | script: remaining})}
@@ -269,7 +269,7 @@ defmodule Tortoise.Integration.ScriptedTransport do
   end
 
   defp setup_next(%State{script: [{:dispatch, package} | remaining]} = state) do
-    data = IO.iodata_to_binary(Tortoise.Package.encode(package))
+    data = IO.iodata_to_binary(Tortoise311.Package.encode(package))
     buffer = state.buffer <> data
     %State{state | script: remaining, buffer: buffer}
   end

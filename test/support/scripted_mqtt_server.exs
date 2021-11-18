@@ -1,4 +1,4 @@
-defmodule Tortoise.Integration.ScriptedMqttServer do
+defmodule Tortoise311.Integration.ScriptedMqttServer do
   # A helper for testing interactions with a MQTT server by setting up
   # a process that act as the server and base its responses on a
   # script of commands that are either send `{:send, package}`, or
@@ -15,7 +15,7 @@ defmodule Tortoise.Integration.ScriptedMqttServer do
             client: nil,
             server_info: nil
 
-  alias Tortoise.Package
+  alias Tortoise311.Package
   alias __MODULE__, as: State
 
   # Client API
@@ -33,7 +33,7 @@ defmodule Tortoise.Integration.ScriptedMqttServer do
 
   # Server callbacks
   def init(opts) do
-    transport = Keyword.get(opts, :transport, Tortoise.Transport.Tcp)
+    transport = Keyword.get(opts, :transport, Tortoise311.Transport.Tcp)
 
     transport_opts =
       case Keyword.get(opts, :opts, :default) do

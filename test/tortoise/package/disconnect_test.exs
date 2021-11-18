@@ -1,8 +1,8 @@
-defmodule Tortoise.Package.DisconnectTest do
+defmodule Tortoise311.Package.DisconnectTest do
   use ExUnit.Case
-  doctest Tortoise.Package.Disconnect
+  doctest Tortoise311.Package.Disconnect
 
-  alias Tortoise.Package
+  alias Tortoise311.Package
 
   test "encoding and decoding disconnect messages" do
     disconnect = %Package.Disconnect{}

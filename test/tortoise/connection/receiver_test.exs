@@ -1,9 +1,9 @@
-defmodule Tortoise.Connection.ReceiverTest do
+defmodule Tortoise311.Connection.ReceiverTest do
   use ExUnit.Case
-  doctest Tortoise.Connection.Controller
+  doctest Tortoise311.Connection.Controller
 
-  alias Tortoise.Package
-  alias Tortoise.Connection.{Receiver, Controller}
+  alias Tortoise311.Package
+  alias Tortoise311.Connection.{Receiver, Controller}
 
   setup context do
     {:ok, %{client_id: context.test}}
@@ -11,14 +11,14 @@ defmodule Tortoise.Connection.ReceiverTest do
 
   def setup_receiver(context) do
     opts = [client_id: context.client_id]
-    {:ok, client_socket, server_socket} = Tortoise.Integration.TestTCPTunnel.new()
+    {:ok, client_socket, server_socket} = Tortoise311.Integration.TestTCPTunnel.new()
     {:ok, receiver_pid} = Receiver.start_link(opts)
-    :ok = Receiver.handle_socket(context.client_id, {Tortoise.Transport.Tcp, client_socket})
+    :ok = Receiver.handle_socket(context.client_id, {Tortoise311.Transport.Tcp, client_socket})
     {:ok, %{receiver_pid: receiver_pid, client: client_socket, server: server_socket}}
   end
 
   def setup_controller(context) do
-    Registry.register(Tortoise.Registry, {Controller, context.client_id}, self())
+    Registry.register(Tortoise311.Registry, {Controller, context.client_id}, self())
     :ok
   end
 

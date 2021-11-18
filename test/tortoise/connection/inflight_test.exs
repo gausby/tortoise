@@ -1,26 +1,26 @@
-defmodule Tortoise.Connection.InflightTest do
+defmodule Tortoise311.Connection.InflightTest do
   use ExUnit.Case, async: true
-  doctest Tortoise.Connection.Inflight
+  doctest Tortoise311.Connection.Inflight
 
-  alias Tortoise.Package
-  alias Tortoise.Connection.Inflight
+  alias Tortoise311.Package
+  alias Tortoise311.Connection.Inflight
 
   setup context do
     {:ok, %{client_id: context.test}}
   end
 
   def setup_connection(context) do
-    {:ok, client_socket, server_socket} = Tortoise.Integration.TestTCPTunnel.new()
-    connection = {Tortoise.Transport.Tcp, client_socket}
-    key = Tortoise.Registry.via_name(Tortoise.Connection, context.client_id)
-    Tortoise.Registry.put_meta(key, connection)
-    Tortoise.Events.dispatch(context.client_id, :connection, connection)
+    {:ok, client_socket, server_socket} = Tortoise311.Integration.TestTCPTunnel.new()
+    connection = {Tortoise311.Transport.Tcp, client_socket}
+    key = Tortoise311.Registry.via_name(Tortoise311.Connection, context.client_id)
+    Tortoise311.Registry.put_meta(key, connection)
+    Tortoise311.Events.dispatch(context.client_id, :connection, connection)
     {:ok, Map.merge(context, %{client: client_socket, server: server_socket})}
   end
 
   defp drop_connection(%{server: server} = context) do
     :ok = :gen_tcp.close(server)
-    :ok = Tortoise.Events.dispatch(context.client_id, :status, :down)
+    :ok = Tortoise311.Events.dispatch(context.client_id, :status, :down)
     {:ok, Map.drop(context, [:client, :server])}
   end
 
@@ -69,7 +69,7 @@ defmodule Tortoise.Connection.InflightTest do
       Inflight.update(client_id, {:received, %Package.Puback{identifier: 1}})
 
       # the calling process should get a result response
-      assert_receive {{Tortoise, ^client_id}, ^ref, :ok}
+      assert_receive {{Tortoise311, ^client_id}, ^ref, :ok}
     end
   end
 
@@ -125,7 +125,7 @@ defmodule Tortoise.Connection.InflightTest do
 
       # When we receive the pubcomp message we should respond the caller
       Inflight.update(client_id, {:received, %Package.Pubcomp{identifier: 1}})
-      assert_receive {{Tortoise, ^client_id}, ^ref, :ok}
+      assert_receive {{Tortoise311, ^client_id}, ^ref, :ok}
     end
   end
 
@@ -157,7 +157,7 @@ defmodule Tortoise.Connection.InflightTest do
 
       Inflight.update(client_id, {:received, suback})
 
-      assert_receive {{Tortoise, ^client_id}, ^ref, _}
+      assert_receive {{Tortoise311, ^client_id}, ^ref, _}
     end
   end
 
@@ -184,7 +184,7 @@ defmodule Tortoise.Connection.InflightTest do
       # when receiving the suback we should respond to the caller
       Inflight.update(client_id, {:received, %Package.Unsuback{identifier: 1}})
 
-      assert_receive {{Tortoise, ^client_id}, ^ref, _}
+      assert_receive {{Tortoise311, ^client_id}, ^ref, _}
     end
   end
 
@@ -235,7 +235,7 @@ defmodule Tortoise.Connection.InflightTest do
       {:ok, ref} = Inflight.track(client_id, {:outgoing, publish})
       :ok = Inflight.reset(client_id)
       # the calling process should get a result response
-      assert_receive {{Tortoise, ^client_id}, ^ref, {:error, :canceled}}
+      assert_receive {{Tortoise311, ^client_id}, ^ref, {:error, :canceled}}
     end
   end
 
@@ -253,11 +253,11 @@ defmodule Tortoise.Connection.InflightTest do
       # updates should have no effect at this point
       :ok = Inflight.update(client_id, {:received, %Package.Puback{identifier: 1}})
       # the calling process should get a result response
-      assert_receive {{Tortoise, ^client_id}, ^ref, {:error, :canceled}}
+      assert_receive {{Tortoise311, ^client_id}, ^ref, {:error, :canceled}}
       # Now the inflight manager should be in the draining state, new
       # outbound messages should not get accepted
       {:ok, ref} = Inflight.track(client_id, {:outgoing, publish})
-      assert_receive {{Tortoise, ^client_id}, ^ref, {:error, :terminating}}
+      assert_receive {{Tortoise311, ^client_id}, ^ref, {:error, :terminating}}
       # the remote should receive a disconnect package
       expected = %Package.Disconnect{} |> Package.encode() |> IO.iodata_to_binary()
       assert {:ok, ^expected} = :gen_tcp.recv(context.server, byte_size(expected), 500)

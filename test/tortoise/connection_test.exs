@@ -1,14 +1,14 @@
 Code.require_file("../support/scripted_mqtt_server.exs", __DIR__)
 Code.require_file("../support/scripted_transport.exs", __DIR__)
 
-defmodule Tortoise.ConnectionTest do
+defmodule Tortoise311.ConnectionTest do
   use ExUnit.Case, async: true
-  doctest Tortoise.Connection
+  doctest Tortoise311.Connection
 
-  alias Tortoise.Integration.ScriptedMqttServer
-  alias Tortoise.Integration.ScriptedTransport
-  alias Tortoise.Connection
-  alias Tortoise.Package
+  alias Tortoise311.Integration.ScriptedMqttServer
+  alias Tortoise311.Integration.ScriptedTransport
+  alias Tortoise311.Connection
+  alias Tortoise311.Package
 
   setup context do
     # the Package.Connect encoder is capable of casting a client id
@@ -31,7 +31,7 @@ defmodule Tortoise.ConnectionTest do
     certs_opts = :ct_helper.get_certs_from_ets()
 
     server_opts = [
-      transport: Tortoise.Transport.SSL,
+      transport: Tortoise311.Transport.SSL,
       opts: [:binary, {:active, false}, {:packet, :raw} | certs_opts]
     ]
 
@@ -61,8 +61,8 @@ defmodule Tortoise.ConnectionTest do
 
       opts = [
         client_id: client_id,
-        server: {Tortoise.Transport.Tcp, [host: ip, port: port]},
-        handler: {Tortoise.Handler.Default, []}
+        server: {Tortoise311.Transport.Tcp, [host: ip, port: port]},
+        handler: {Tortoise311.Handler.Default, []}
       ]
 
       assert {:ok, _pid} = Connection.start_link(opts)
@@ -88,8 +88,8 @@ defmodule Tortoise.ConnectionTest do
 
       opts = [
         client_id: client_id,
-        server: {Tortoise.Transport.Tcp, [host: ip, port: port]},
-        handler: {Tortoise.Handler.Default, []}
+        server: {Tortoise311.Transport.Tcp, [host: ip, port: port]},
+        handler: {Tortoise311.Handler.Default, []}
       ]
 
       assert {:ok, _pid} = Connection.start_link(opts)
@@ -118,8 +118,8 @@ defmodule Tortoise.ConnectionTest do
 
       opts = [
         client_id: client_id,
-        server: {Tortoise.Transport.Tcp, [host: ip, port: port]},
-        handler: {Tortoise.Handler.Default, []}
+        server: {Tortoise311.Transport.Tcp, [host: ip, port: port]},
+        handler: {Tortoise311.Handler.Default, []}
       ]
 
       assert {:ok, pid} = Connection.start_link(opts)
@@ -141,8 +141,8 @@ defmodule Tortoise.ConnectionTest do
 
       opts = [
         client_id: client_id,
-        server: {Tortoise.Transport.Tcp, [host: ip, port: port]},
-        handler: {Tortoise.Handler.Default, []}
+        server: {Tortoise311.Transport.Tcp, [host: ip, port: port]},
+        handler: {Tortoise311.Handler.Default, []}
       ]
 
       assert {:ok, pid} = Connection.start_link(opts)
@@ -163,8 +163,8 @@ defmodule Tortoise.ConnectionTest do
 
       opts = [
         client_id: client_id,
-        server: {Tortoise.Transport.Tcp, [host: ip, port: port]},
-        handler: {Tortoise.Handler.Default, []}
+        server: {Tortoise311.Transport.Tcp, [host: ip, port: port]},
+        handler: {Tortoise311.Handler.Default, []}
       ]
 
       assert {:ok, pid} = Connection.start_link(opts)
@@ -185,8 +185,8 @@ defmodule Tortoise.ConnectionTest do
 
       opts = [
         client_id: client_id,
-        server: {Tortoise.Transport.Tcp, [host: ip, port: port]},
-        handler: {Tortoise.Handler.Default, []}
+        server: {Tortoise311.Transport.Tcp, [host: ip, port: port]},
+        handler: {Tortoise311.Handler.Default, []}
       ]
 
       assert {:ok, pid} = Connection.start_link(opts)
@@ -207,8 +207,8 @@ defmodule Tortoise.ConnectionTest do
 
       opts = [
         client_id: client_id,
-        server: {Tortoise.Transport.Tcp, [host: ip, port: port]},
-        handler: {Tortoise.Handler.Default, []}
+        server: {Tortoise311.Transport.Tcp, [host: ip, port: port]},
+        handler: {Tortoise311.Handler.Default, []}
       ]
 
       assert {:ok, pid} = Connection.start_link(opts)
@@ -247,8 +247,8 @@ defmodule Tortoise.ConnectionTest do
 
       opts = [
         client_id: client_id,
-        server: {Tortoise.Transport.Tcp, [host: ip, port: port]},
-        handler: {Tortoise.Handler.Default, []}
+        server: {Tortoise311.Transport.Tcp, [host: ip, port: port]},
+        handler: {Tortoise311.Handler.Default, []}
       ]
 
       # connection
@@ -256,22 +256,24 @@ defmodule Tortoise.ConnectionTest do
       assert_receive {ScriptedMqttServer, {:received, ^connect}}
 
       # subscribe to a foo
-      :ok = Tortoise.Connection.subscribe_sync(client_id, {"foo", 0}, identifier: 1)
+      :ok = Tortoise311.Connection.subscribe_sync(client_id, {"foo", 0}, identifier: 1)
       assert_receive {ScriptedMqttServer, {:received, ^subscription_foo}}
-      assert Enum.member?(Tortoise.Connection.subscriptions(client_id), {"foo", 0})
+      assert Enum.member?(Tortoise311.Connection.subscriptions(client_id), {"foo", 0})
 
       # subscribe to a bar
-      assert {:ok, ref} = Tortoise.Connection.subscribe(client_id, {"bar", 1}, identifier: 2)
-      assert_receive {{Tortoise, ^client_id}, ^ref, :ok}
+      assert {:ok, ref} = Tortoise311.Connection.subscribe(client_id, {"bar", 1}, identifier: 2)
+      assert_receive {{Tortoise311, ^client_id}, ^ref, :ok}
       assert_receive {ScriptedMqttServer, {:received, ^subscription_bar}}
 
       # subscribe to a baz
-      assert {:ok, ref} = Tortoise.Connection.subscribe(client_id, "baz", qos: 2, identifier: 3)
-      assert_receive {{Tortoise, ^client_id}, ^ref, :ok}
+      assert {:ok, ref} =
+               Tortoise311.Connection.subscribe(client_id, "baz", qos: 2, identifier: 3)
+
+      assert_receive {{Tortoise311, ^client_id}, ^ref, :ok}
       assert_receive {ScriptedMqttServer, {:received, ^subscription_baz}}
 
       # foo, bar, and baz should now be in the subscription list
-      subscriptions = Tortoise.Connection.subscriptions(client_id)
+      subscriptions = Tortoise311.Connection.subscriptions(client_id)
       assert Enum.member?(subscriptions, {"foo", 0})
       assert Enum.member?(subscriptions, {"bar", 1})
       assert Enum.member?(subscriptions, {"baz", 2})
@@ -306,8 +308,8 @@ defmodule Tortoise.ConnectionTest do
 
       opts = [
         client_id: client_id,
-        server: {Tortoise.Transport.Tcp, [host: ip, port: port]},
-        handler: {Tortoise.Handler.Default, []},
+        server: {Tortoise311.Transport.Tcp, [host: ip, port: port]},
+        handler: {Tortoise311.Handler.Default, []},
         subscriptions: subscribe
       ]
 
@@ -317,17 +319,17 @@ defmodule Tortoise.ConnectionTest do
       assert_receive {ScriptedMqttServer, {:received, ^subscribe}}
 
       # now let us try to unsubscribe from foo
-      :ok = Tortoise.Connection.unsubscribe_sync(client_id, "foo", identifier: 2)
+      :ok = Tortoise311.Connection.unsubscribe_sync(client_id, "foo", identifier: 2)
       assert_receive {ScriptedMqttServer, {:received, ^unsubscribe_foo}}
 
       assert %Package.Subscribe{topics: [{"bar", 2}]} =
-               Tortoise.Connection.subscriptions(client_id)
+               Tortoise311.Connection.subscriptions(client_id)
 
       # and unsubscribe from bar
-      assert {:ok, ref} = Tortoise.Connection.unsubscribe(client_id, "bar", identifier: 3)
-      assert_receive {{Tortoise, ^client_id}, ^ref, :ok}
+      assert {:ok, ref} = Tortoise311.Connection.unsubscribe(client_id, "bar", identifier: 3)
+      assert_receive {{Tortoise311, ^client_id}, ^ref, :ok}
       assert_receive {ScriptedMqttServer, {:received, ^unsubscribe_bar}}
-      assert %Package.Subscribe{topics: []} = Tortoise.Connection.subscriptions(client_id)
+      assert %Package.Subscribe{topics: []} = Tortoise311.Connection.subscriptions(client_id)
 
       assert_receive {ScriptedMqttServer, :completed}
     end
@@ -348,7 +350,7 @@ defmodule Tortoise.ConnectionTest do
   #       opts = [
   #         client_id: client_id,
   #         server:
-  #           {Tortoise.Transport.SSL,
+  #           {Tortoise311.Transport.SSL,
   #            [
   #              host: ip,
   #              port: port,
@@ -358,7 +360,7 @@ defmodule Tortoise.ConnectionTest do
   #              cacerts: context.cacerts(),
   #              server_name_indication: :disable
   #            ]},
-  #         handler: {Tortoise.Handler.Default, []}
+  #         handler: {Tortoise311.Handler.Default, []}
   #       ]
 
   #       assert {:ok, _pid} = Connection.start_link(opts)
@@ -378,7 +380,7 @@ defmodule Tortoise.ConnectionTest do
   #     opts = [
   #       client_id: client_id,
   #       server:
-  #         {Tortoise.Transport.SSL,
+  #         {Tortoise311.Transport.SSL,
   #          [
   #            host: ip,
   #            port: port,
@@ -386,7 +388,7 @@ defmodule Tortoise.ConnectionTest do
   #            cert: context.cert,
   #            verify: :verify_none
   #          ]},
-  #       handler: {Tortoise.Handler.Default, []}
+  #       handler: {Tortoise311.Handler.Default, []}
   #     ]
 
   #     assert {:ok, _pid} = Connection.start_link(opts)
@@ -403,14 +405,14 @@ defmodule Tortoise.ConnectionTest do
   #     opts = [
   #       client_id: client_id,
   #       server:
-  #         {Tortoise.Transport.SSL,
+  #         {Tortoise311.Transport.SSL,
   #          [
   #            host: ip,
   #            port: port,
   #            key: context.key,
   #            cert: context.cert
   #          ]},
-  #       handler: {Tortoise.Handler.Default, []}
+  #       handler: {Tortoise311.Handler.Default, []}
   #     ]
 
   #     # Need to pass :cacerts/:cacerts_file option, or set :verify to
@@ -440,11 +442,11 @@ defmodule Tortoise.ConnectionTest do
         )
 
       assert {:ok, _pid} =
-               Tortoise.Connection.start_link(
+               Tortoise311.Connection.start_link(
                  client_id: client_id,
                  server: {ScriptedTransport, host: 'localhost', port: 1883},
                  backoff: [min_interval: 1],
-                 handler: {Tortoise.Handler.Logger, []}
+                 handler: {Tortoise311.Handler.Logger, []}
                )
 
       assert_receive {ScriptedTransport, {:refute_connection, ^refusal}}
@@ -484,11 +486,11 @@ defmodule Tortoise.ConnectionTest do
         )
 
       assert {:ok, _pid} =
-               Tortoise.Connection.start_link(
+               Tortoise311.Connection.start_link(
                  client_id: client_id,
                  server: {ScriptedTransport, host: 'localhost', port: 1883},
                  backoff: [min_interval: 0],
-                 handler: {Tortoise.Handler.Logger, []}
+                 handler: {Tortoise311.Handler.Logger, []}
                )
 
       assert_receive {ScriptedTransport, :connected}
@@ -515,16 +517,16 @@ defmodule Tortoise.ConnectionTest do
         )
 
       assert {:ok, pid} =
-               Tortoise.Connection.start_link(
+               Tortoise311.Connection.start_link(
                  client_id: client_id,
                  server: {ScriptedTransport, host: 'localhost', port: 1883},
-                 handler: {Tortoise.Handler.Logger, []}
+                 handler: {Tortoise311.Handler.Logger, []}
                )
 
       assert_receive {ScriptedTransport, :connected}
       assert_receive {ScriptedTransport, {:received, %Package.Connect{}}}
       assert_receive {:EXIT, ^pid, {:protocol_violation, violation}}
-      assert %{expected: Tortoise.Package.Connect, got: _} = violation
+      assert %{expected: Tortoise311.Package.Connect, got: _} = violation
       assert_receive {ScriptedTransport, :completed}
     end
 
@@ -544,11 +546,11 @@ defmodule Tortoise.ConnectionTest do
         )
 
       assert {:ok, pid} =
-               Tortoise.Connection.start_link(
+               Tortoise311.Connection.start_link(
                  client_id: client_id,
                  server: {ScriptedTransport, host: 'localhost', port: 1883},
                  backoff: [min_interval: 1],
-                 handler: {Tortoise.Handler.Logger, []}
+                 handler: {Tortoise311.Handler.Logger, []}
                )
 
       assert_receive {ScriptedTransport, {:refute_connection, ^refusal}}
@@ -575,14 +577,14 @@ defmodule Tortoise.ConnectionTest do
 
       opts = [
         client_id: client_id,
-        server: {Tortoise.Transport.Tcp, [host: ip, port: port]},
-        handler: {Tortoise.Handler.Default, []}
+        server: {Tortoise311.Transport.Tcp, [host: ip, port: port]},
+        handler: {Tortoise311.Handler.Default, []}
       ]
 
       assert {:ok, _pid} = Connection.start_link(opts)
       assert_receive {ScriptedMqttServer, {:received, ^connect}}
 
-      assert {:ok, {Tortoise.Transport.Tcp, _socket}} =
+      assert {:ok, {Tortoise311.Transport.Tcp, _socket}} =
                Connection.connection(client_id, timeout: 500)
 
       assert_receive {ScriptedMqttServer, :completed}
@@ -599,8 +601,8 @@ defmodule Tortoise.ConnectionTest do
 
       opts = [
         client_id: client_id,
-        server: {Tortoise.Transport.Tcp, [host: ip, port: port]},
-        handler: {Tortoise.Handler.Default, []}
+        server: {Tortoise311.Transport.Tcp, [host: ip, port: port]},
+        handler: {Tortoise311.Handler.Default, []}
       ]
 
       assert {:ok, _pid} = Connection.start_link(opts)
@@ -631,14 +633,14 @@ defmodule Tortoise.ConnectionTest do
 
       opts = [
         client_id: client_id,
-        server: {Tortoise.Transport.Tcp, [host: ip, port: port]},
-        handler: {Tortoise.Handler.Default, []}
+        server: {Tortoise311.Transport.Tcp, [host: ip, port: port]},
+        handler: {Tortoise311.Handler.Default, []}
       ]
 
       assert {:ok, pid} = Connection.start_link(opts)
       assert_receive {ScriptedMqttServer, {:received, ^connect}}
 
-      assert :ok = Tortoise.Connection.disconnect(client_id)
+      assert :ok = Tortoise311.Connection.disconnect(client_id)
       assert_receive {ScriptedMqttServer, {:received, ^disconnect}}
       assert_receive {:EXIT, ^pid, :shutdown}
 

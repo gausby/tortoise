@@ -10,7 +10,7 @@ A MQTT Client application that keep connections to one or more MQTT
 brokers, handles subscriptions, and expose a publisher for publishing
 messages to the broker.
 
-Amongst other things Tortoise supports:
+Amongst other things Tortoise311 supports:
 
   - Keeping a connection to a MQTT server (version 3.1.1)
   - Retry connecting with incremental back-off
@@ -23,7 +23,7 @@ Amongst other things Tortoise supports:
     connection status and ping response times can be subscribed for
     statistics and administrative purposes.
 
-Most of the public facing interface should be in the `Tortoise`
+Most of the public facing interface should be in the `Tortoise311`
 module. See the GitHub issues for work in progress "known issues in
 the design", "what needs to be done", and so forth; feel free to open
 your own issues if something is confusing or broken.
@@ -36,28 +36,28 @@ A supervised connection can be started like this:
 
 ``` elixir
 # connect to the server and subscribe to foo/bar with QoS 0
-Tortoise.Supervisor.start_child(
+Tortoise311.Supervisor.start_child(
     client_id: "my_client_id",
-    handler: {Tortoise.Handler.Logger, []},
-    server: {Tortoise.Transport.Tcp, host: 'localhost', port: 1883},
+    handler: {Tortoise311.Handler.Logger, []},
+    server: {Tortoise311.Transport.Tcp, host: 'localhost', port: 1883},
     subscriptions: [{"foo/bar", 0}])
 
 # publish a message on the broker
-Tortoise.publish("my_client_id", "foo/bar", "Hello from the World of Tomorrow !", qos: 0)
+Tortoise311.publish("my_client_id", "foo/bar", "Hello from the World of Tomorrow !", qos: 0)
 ```
 
-To connect to a MQTT server using SSL the `Tortoise.Transport.SSL`
+To connect to a MQTT server using SSL the `Tortoise311.Transport.SSL`
 transport can be used. This requires configuration of the server's
 CA certificate, and possibly a client certificate and key. For
 example, when using the [certifi](https://hex.pm/packages/certifi)
 package as the CA trust store:
 
 ``` elixir
-Tortoise.Supervisor.start_child(
+Tortoise311.Supervisor.start_child(
     client_id: "smart-spoon",
-    handler: {Tortoise.Handler.Logger, []},
+    handler: {Tortoise311.Handler.Logger, []},
     server: {
-      Tortoise.Transport.SSL,
+      Tortoise311.Transport.SSL,
       host: host, port: port,
       cacertfile: :certifi.cacertfile(),
       key: key, cert: cert
@@ -74,8 +74,8 @@ Look at the `connection_test.exs`-file for more examples.
 
 Example Handler
 ```elixir
-defmodule Tortoise.Handler.Example do
-  use Tortoise.Handler
+defmodule Tortoise311.Handler.Example do
+  use Tortoise311.Handler
 
   def init(args) do
     {:ok, args}
@@ -116,7 +116,7 @@ end
 
 ## Installation
 
-Tortoise can be installed by adding `tortoise` to your list of
+Tortoise311 can be installed by adding `tortoise311` to your list of
 dependencies in `mix.exs`:
 
 ```elixir
@@ -128,7 +128,7 @@ end
 ```
 
 Documentation should be available at
-[https://hexdocs.pm/tortoise](https://hexdocs.pm/tortoise).
+[https://hexdocs.pm/tortoise311](https://hexdocs.pm/tortoise311).
 
 ## Development
 

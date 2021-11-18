@@ -1,9 +1,9 @@
-defmodule Tortoise.PipeTest do
+defmodule Tortoise311.PipeTest do
   use ExUnit.Case, async: true
-  doctest Tortoise.Pipe
+  doctest Tortoise311.Pipe
 
-  alias Tortoise.{Pipe, Package}
-  alias Tortoise.Connection.Inflight
+  alias Tortoise311.{Pipe, Package}
+  alias Tortoise311.Connection.Inflight
 
   setup context do
     {:ok, %{client_id: context.test}}
@@ -16,16 +16,16 @@ defmodule Tortoise.PipeTest do
   end
 
   def setup_registry(context) do
-    key = Tortoise.Registry.via_name(Tortoise.Connection, context.client_id)
-    Tortoise.Registry.put_meta(key, :connecting)
+    key = Tortoise311.Registry.via_name(Tortoise311.Connection, context.client_id)
+    Tortoise311.Registry.put_meta(key, :connecting)
     {:ok, context}
   end
 
   def setup_connection(context) do
-    {:ok, client_socket, server_socket} = Tortoise.Integration.TestTCPTunnel.new()
-    connection = {Tortoise.Transport.Tcp, client_socket}
-    key = Tortoise.Registry.via_name(Tortoise.Connection, context.client_id)
-    Tortoise.Registry.put_meta(key, connection)
+    {:ok, client_socket, server_socket} = Tortoise311.Integration.TestTCPTunnel.new()
+    connection = {Tortoise311.Transport.Tcp, client_socket}
+    key = Tortoise311.Registry.via_name(Tortoise311.Connection, context.client_id)
+    Tortoise311.Registry.put_meta(key, connection)
     {:ok, %{client: client_socket, server: server_socket}}
   end
 
@@ -62,7 +62,12 @@ defmodule Tortoise.PipeTest do
       # sleep a bit, open a socket and reply to the client
       :timer.sleep(50)
       context = run_setup(context, :setup_connection)
-      send(client, {{Tortoise, client_id}, :connection, {Tortoise.Transport.Tcp, context.client}})
+
+      send(
+        client,
+        {{Tortoise311, client_id}, :connection, {Tortoise311.Transport.Tcp, context.client}}
+      )
+
       socket = context.client
       assert_receive {:result, %Pipe{client_id: ^client_id, socket: ^socket}}
     end
@@ -111,8 +116,8 @@ defmodule Tortoise.PipeTest do
       send(subscriber, :retry_publish)
       :timer.sleep(40)
       context = run_setup(context, :setup_connection)
-      connection = {Tortoise.Transport.Tcp, context.client}
-      send(subscriber, {{Tortoise, client_id}, :connection, connection})
+      connection = {Tortoise311.Transport.Tcp, context.client}
+      send(subscriber, {{Tortoise311, client_id}, :connection, connection})
 
       {:ok, package} = :gen_tcp.recv(context.server, 0, 500)
       assert Package.decode(package) == publish

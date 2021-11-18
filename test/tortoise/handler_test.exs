@@ -1,10 +1,10 @@
-defmodule Tortoise.HandlerTest do
+defmodule Tortoise311.HandlerTest do
   use ExUnit.Case, async: true
-  doctest Tortoise.Handler
+  doctest Tortoise311.Handler
 
-  alias Tortoise.Handler
-  alias Tortoise.Connection.Inflight.Track
-  alias Tortoise.Package
+  alias Tortoise311.Handler
+  alias Tortoise311.Connection.Inflight.Track
+  alias Tortoise311.Package
 
   defmodule TestHandler do
     @behaviour Handler
@@ -47,7 +47,7 @@ defmodule Tortoise.HandlerTest do
   end
 
   setup _context do
-    handler = %Tortoise.Handler{module: TestHandler, initial_args: [pid: self()]}
+    handler = %Tortoise311.Handler{module: TestHandler, initial_args: [pid: self()]}
     {:ok, %{handler: handler}}
   end
 

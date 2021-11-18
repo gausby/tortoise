@@ -1,4 +1,4 @@
-defmodule Tortoise.Package.MetaTest do
+defmodule Tortoise311.Package.MetaTest do
   use ExUnit.Case
-  doctest Tortoise.Package.Meta
+  doctest Tortoise311.Package.Meta
 end

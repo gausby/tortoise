@@ -1,8 +1,8 @@
-defmodule Tortoise.Package.SubscribeTest do
+defmodule Tortoise311.Package.SubscribeTest do
   use ExUnit.Case
-  doctest Tortoise.Package.Subscribe
+  doctest Tortoise311.Package.Subscribe
 
-  alias Tortoise.Package.Subscribe
+  alias Tortoise311.Package.Subscribe
 
   describe "Collectable" do
     test "Pick the largest QoS when topic filters repeat in input" do

@@ -1,4 +1,4 @@
-defmodule Tortoise.MixProject do
+defmodule Tortoise311.MixProject do
   use Mix.Project
 
   @version "0.10.4"
@@ -36,7 +36,7 @@ defmodule Tortoise.MixProject do
   def application do
     [
       extra_applications: [:logger, :ssl],
-      mod: {Tortoise.App, []}
+      mod: {Tortoise311.App, []}
     ]
   end
 
