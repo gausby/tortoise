@@ -11,7 +11,7 @@ install_system_deps: &install_system_deps
   run:
     name: Install system dependencies
     command: |
-      apk add build-base linux-headers libmnl-dev libnl3-dev curl git
+      apk add build-base git
 
 defaults: &defaults
   working_directory: ~/repo
@@ -19,7 +19,7 @@ defaults: &defaults
 jobs:
   build_elixir_1_12_otp_24:
     docker:
-      - image: hexpm/elixir:1.12.1-erlang-24.0.2-alpine-3.13.3
+      - image: hexpm/elixir:1.12.3-erlang-24.1.5-alpine-3.14.2
     <<: *defaults
     steps:
       - checkout
