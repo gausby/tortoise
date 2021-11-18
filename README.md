@@ -2,10 +2,9 @@
 
 This is a fork of [Martin Gausby's Tortoise] (https://github.com/gausby/tortoise)
 
-[![Build Status](https://semaphoreci.com/api/v1/gausby/tortoise/branches/master/badge.svg)](https://semaphoreci.com/gausby/tortoise)
-[![Hex.pm](https://img.shields.io/hexpm/l/tortoise.svg "Apache 2.0 Licensed")](https://github.com/gausby/tortoise/blob/master/LICENSE)
-[![Hex version](https://img.shields.io/hexpm/v/tortoise.svg "Hex version")](https://hex.pm/packages/tortoise)
-[![Coverage Status](https://coveralls.io/repos/github/gausby/tortoise/badge.svg?branch=master)](https://coveralls.io/github/gausby/tortoise?branch=master)
+[![CircleCI](https://circleci.com/gh/smartrent/tortoise311/tree/main.svg?style=svg)](https://circleci.com/gh/smartrent/tortoise311/tree/main)
+[![Hex.pm](https://img.shields.io/hexpm/l/tortoise311.svg "Apache 2.0 Licensed")](https://github.com/smartrent/tortoise311/blob/main/LICENSE)
+[![Hex version](https://img.shields.io/hexpm/v/tortoise311.svg "Hex version")](https://hex.pm/packages/tortoise311)
 
 A MQTT Client application that keep connections to one or more MQTT
 brokers, handles subscriptions, and expose a publisher for publishing
@@ -13,7 +12,7 @@ messages to the broker.
 
 Amongst other things Tortoise supports:
 
-  - Keeping a connection to a MQTT server (version 3.1.1 for now)
+  - Keeping a connection to a MQTT server (version 3.1.1)
   - Retry connecting with incremental back-off
   - Publishing and subscribing to topics of QoS 0, 1, and 2
   - Connections support last will message
