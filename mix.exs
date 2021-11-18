@@ -2,6 +2,7 @@ defmodule Tortoise.MixProject do
   use Mix.Project
 
   @version "0.10.3"
+  @source_url "https://github.com/smartrent/tortoise311"
 
   def project do
     [
@@ -29,12 +30,9 @@ defmodule Tortoise.MixProject do
   end
 
   defp description() do
-    """
-    A MQTT client for Elixir.
-    """
+    "An MQTT 3.1.1 client for Elixir"
   end
 
-  # Run "mix help compile.app" to learn about applications.
   def application do
     [
       extra_applications: [:logger, :ssl],
@@ -42,7 +40,6 @@ defmodule Tortoise.MixProject do
     ]
   end
 
-  # Run "mix help deps" to learn about dependencies.
   defp deps do
     [
       {:gen_state_machine, "~> 2.0 or ~> 3.0"},
@@ -59,7 +56,7 @@ defmodule Tortoise.MixProject do
       maintainers: ["Jean-Francois Cloutier"],
       licenses: ["Apache 2.0"],
       files: ["lib", "mix.exs", "README*", "CHANGELOG*", "LICENSE*"],
-      links: %{"GitHub" => "https://github.com/smartrent/tortoise311"}
+      links: %{"GitHub" => @source_url}
     ]
   end
 
@@ -69,7 +66,7 @@ defmodule Tortoise.MixProject do
       source_ref: "v#{@version}",
       main: "introduction",
       canonical: "http://hexdocs.pm/tortoise311",
-      source_url: "https://github.com/smartrent/tortoise311",
+      source_url: @source_url,
       extras: [
         "docs/introduction.md",
         "docs/connecting_to_a_mqtt_broker.md",
