@@ -1,7 +1,7 @@
 defmodule Tortoise311.MixProject do
   use Mix.Project
 
-  @version "0.10.4"
+  @version "0.10.5"
   @source_url "https://github.com/smartrent/tortoise311"
 
   def project do

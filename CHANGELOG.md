@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.10.5 - 2021-11-18
+
+- Renamed all modules to Tortoise311.*
+- Replaced all references to application `tortoise` by `tortoise311`
+
 ## 0.10.4 - 2021-11-18
 
 - Context added to connnection error logging
