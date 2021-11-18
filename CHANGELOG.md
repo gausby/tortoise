@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.10.4 - 2021-11-18
+
+- Context added to connnection error logging
+- Added handling or timeout errors
+- Miscellaneous cleanups
+
 ## 0.10.3 - 2021-11-17
 
 - Named the app :tortoise311
