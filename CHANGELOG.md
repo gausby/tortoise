@@ -1,6 +1,10 @@
 # Changelog
 
-## 0.10.5 - 2021-11-18
+## 0.11.0 - 2021-11-19
+
+- Same as 0.10.5 but with correct semantic versioning
+
+## 0.10.5 - 2021-11-18 - DEPRECATED
 
 - Renamed all modules to Tortoise311.*
 - Replaced all references to application `tortoise` by `tortoise311`
