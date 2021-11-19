@@ -1,6 +1,6 @@
 # Tortoise311
 
-This is a fork of [Martin Gausby's Tortoise] (https://github.com/gausby/tortoise)
+This is a fork of [Martin Gausby's Tortoise](https://github.com/gausby/tortoise)
 
 [![CircleCI](https://circleci.com/gh/smartrent/tortoise311/tree/main.svg?style=svg)](https://circleci.com/gh/smartrent/tortoise311/tree/main)
 [![Hex.pm](https://img.shields.io/hexpm/l/tortoise311.svg "Apache 2.0 Licensed")](https://github.com/smartrent/tortoise311/blob/main/LICENSE)
