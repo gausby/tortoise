@@ -23,13 +23,15 @@ defmodule Tortoise311.Pipe do
   alias Tortoise311.{Package, Pipe}
   alias Tortoise311.Connection.Inflight
 
+  @default_timeout 60_000
+
   @opaque t :: %__MODULE__{
             client_id: binary(),
             socket: port(),
             transport: atom(),
             active: boolean(),
             failure: :crash | :drop,
-            timeout: non_neg_integer() | :infinity,
+            timeout: non_neg_integer(),
             pending: [reference()]
           }
   @enforce_keys [:client_id]
@@ -39,7 +41,7 @@ defmodule Tortoise311.Pipe do
     transport: Tortoise311.Transport.Tcp,
     active: false,
     failure: :crash,
-    timeout: :infinity,
+    timeout: @default_timeout,
     pending: []
   ])
 
@@ -48,7 +50,7 @@ defmodule Tortoise311.Pipe do
   """
   def new(client_id, opts \\ []) do
     active = Keyword.get(opts, :active, false)
-    timeout = Keyword.get(opts, :timeout, 5000)
+    timeout = Keyword.get(opts, :timeout, @default_timeout)
 
     opts = [timeout: timeout, active: active]
 

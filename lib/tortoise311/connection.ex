@@ -27,6 +27,8 @@ defmodule Tortoise311.Connection do
   alias Tortoise311.Connection.{Inflight, Controller, Receiver, Backoff}
   alias Tortoise311.Package.{Connect, Connack}
 
+  @default_timeout 60_000
+
   @doc """
   Start a connection process and link it to the current process.
 
@@ -313,12 +315,12 @@ defmodule Tortoise311.Connection do
 
   Like `ping/1` but will block the caller process until a response is
   received from the server. The response will contain the ping latency
-  in milliseconds.  The `timeout` defaults to `:infinity`, so it is
+  in milliseconds.  The `timeout` defaults to `@default_timeout`, so it is
   advisable to specify a reasonable time one is willing to wait for a
   response.
   """
   @spec ping_sync(Tortoise311.client_id(), timeout()) :: {:ok, reference()} | {:error, :timeout}
-  defdelegate ping_sync(client_id, timeout \\ :infinity),
+  defdelegate ping_sync(client_id, timeout \\ @default_timeout),
     to: Tortoise311.Connection.Controller
 
   @doc false
@@ -333,19 +335,19 @@ defmodule Tortoise311.Connection do
     # has been dispatched from the pubsub; previously we registered
     # for the connection message in this window.
     {:ok, _} = Events.register(client_id, :connection)
+    timeout = Keyword.get(opts, :timeout, @default_timeout)
 
     case Tortoise311.Registry.meta(via_name(client_id)) do
       {:ok, {_transport, _socket} = connection} ->
         {:ok, connection}
 
       {:ok, :connecting} ->
-        timeout = Keyword.get(opts, :timeout, :infinity)
-
         receive do
           {{Tortoise311, ^client_id}, :connection, {transport, socket}} ->
             {:ok, {transport, socket}}
         after
           timeout ->
+            Logger.warn("[Tortoise311] Connection - timed out")
             {:error, :timeout}
         end
 
@@ -429,11 +431,11 @@ defmodule Tortoise311.Connection do
         {:stop, {:connection_failed, reason}, state}
 
       {:error, reason} ->
-        Logger.warn(
-          "[Tortoise311] Connection failed: #{inspect(reason)}, #{inspect(summarize_state(state))}"
-        )
-
         {timeout, state} = Map.get_and_update(state, :backoff, &Backoff.next/1)
+
+        Logger.warn(
+          "[Tortoise311] Connection failed: #{inspect(reason)}, #{inspect(summarize_state(state))}. Retrying in #{timeout} msecs."
+        )
 
         case categorize_error(reason) do
           :connectivity ->
@@ -503,9 +505,11 @@ defmodule Tortoise311.Connection do
         {:noreply, state}
 
       :up ->
+        Logger.info("[Tortoise311] Connection went up.")
         {:noreply, %State{state | status: status}}
 
       :down ->
+        Logger.info("[Tortoise311] Connection went down. Reconnecting.")
         send(self(), :connect)
         {:noreply, %State{state | status: status}}
     end

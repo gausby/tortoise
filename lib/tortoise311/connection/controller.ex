@@ -25,6 +25,8 @@ defmodule Tortoise311.Connection.Controller do
 
   use GenServer
 
+  @default_timeout 60_000
+
   @enforce_keys [:client_id, :handler]
   defstruct client_id: nil,
             ping: :queue.new(),
@@ -67,7 +69,7 @@ defmodule Tortoise311.Connection.Controller do
   end
 
   @spec ping_sync(Tortoise311.client_id(), timeout()) :: {:ok, reference()} | {:error, :timeout}
-  def ping_sync(client_id, timeout \\ :infinity) do
+  def ping_sync(client_id, timeout \\ @default_timeout) do
     {:ok, ref} = ping(client_id)
 
     receive do
