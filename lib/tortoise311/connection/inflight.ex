@@ -12,8 +12,6 @@ defmodule Tortoise311.Connection.Inflight do
 
   alias __MODULE__, as: State
 
-  @default_timeout 60_000
-
   # Client API
   def start_link(opts) do
     client_id = Keyword.fetch!(opts, :client_id)
@@ -58,7 +56,8 @@ defmodule Tortoise311.Connection.Inflight do
   end
 
   @doc false
-  def track_sync(client_id, {:outgoing, _} = command, timeout \\ @default_timeout) do
+  def track_sync(client_id, {:outgoing, _} = command, timeout \\ nil) do
+    timeout = timeout || Tortoise311.default_timeout()
     {:ok, ref} = track(client_id, command)
 
     receive do

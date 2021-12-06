@@ -27,8 +27,6 @@ defmodule Tortoise311.Connection do
   alias Tortoise311.Connection.{Inflight, Controller, Receiver, Backoff}
   alias Tortoise311.Package.{Connect, Connack}
 
-  @default_timeout 60_000
-
   @doc """
   Start a connection process and link it to the current process.
 
@@ -315,12 +313,11 @@ defmodule Tortoise311.Connection do
 
   Like `ping/1` but will block the caller process until a response is
   received from the server. The response will contain the ping latency
-  in milliseconds.  The `timeout` defaults to `@default_timeout`, so it is
-  advisable to specify a reasonable time one is willing to wait for a
-  response.
+  in milliseconds.
   """
-  @spec ping_sync(Tortoise311.client_id(), timeout()) :: {:ok, reference()} | {:error, :timeout}
-  defdelegate ping_sync(client_id, timeout \\ @default_timeout),
+  @spec ping_sync(Tortoise311.client_id(), timeout() | nil) ::
+          {:ok, reference()} | {:error, :timeout}
+  defdelegate ping_sync(client_id, timeout \\ nil),
     to: Tortoise311.Connection.Controller
 
   @doc false
@@ -335,7 +332,7 @@ defmodule Tortoise311.Connection do
     # has been dispatched from the pubsub; previously we registered
     # for the connection message in this window.
     {:ok, _} = Events.register(client_id, :connection)
-    timeout = Keyword.get(opts, :timeout, @default_timeout)
+    timeout = Keyword.get(opts, :timeout, Tortoise311.default_timeout())
 
     case Tortoise311.Registry.meta(via_name(client_id)) do
       {:ok, {_transport, _socket} = connection} ->

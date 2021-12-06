@@ -178,8 +178,6 @@ defmodule Tortoise311 do
   """
   @type payload() :: binary() | nil
 
-  @default_timeout 60_000
-
   @doc """
   Publish a message to the MQTT broker.
 
@@ -266,7 +264,7 @@ defmodule Tortoise311 do
       retain: Keyword.get(opts, :retain, false)
     }
 
-    timeout = Keyword.get(opts, :timeout, @default_timeout)
+    timeout = Keyword.get(opts, :timeout, default_timeout())
 
     with {:ok, {transport, socket}} <- Connection.connection(client_id, timeout: timeout) do
       case publish do
@@ -293,9 +291,7 @@ defmodule Tortoise311 do
   that it will block the calling process until the message has been
   handed over to the server; the configuration options are the same
   with the addition of the `timeout` option which specifies how long
-  we are willing to wait for a reply. Per default the timeout is set
-  to `@default_timeout`, it is advisable to set it to a reasonable amount in
-  milliseconds as it otherwise could block forever.
+  we are willing to wait for a reply.
 
       msg = "Hello, from the World of Tomorrow !"
       case Tortoise311.publish_sync("my_client_id", "foo/bar", msg, qos: 2, timeout: 200) do
@@ -321,7 +317,7 @@ defmodule Tortoise311 do
                | {:identifier, package_identifier()}
                | {:timeout, timeout()}
   def publish_sync(client_id, topic, payload \\ nil, opts \\ []) do
-    timeout = Keyword.get(opts, :timeout, @default_timeout)
+    timeout = Keyword.get(opts, :timeout, default_timeout())
     qos = Keyword.get(opts, :qos, 0)
 
     publish = %Package.Publish{
@@ -348,4 +344,8 @@ defmodule Tortoise311 do
         {:error, :timeout}
     end
   end
+
+  @doc "The default timeout value"
+  @spec default_timeout() :: timeout()
+  def default_timeout(), do: Application.fetch_env!(:tortoise311, :timeout)
 end

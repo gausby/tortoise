@@ -36,7 +36,8 @@ defmodule Tortoise311.MixProject do
   def application do
     [
       extra_applications: [:logger, :ssl],
-      mod: {Tortoise311.App, []}
+      mod: {Tortoise311.App, []},
+      env: [timeout: 60_000]
     ]
   end
 
