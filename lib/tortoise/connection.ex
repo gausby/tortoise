@@ -43,6 +43,7 @@ defmodule Tortoise.Connection do
                | {:will, Tortoise.Package.Publish.t()}
                | {:subscriptions,
                   [{Tortoise.topic_filter(), Tortoise.qos()}] | Tortoise.Package.Subscribe.t()}
+               | {:clean_session, boolean()}
                | {:handler, {atom(), term()}},
              options: [option]
   def start_link(connection_opts, opts \\ []) do
@@ -56,7 +57,7 @@ defmodule Tortoise.Connection do
       keep_alive: Keyword.get(connection_opts, :keep_alive, 60),
       will: Keyword.get(connection_opts, :will),
       # if we re-spawn from here it means our state is gone
-      clean_session: true
+      clean_session: Keyword.get(connection_opts, :clean_session, true)
     }
 
     backoff = Keyword.get(connection_opts, :backoff, [])
