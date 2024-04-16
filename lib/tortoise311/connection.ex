@@ -5,6 +5,8 @@ defmodule Tortoise311.Connection do
   Todo.
   """
 
+  require Logger
+
   use GenServer
 
   alias __MODULE__, as: State

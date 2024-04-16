@@ -23,6 +23,9 @@ defmodule Tortoise311.Handler do
       `:down`, allowing for functionality to be run when the
       connection state changes.
 
+    - `connected/3` is called when a connection is made, making the socket
+      and the server type available.
+
     - `subscription/3` is called when a topic filter subscription
       changes status, so this callback can be used to control the
       life-cycle of a subscription, allowing us to implement custom
@@ -110,6 +113,9 @@ defmodule Tortoise311.Handler do
           initial_args: term(),
           state: term()
         }
+  @type socket :: any()
+  @type server :: :ssl | :tcp
+
   @enforce_keys [:module, :initial_args]
   defstruct module: nil, state: nil, initial_args: []
 
@@ -140,6 +146,11 @@ defmodule Tortoise311.Handler do
 
       @impl Tortoise311.Handler
       def connection(_status, state) do
+        {:ok, state}
+      end
+
+      @impl Tortoise311.Handler
+      def connected(_server, _socket, state) do
         {:ok, state}
       end
 
@@ -195,6 +206,23 @@ defmodule Tortoise311.Handler do
   last will is used.
   """
   @callback last_will(state) :: {{:ok, term() | nil}, state} when state: any()
+
+  @doc """
+  Invoked when the connection is made.
+
+  `server` is the transport module
+
+  Returning `{:ok, new_state}` will set the state for later
+  invocations.
+
+  Returning `{:ok, new_state, next_actions}`, where `next_actions` is
+  a list of next actions such as `{:unsubscribe, "foo/bar"}` will
+  result in the state being returned and the next actions performed.
+  """
+  @callback connected(server, socket, state :: term()) ::
+              {:ok, new_state}
+              | {:ok, new_state, [next_action()]}
+            when new_state: term()
 
   @doc """
   Invoked when the connection status changes.
@@ -339,6 +367,12 @@ defmodule Tortoise311.Handler do
   def execute(handler, {:connection, status}) do
     handler.module
     |> apply(:connection, [status, handler.state])
+    |> handle_result(handler)
+  end
+
+  def execute(handler, {:connected, server, socket}) do
+    handler.module
+    |> apply(:connected, [server, socket, handler.state])
     |> handle_result(handler)
   end
 

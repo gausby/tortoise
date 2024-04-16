@@ -29,6 +29,11 @@ defmodule Tortoise311.Handler.Logger do
     {:ok, state}
   end
 
+  def connected(server, socket, state) do
+    Logger.warning("Connected via #{inspect(server)} socket #{inspect(socket)}")
+    {:ok, state}
+  end
+
   def subscription(:up, topic, state) do
     Logger.info("Subscribed to #{topic}")
     {:ok, state}

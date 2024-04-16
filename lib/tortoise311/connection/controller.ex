@@ -106,6 +106,7 @@ defmodule Tortoise311.Connection.Controller do
   @impl GenServer
   def init(%State{handler: handler} = opts) do
     {:ok, _} = Tortoise311.Events.register(opts.client_id, :status)
+    {:ok, _} = Tortoise311.Events.register(opts.client_id, :connection)
 
     case Handler.execute(handler, :init) do
       {:ok, %Handler{} = updated_handler} ->
@@ -236,6 +237,16 @@ defmodule Tortoise311.Connection.Controller do
     case Handler.execute(handler, {:connection, new_status}) do
       {:ok, updated_handler} ->
         {:noreply, %State{state | handler: updated_handler, status: new_status}}
+    end
+  end
+
+  def handle_info(
+        {{Tortoise311, client_id}, :connection, {server, socket}},
+        %State{client_id: client_id, handler: handler} = state
+      ) do
+    case Handler.execute(handler, {:connected, server, socket}) do
+      {:ok, updated_handler} ->
+        {:noreply, %State{state | handler: updated_handler}}
     end
   end
 
