@@ -176,7 +176,7 @@ defmodule Tortoise do
   The payload will be `nil` if there is no payload. This is done to
   distinct between a zero byte binary and an empty payload.
   """
-  @type payload() :: binary() | nil
+  @type payload() :: iodata() | nil
 
   @doc """
   Publish a message to the MQTT broker.
@@ -248,7 +248,7 @@ defmodule Tortoise do
   """
   @spec publish(client_id(), topic(), payload, [options]) ::
           :ok | {:ok, reference()} | {:error, :unknown_connection}
-        when payload: binary() | nil,
+        when payload: payload(),
              options:
                {:qos, qos()}
                | {:retain, boolean()}
@@ -309,7 +309,7 @@ defmodule Tortoise do
   """
   @spec publish_sync(client_id(), topic(), payload, [options]) ::
           :ok | {:error, :unknown_connection}
-        when payload: binary() | nil,
+        when payload: payload(),
              options:
                {:qos, qos()}
                | {:retain, boolean()}
