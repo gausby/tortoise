@@ -693,6 +693,10 @@ defmodule Tortoise.Connection do
     :connectivity
   end
 
+  defp categorize_error(:ehostunreach) do
+    :connectivity
+  end
+
   defp categorize_error(_other) do
     :other
   end
